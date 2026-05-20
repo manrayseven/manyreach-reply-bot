@@ -243,8 +243,7 @@ def plan_actions(
                 "subject": draft.subject,
             },
             description=(
-                f"{'AUTO-SEND' if can_autosend else 'QUEUE FOR REVIEW'} reply to "
-                f"{reply.from_email} ({len(draft.body_html or '')} chars HTML)"
+                f"reply to {reply.from_email} ({len(draft.body_html or '')} chars HTML)"
             ),
         )
     )
@@ -296,7 +295,9 @@ def execute_plan(
             results.append(f"{prefix} {action.description}")
         elif action.kind == "send_reply":
             if not plan.auto_send:
-                results.append(f"[REVIEW] {action.description} — {plan.review_reason}")
+                results.append(
+                    f"[À RELIRE — non envoyé] {action.description} — {plan.review_reason}"
+                )
                 continue
             if not dry_run:
                 client.send_reply(
@@ -305,7 +306,9 @@ def execute_plan(
                     subject=action.payload.get("subject"),
                     send_as_reply=True,
                 )
-            results.append(f"{prefix} {action.description}")
+                results.append(f"[ENVOYÉ ✓] {action.description}")
+            else:
+                results.append(f"[DRY-RUN] ENVERRAIT {action.description}")
         elif action.kind == "skip_send":
             results.append(f"{prefix} {action.description}")
         elif action.kind == "needs_review":

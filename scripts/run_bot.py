@@ -130,6 +130,16 @@ def main() -> int:
             "skips all the bounce/auto-reply/MailInBlack noise."
         ),
     )
+    parser.add_argument(
+        "--only-email",
+        type=str,
+        default=None,
+        help=(
+            "TEST CONTRÔLÉ : ne traite QUE les replies de cette adresse, et "
+            "force l'envoi réel de la réponse (à utiliser avec --no-dry-run). "
+            "Sert à tester le bot sur UN seul prospect choisi."
+        ),
+    )
     args = parser.parse_args()
 
     settings = load_settings(args.settings)
@@ -268,11 +278,16 @@ def main() -> int:
     error_count = 0
     mailinblack_pending: list[dict] = []
 
+    if args.only_email:
+        print(f">>> MODE TEST CONTRÔLÉ : uniquement {args.only_email} (envoi forcé si --no-dry-run)")
+        confirmed_statuses = None  # ignore status filter, target the email directly
+
     with ManyReachClient() as mr, log_file.open("w", encoding="utf-8") as logf:
         for reply in mr.list_replies(
             campaign_id=campaign_id,
             since=since,
             confirmed_statuses=confirmed_statuses,
+            email_from=args.only_email,
         ):
             if limit and processed_count >= limit:
                 break
@@ -338,6 +353,7 @@ def main() -> int:
                 # Try to find the prospect & original outreach for context
                 prospect = None
                 original_outreach = None
+                thread = []
                 try:
                     prospect = mr.find_prospect_by_email(reply.from_email)
                 except Exception as e:
@@ -351,6 +367,23 @@ def main() -> int:
                             original_outreach = sent_msgs[0]
                     except Exception as e:
                         print(f"  !! get_prospect_thread failed: {e}")
+
+                # IDEMPOTENCE : si une réponse (Sent/SentManual) existe déjà APRÈS ce
+                # reply, c'est que le thread a déjà été traité — par le bot OU par Rudy
+                # à la main. On ne retraite pas (zéro doublon + respect du travail manuel).
+                # Bypass en mode test explicite (--only-email) ou --reprocess.
+                if not args.only_email and not args.reprocess and thread:
+                    already_handled = any(
+                        m.type in ("Sent", "SentManual") and m.created_at > reply.created_at
+                        for m in thread
+                    )
+                    if already_handled:
+                        print("  >> DÉJÀ TRAITÉ (réponse postérieure déjà dans le thread) — skip")
+                        log_entry["intent"] = "already_handled"
+                        log_entry["actions"] = ["skip (déjà répondu dans le thread)"]
+                        logf.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
+                        skipped_count += 1
+                        continue
 
                 # Classify
                 classification = classifier.classify(reply, original_outreach=original_outreach)
@@ -407,6 +440,12 @@ def main() -> int:
                     min_autosend_confidence=min_conf,
                     has_calendar_slots=bool(slot_strs),
                 )
+
+                # Controlled test: force-send for the explicitly targeted email
+                if args.only_email and draft and draft.body_html and not draft.skip_send:
+                    plan.auto_send = True
+                    plan.review_reason = ""
+                    print("  >>> TEST: envoi forcé pour ce prospect ciblé")
 
                 if plan.review_reason:
                     print(f"  REVIEW REASON: {plan.review_reason}")

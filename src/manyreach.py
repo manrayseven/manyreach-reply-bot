@@ -141,6 +141,7 @@ class ManyReachClient:
         page_size: int = 100,
         confirmed_statuses: tuple[str, ...] | None = None,
         max_per_status: int = 100,
+        email_from: str | None = None,
     ) -> Iterable[Message]:
         """Yield reply Messages, most-recent first.
 
@@ -153,6 +154,32 @@ class ManyReachClient:
         The ManyReach API caps `limit` at 100 per request.
         """
         page_size = min(page_size, 100)  # API hard cap
+
+        # Targeted single-prospect fetch (used for the controlled live test).
+        if email_from:
+            page = 1
+            while True:
+                params = {
+                    "type": "Reply",
+                    "emailFrom": email_from,
+                    "limit": page_size,
+                    "page": page,
+                }
+                data = self._request("GET", "/messages", params=params)
+                items = (data or {}).get("items", [])
+                if not items:
+                    return
+                for item in items:
+                    if item.get("type") != "Reply":
+                        continue
+                    msg = Message.from_api(item)
+                    if since and msg.created_at < since:
+                        continue
+                    yield msg
+                if len(items) < page_size:
+                    return
+                page += 1
+            return
 
         if confirmed_statuses:
             seen: set[str] = set()
