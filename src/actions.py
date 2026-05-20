@@ -39,11 +39,15 @@ INTENT_PROSPECT_UPDATE: dict[str, tuple[str | None, bool | None, list[str]]] = {
 # re-enable auto-send progressively on the safe intents (wrong_person_redirect,
 # objection_timing, not_interested_polite) by uncommenting them below.
 AUTOSEND_ELIGIBLE = frozenset({
-    # All intents disabled — every reply goes to review for the first weeks.
-    # Uncomment progressively after validating quality:
-    # "wrong_person_redirect",  # short, asks for the right contact
-    # "objection_timing",       # short, polite, defer
-    # "not_interested_polite",  # politesse + referral-ask + value
+    # SAFE intents — low stakes, the bot sends on its own:
+    "not_interested_polite",            # politesse + referral, faible enjeu
+    "objection_already_have_solution",  # reframe ponctuel, pas de RDV
+    "wrong_person_redirect",            # demande le bon contact
+    "objection_timing",                 # poli, on note pour plus tard
+    # REVIEW (NON auto — enjeu argent/RDV, Rudy valide) :
+    #   interested_warm, interested_lukewarm, ask_more_info  → mènent à un meeting
+    #   meeting_confirmed  → crée un event, à fiabiliser d'abord
+    #   objection_price    → négociation, mieux vaut Rudy
 })
 
 # Intents that NEVER send a reply (silent action only)

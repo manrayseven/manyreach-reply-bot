@@ -23,10 +23,12 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import random
 import sys
 import textwrap
+import time
 import traceback
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 # Make `src.*` importable when running this script directly.
@@ -182,6 +184,34 @@ def main() -> int:
     drafter = Drafter()
     tag_cache: dict[str, int] = {}
 
+    # --- Anti-grillage / timing guardrails ---
+    send_cfg = settings.get("sending", {}) or {}
+    backlog_cutoff = None
+    _since = send_cfg.get("process_replies_since")
+    if _since:
+        try:
+            backlog_cutoff = datetime.fromisoformat(_since)
+        except ValueError:
+            print(f"  !! process_replies_since invalide ({_since!r}), ignoré")
+    sends_done = 0
+    max_sends = int(send_cfg.get("max_sends_per_run", 25))
+
+    def send_window_open(when: datetime) -> bool:
+        hours = send_cfg.get("allowed_hours", [9, 19])
+        days = send_cfg.get("allowed_weekdays", [0, 1, 2, 3, 4])
+        local = when.astimezone()
+        return local.weekday() in days and hours[0] <= local.hour < hours[1]
+
+    def reply_old_enough(reply, when: datetime) -> bool:
+        """Don't reply instantly — a human lets a message age a bit."""
+        min_age = int(send_cfg.get("min_reply_age_minutes", 0))
+        jitter = int(send_cfg.get("max_reply_age_jitter_minutes", 0))
+        if min_age <= 0 and jitter <= 0:
+            return True
+        # Deterministic per-message jitter so the threshold is stable across runs
+        extra = (abs(hash(reply.message_id)) % (jitter + 1)) if jitter > 0 else 0
+        return (when - reply.created_at) >= timedelta(minutes=min_age + extra)
+
     # --- Google Calendar (optional) ---
     cal_cfg = settings.get("calendar", {}) or {}
     calendar_client = None
@@ -308,6 +338,20 @@ def main() -> int:
                 "createdAt": reply.created_at.isoformat(),
                 "campaignId": reply.campaign_id,
             }
+
+            now_utc = datetime.now(timezone.utc)
+
+            # PROTECTION BACKLOG : ignorer les replies antérieurs à la mise en route
+            if backlog_cutoff and reply.created_at < backlog_cutoff and not args.only_email:
+                print("  >> Antérieur à la date de mise en route — ignoré (backlog)")
+                skipped_count += 1
+                continue
+
+            # ANTI-RÉPONSE-INSTANTANÉE : laisser le reply "vieillir" un peu
+            if not args.only_email and not reply_old_enough(reply, now_utc):
+                print("  >> Reply trop récent — traité à un prochain run (timing humain)")
+                skipped_count += 1
+                continue
 
             try:
                 # Pre-filter 1: MailInBlack (must come BEFORE bounce check)
@@ -447,12 +491,36 @@ def main() -> int:
                     plan.review_reason = ""
                     print("  >>> TEST: envoi forcé pour ce prospect ciblé")
 
+                # SEND WINDOW + CAP : ne pas envoyer hors heures ouvrées, ni au-delà du plafond.
+                # Si bloqué ici, on NE marque PAS comme traité → réessai au prochain run.
+                send_held = False
+                if plan.auto_send and not args.only_email:
+                    if not send_window_open(now_utc):
+                        plan.auto_send = False
+                        send_held = True
+                        print("  >> HORS HEURES D'ENVOI — gardé pour le prochain run en horaire ouvré")
+                    elif sends_done >= max_sends:
+                        plan.auto_send = False
+                        send_held = True
+                        print(f"  >> PLAFOND {max_sends} envois/run atteint — gardé pour le prochain run")
+
                 if plan.review_reason:
                     print(f"  REVIEW REASON: {plan.review_reason}")
+
+                # Small human-like jitter before a real send (Vercel-safe: a few seconds)
+                will_really_send = plan.auto_send and not dry_run and any(
+                    a.kind == "send_reply" for a in plan.actions
+                )
+                if will_really_send:
+                    lo, hi = send_cfg.get("inter_send_jitter_seconds", [0, 0])
+                    if hi > 0:
+                        time.sleep(random.uniform(lo, hi))
 
                 results = execute_plan(plan, reply, mr, dry_run=dry_run, tag_cache=tag_cache)
                 for line in results:
                     print(f"    {line}")
+                if will_really_send:
+                    sends_done += 1
 
                 # Meeting booked → create calendar event + release holds + alert Rudy
                 if classification.intent == "meeting_confirmed":
@@ -498,7 +566,9 @@ def main() -> int:
                 log_entry["actions"] = results
                 logf.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
 
-                if not dry_run:
+                # Ne pas marquer "traité" si l'envoi a été gardé pour plus tard
+                # (hors heures / plafond) → il sera réessayé au prochain run.
+                if not dry_run and not send_held:
                     append_processed_id(processed_file, reply.message_id)
                 processed_count += 1
 

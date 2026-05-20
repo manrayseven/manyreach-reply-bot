@@ -1,22 +1,22 @@
-# Configuration utilisateur du bot.
-# Édite ces valeurs selon tes préférences.
+﻿# Configuration utilisateur du bot.
+# Ã‰dite ces valeurs selon tes prÃ©fÃ©rences.
 
-# --- Comportement général ---
+# --- Comportement gÃ©nÃ©ral ---
 
-# Par défaut, le bot tourne en dry-run (aucun appel d'écriture vers ManyReach).
-# Passe à false UNIQUEMENT quand tu es confiant.
+# Par dÃ©faut, le bot tourne en dry-run (aucun appel d'Ã©criture vers ManyReach).
+# Passe Ã  false UNIQUEMENT quand tu es confiant.
 default_dry_run: true
 
 # Seuil de confidence en-dessous duquel on ne fait JAMAIS d'auto-send.
-# Le draft est généré, mais reste en review.
+# Le draft est gÃ©nÃ©rÃ©, mais reste en review.
 min_autosend_confidence: 0.92
 
 # Comportement sur not_interested_polite.
-# Rudy a confirmé : il répond TOUJOURS (politesse + referral-ask + valeur), pas de silence.
-# Mettre à true uniquement si tu veux override ce comportement par défaut.
+# Rudy a confirmÃ© : il rÃ©pond TOUJOURS (politesse + referral-ask + valeur), pas de silence.
+# Mettre Ã  true uniquement si tu veux override ce comportement par dÃ©faut.
 silent_on_not_interested: false
 
-# Nombre max de replies traités par run (utile pour les premiers tests).
+# Nombre max de replies traitÃ©s par run (utile pour les premiers tests).
 # null = pas de limite.
 limit_per_run: 20
 
@@ -24,20 +24,20 @@ limit_per_run: 20
 campaign_filter: null
 #  - 11572
 
-# --- Identité ---
-# La voice, les signatures par entité, et les liens backup sont définis
-# dans training_examples.md (sections "Voice globale" + "Entités"). Le drafter
-# parse ce doc directement — pas besoin de dupliquer ici.
+# --- IdentitÃ© ---
+# La voice, les signatures par entitÃ©, et les liens backup sont dÃ©finis
+# dans training_examples.md (sections "Voice globale" + "EntitÃ©s"). Le drafter
+# parse ce doc directement â€” pas besoin de dupliquer ici.
 
-# --- Calendrier (phase 2 — Google Calendar) ---
-# Pour l'instant, le bot utilise un pattern textuel pour les créneaux.
+# --- Calendrier (phase 2 â€” Google Calendar) ---
+# Pour l'instant, le bot utilise un pattern textuel pour les crÃ©neaux.
 # En phase 2, on connectera Google Calendar.
 
 calendar:
   enabled: true
   timezone: "Europe/Paris"
   # Horaires bookables de Rudy : 9h30-11h et 12h-17h30
-  # (jamais avant 9h30 ni après 17h30 ; pause course à pied 11h-12h exclue)
+  # (jamais avant 9h30 ni aprÃ¨s 17h30 ; pause course Ã  pied 11h-12h exclue)
   working_hours:
     monday:    [["09:30", "11:00"], ["12:00", "17:30"]]
     tuesday:   [["09:30", "11:00"], ["12:00", "17:30"]]
@@ -48,32 +48,51 @@ calendar:
   buffer_minutes: 15
   days_ahead: 5
   hold_days: 5
-  # Jamais de créneau à moins de 3h du moment présent
+  # Jamais de crÃ©neau Ã  moins de 3h du moment prÃ©sent
   min_lead_hours: 3
-  # Si on discute après 16h, ne pas proposer le lendemain avant cette heure
-  # (Rudy ne verrait pas un RDV tôt le lendemain matin)
+  # Si on discute aprÃ¨s 16h, ne pas proposer le lendemain avant cette heure
+  # (Rudy ne verrait pas un RDV tÃ´t le lendemain matin)
   late_cutoff_hour: 16
   next_day_min_time_if_late: "10:30"
   # Lien Zoom de secours si le prospect veut absolument une visio
   zoom_link: "https://us02web.zoom.us/s/9136208131"
 
 # --- Cadence de relance (follow-up) ---
-# Combien de fois et quand le bot relance selon l'état du lead.
+# Combien de fois et quand le bot relance selon l'Ã©tat du lead.
 followups:
-  # Intéressé / demande d'info SANS RDV calé → on relance pour obtenir le RDV
+  # IntÃ©ressÃ© / demande d'info SANS RDV calÃ© â†’ on relance pour obtenir le RDV
   interested_awaiting_booking:
-    bump_after_days: [2, 5]   # relance #1 à J+2, #2 à J+5
-    then: "nurture"           # après, on arrête et on archive en nurture long terme
-  # Objection timing avec date mentionnée → recontact à la date
+    bump_after_days: [2, 5]   # relance #1 Ã  J+2, #2 Ã  J+5
+    then: "nurture"           # aprÃ¨s, on arrÃªte et on archive en nurture long terme
+  # Objection timing avec date mentionnÃ©e â†’ recontact Ã  la date
   objection_timing:
     recontact: "date_mentioned_or_3_months"
-  # Pas intéressé / déjà équipé / mauvaise personne → 1 seule réponse, pas de relance
+  # Pas intÃ©ressÃ© / dÃ©jÃ  Ã©quipÃ© / mauvaise personne â†’ 1 seule rÃ©ponse, pas de relance
   one_shot_no_bump: ["not_interested_polite", "objection_already_have_solution", "wrong_person_redirect"]
-  # RDV confirmé → 1 accusé "c'est noté" puis STOP total
+  # RDV confirmÃ© â†’ 1 accusÃ© "c'est notÃ©" puis STOP total
   meeting_confirmed: "ack_then_stop"
+
+# --- Envoi (anti-grillage + montÃ©e en charge) ---
+sending:
+  # N'envoyer que pendant ces heures (sinon le draft attend le prochain run en heures ouvrÃ©es).
+  # Ã‰vite les rÃ©ponses Ã  3h du matin = signature de robot.
+  allowed_hours: [9, 19]              # envoi autorisÃ© de 9h Ã  19h
+  allowed_weekdays: [0, 1, 2, 3, 4]   # lundi=0 ... vendredi=4 (pas le week-end)
+  # Ne JAMAIS rÃ©pondre instantanÃ©ment : attendre que le reply ait "vieilli" un peu.
+  # (un humain ne rÃ©pond pas en 3 secondes). RÃ©glÃ© en minutes, lÃ©gÃ¨rement randomisÃ©.
+  min_reply_age_minutes: 12
+  max_reply_age_jitter_minutes: 25    # Ã¢ge effectif = entre min et min+jitter (alÃ©atoire par prospect)
+  # Petit dÃ©lai alÃ©atoire entre 2 envois d'un mÃªme run (court, compatible Vercel).
+  inter_send_jitter_seconds: [3, 12]
+  # Plafond d'envois par exÃ©cution (sÃ©curitÃ© montÃ©e en charge).
+  max_sends_per_run: 25
+  # PROTECTION BACKLOG : ne traiter QUE les replies reÃ§us aprÃ¨s cette date.
+  # Mets la date/heure de mise en route pour ignorer tout ton historique dÃ©jÃ  gÃ©rÃ©.
+  # Format ISO. null = pas de filtre (dÃ©conseillÃ© en prod).
+  process_replies_since: "2026-05-20T23:20:03+02:00"
 
 # --- Logs ---
 
 logs:
   dir: "logs"
-  format: "jsonl"  # jsonl = un JSON par ligne, facile à grep
+  format: "jsonl"  # jsonl = un JSON par ligne, facile Ã  grep
