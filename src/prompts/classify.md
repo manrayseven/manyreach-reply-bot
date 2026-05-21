@@ -56,10 +56,18 @@ Champs spéciaux :
 - `language` : langue principale du reply.
 
 Champs RDV (remplis-les SURTOUT pour `meeting_confirmed`, sinon `null`) :
-- `confirmed_datetime` : si le prospect a proposé/accepté un créneau précis, résous-le en **ISO 8601 avec fuseau** (ex. "2026-05-26T14:00:00+02:00") en te basant sur la date de référence fournie. Si l'heure est ambiguë ou absente, `null`.
+- `confirmed_datetime` : ⚠️ RÈGLE STRICTE. Remplis-le UNIQUEMENT si le prospect énonce
+  EXPLICITEMENT une date ET une heure claires DANS CE message (ex. "mardi 26 mai à 14h",
+  "le 3 juin à 15h30", "demain 10h"). Résous en ISO 8601 avec fuseau (+02:00) d'après
+  la date de référence fournie.
+  **Mets `null` (ne devine JAMAIS) si** : le prospect dit juste "c'est bon", "je vous
+  attends", "ok ça marche", "parfait", fait référence à un RDV déjà convenu, accepte
+  sans répéter la date, ou ne donne pas explicitement jour+heure. Mieux vaut `null`
+  (Rudy cale à la main) qu'une date inventée qui crée un faux RDV dans l'agenda.
 - `contact_phone` : le numéro de téléphone sur lequel appeler le prospect (depuis le reply OU sa signature). Format brut tel qu'écrit. Sinon `null`.
 - `zoom_link` : si le prospect a donné SON propre lien de visio (Zoom/Meet/Teams), mets-le ici. Sinon `null`.
-- `offer_label` : label court de l'offre pitchée dans le cold mail, pour le titre de l'event agenda. Ex. "Cold Email", "Audit SEO", "Refonte site", "Audit digital". Déduis-le du cold mail.
+- `offer_label` : raison de l'appel = label court de l'offre pitchée dans le cold mail (ex. "Cold Email", "Audit SEO", "Refonte site", "Audit digital"). Déduis-le du cold mail. Si vraiment indéterminable → "échange".
+- `prospect_name` : prénom + nom du prospect, extrait de sa signature (ex. "Sarah Laroye"). Sinon le prénom seul si connu. Sinon `null`.
 
 ## Confidence guidance
 

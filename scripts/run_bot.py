@@ -273,34 +273,56 @@ def main() -> int:
             print(f"  !! find_free_slots a échoué : {e}")
             return [], None
 
-    def create_meeting_event(classification, reply, prospect, dry_run: bool) -> str | None:
-        """Create the Google Calendar event for a confirmed meeting.
+    def _clean_name(prospect) -> str | None:
+        """first_name du prospect, sauf s'il est corrompu (timestamps)."""
+        if not prospect or not prospect.first_name:
+            return None
+        fn = str(prospect.first_name)
+        # données corrompues côté ManyReach : firstName contient parfois un timestamp
+        if fn[:4].isdigit() or "-" in fn[:7] or ":" in fn:
+            return None
+        return fn
 
-        Title  : '14.00 Call <offre> avec <entreprise/prénom>'
-        Desc   : email / téléphone / zoom / site / entreprise.
-        Returns a human-readable result line (or a manual-todo note).
+    def create_meeting_event(classification, reply, prospect, dry_run: bool) -> str | None:
+        """Crée l'event Google Agenda UNIQUEMENT si une date+heure explicite a été
+        extraite. Sinon (date inventée/absente), on NE crée RIEN et on laisse Rudy
+        caler à la main via l'alerte — pour ne jamais poser un faux RDV.
         """
-        from datetime import datetime as _dt
+        from datetime import datetime as _dt, timedelta as _td, timezone as _tz
 
         from src.calendar_slots import build_meeting_description, build_meeting_title
 
         iso = classification.confirmed_datetime
+        # Nom lisible : nom extrait du reply > company > prénom (non corrompu) > email
         who = (
-            (prospect.company if prospect and prospect.company else None)
-            or (prospect.first_name if prospect and prospect.first_name else None)
+            classification.prospect_name
+            or (prospect.company if prospect and prospect.company else None)
+            or _clean_name(prospect)
             or reply.from_email
         )
-        offer = classification.offer_label or "RDV"
+        offer = classification.offer_label or "échange"
 
-        if not calendar_client or not iso:
+        # GARDE-FOU : pas de date explicite → on ne crée pas d'event (évite les faux RDV)
+        if not iso:
             return (
-                f"[RDV] à créer à la main (pas de date ISO extraite ou Calendar off) — "
-                f"créneau dit : {classification.key_phrase!r}"
+                "[RDV] Pas de date/heure explicite dans le message → AUCUN event créé "
+                f"(évite un faux RDV). À caler à la main. Message : {classification.key_phrase!r}"
             )
+        if not calendar_client:
+            return "[RDV] Calendar non connecté → à créer à la main"
         try:
             start = _dt.fromisoformat(iso)
+            if start.tzinfo is None:
+                start = start.replace(tzinfo=_tz.utc)
         except ValueError:
-            return f"[RDV] date non parsable ({iso!r}) — à créer à la main"
+            return f"[RDV] date non parsable ({iso!r}) → à créer à la main"
+
+        # GARDE-FOU : la date doit être dans le futur proche (pas passée, pas absurde)
+        now = _dt.now(_tz.utc)
+        if start < now - _td(hours=1):
+            return f"[RDV] date extraite dans le passé ({start.isoformat()}) → ignorée, à caler à la main"
+        if start > now + _td(days=60):
+            return f"[RDV] date extraite trop lointaine ({start.isoformat()}) → ignorée, à caler à la main"
 
         hhmm = start.strftime("%H.%M")
         title = f"{hhmm} {build_meeting_title(offer, who)}"
@@ -310,7 +332,7 @@ def main() -> int:
             zoom_link=classification.zoom_link,
             website=(prospect.website if prospect else None),
             company=(prospect.company if prospect else None),
-            notes=f"RDV pris automatiquement par le bot. Reply: {classification.key_phrase}",
+            notes=f"RDV pris automatiquement par le bot. Raison : {offer}. Message du prospect : {classification.key_phrase}",
         )
         if dry_run:
             return f"[DRY-RUN] créerait l'event '{title}' le {start.isoformat()}"

@@ -16,16 +16,22 @@ from pathlib import Path
 
 ALERT_EMAIL = os.environ.get("NOTIFY_EMAIL", "contact@webmarketing-conseil.fr")
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-ALERTS_DIR = PROJECT_ROOT / "alerts"
+# Sur Vercel le FS est en lecture seule sauf /tmp → on respecte LOG_DIR si défini.
+_ALERT_BASE = Path(os.environ.get("LOG_DIR")) if os.environ.get("LOG_DIR") else PROJECT_ROOT
+ALERTS_DIR = _ALERT_BASE / "alerts"
 
 
-def _write_local_alert(subject: str, body: str) -> Path:
-    ALERTS_DIR.mkdir(parents=True, exist_ok=True)
-    f = ALERTS_DIR / "meetings_to_review.txt"
-    ts = datetime.now(timezone.utc).isoformat()
-    with f.open("a", encoding="utf-8") as fh:
-        fh.write(f"\n{'=' * 60}\n[{ts}] {subject}\n{'-' * 60}\n{body}\n")
-    return f
+def _write_local_alert(subject: str, body: str) -> Path | None:
+    """Écrit une trace locale. Renvoie None si le FS est en lecture seule (Vercel)."""
+    try:
+        ALERTS_DIR.mkdir(parents=True, exist_ok=True)
+        f = ALERTS_DIR / "meetings_to_review.txt"
+        ts = datetime.now(timezone.utc).isoformat()
+        with f.open("a", encoding="utf-8") as fh:
+            fh.write(f"\n{'=' * 60}\n[{ts}] {subject}\n{'-' * 60}\n{body}\n")
+        return f
+    except OSError:
+        return None
 
 
 def _send_via_resend(subject: str, body_text: str) -> bool:
@@ -78,15 +84,16 @@ def send_meeting_alert(
         f"(Le draft de confirmation est en review dans le run du bot.)"
     )
 
-    # Always write the local alert (audit trail + zero-config fallback)
+    # Trace locale (audit) — peut échouer sur Vercel (FS read-only), pas grave
     local_path = _write_local_alert(subject, body)
+    local_note = f" (trace : {local_path.name})" if local_path else ""
 
     if dry_run:
-        return f"[DRY-RUN] Alerte RDV (non envoyée) — écrite dans {local_path.name}"
+        return f"[DRY-RUN] Alerte RDV (non envoyée){local_note}"
 
     if _send_via_resend(subject, body):
         return f"[EXEC] Alerte RDV envoyée par email à {ALERT_EMAIL}"
     return (
-        f"[EXEC] Alerte RDV écrite dans {local_path.name} "
-        f"(email non configuré — ajoute RESEND_API_KEY dans .env pour l'envoi auto)"
+        f"[EXEC] Alerte RDV NON envoyée par email (RESEND_API_KEY manquant){local_note} "
+        f"— crée un compte resend.com et ajoute la clé pour activer l'email"
     )

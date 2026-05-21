@@ -46,6 +46,7 @@ class Classification:
     contact_phone: str | None = None       # phone to call the prospect on
     zoom_link: str | None = None           # prospect's own video link if given
     offer_label: str | None = None         # short label for the event title
+    prospect_name: str | None = None       # name extracted from the reply signature
 
     @classmethod
     def from_json(cls, data: dict) -> "Classification":
@@ -64,6 +65,7 @@ class Classification:
             contact_phone=data.get("contact_phone") or None,
             zoom_link=data.get("zoom_link") or None,
             offer_label=data.get("offer_label") or None,
+            prospect_name=data.get("prospect_name") or None,
         )
 
 
