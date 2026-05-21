@@ -336,6 +336,16 @@ def main() -> int:
         )
         if dry_run:
             return f"[DRY-RUN] créerait l'event '{title}' le {start.isoformat()}"
+        # IDEMPOTENCE : ne JAMAIS recréer un event déjà posé pour ce prospect à
+        # cette date (le même reply peut être re-traité à plusieurs runs du cron
+        # tant que l'accusé de réception n'est pas encore visible dans le thread).
+        exists = calendar_client.event_exists_for(
+            email=reply.from_email,
+            start=start,
+            tz_name=cal_cfg.get("timezone", "Europe/Paris"),
+        )
+        if exists is True:
+            return f"[RDV] event déjà existant pour {reply.from_email} le {start.isoformat()} — pas de doublon"
         try:
             calendar_client.create_event(
                 title=title,

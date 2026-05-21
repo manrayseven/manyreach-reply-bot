@@ -198,6 +198,48 @@ class CalendarClient:
             checked += 1
         return slots[:max_slots]
 
+    def event_exists_for(
+        self,
+        *,
+        email: str,
+        start: datetime,
+        tz_name: str = "Europe/Paris",
+        window_hours: int = 12,
+    ) -> bool | None:
+        """True if an event referencing this prospect email already exists near `start`.
+
+        Idempotence guard against duplicate meeting events: the bot can re-process
+        the same reply across several cron runs (e.g. while the ack-reply hasn't
+        yet propagated into the ManyReach thread, or when the reply is held in
+        review). The calendar is the source of truth, so we look there directly.
+
+        Returns True/False, or None if the lookup itself failed (caller decides).
+        """
+        tz = ZoneInfo(tz_name)
+        s = start.astimezone(tz)
+        time_min = (s - timedelta(hours=window_hours)).isoformat()
+        time_max = (s + timedelta(hours=window_hours)).isoformat()
+        try:
+            resp = (
+                self.service.events()
+                .list(
+                    calendarId=self.calendar_id,
+                    timeMin=time_min,
+                    timeMax=time_max,
+                    q=email,
+                    singleEvents=True,
+                    maxResults=50,
+                )
+                .execute()
+            )
+        except Exception:
+            return None
+        email_low = email.lower()
+        for ev in resp.get("items", []):
+            if email_low in (ev.get("description") or "").lower():
+                return True
+        return False
+
     def create_event(
         self,
         *,
