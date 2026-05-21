@@ -20,8 +20,24 @@ from typing import Any
 
 import httpx
 
-_URL = os.environ.get("KV_REST_API_URL") or os.environ.get("UPSTASH_REDIS_REST_URL")
-_TOKEN = os.environ.get("KV_REST_API_TOKEN") or os.environ.get("UPSTASH_REDIS_REST_TOKEN")
+
+def _find_env(*exact_names: str, suffix: str | None = None) -> str | None:
+    """Trouve une variable d'env par nom exact, sinon par suffixe (tolère
+    n'importe quel préfixe ajouté par l'intégration Upstash/Vercel, ex.
+    STORAGE_REST_API_URL, KV_REST_API_URL, UPSTASH_REDIS_REST_URL...)."""
+    for name in exact_names:
+        v = os.environ.get(name)
+        if v:
+            return v
+    if suffix:
+        for k, v in os.environ.items():
+            if k.endswith(suffix) and v and "READ_ONLY" not in k:
+                return v
+    return None
+
+
+_URL = _find_env("KV_REST_API_URL", "UPSTASH_REDIS_REST_URL", suffix="REST_API_URL")
+_TOKEN = _find_env("KV_REST_API_TOKEN", "UPSTASH_REDIS_REST_TOKEN", suffix="REST_API_TOKEN")
 
 ACTION_LOG_KEY = "bot:action_log"
 ENABLED_KEY = "bot:enabled"

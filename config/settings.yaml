@@ -11,6 +11,12 @@ default_dry_run: true
 # Le draft est gÃ©nÃ©rÃ©, mais reste en review.
 min_autosend_confidence: 0.92
 
+# Modèles Claude (modifiables ici quand de meilleurs sortent — Claude proposera
+# des upgrades qualité régulièrement). Classifier = rapide/éco, drafter = qualité.
+models:
+  classifier: "claude-haiku-4-5-20251001"
+  drafter: "claude-sonnet-4-6"
+
 # Comportement sur not_interested_polite.
 # Rudy a confirmÃ© : il rÃ©pond TOUJOURS (politesse + referral-ask + valeur), pas de silence.
 # Mettre Ã  true uniquement si tu veux override ce comportement par dÃ©faut.

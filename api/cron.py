@@ -31,8 +31,10 @@ class handler(BaseHTTPRequestHandler):
         try:
             import run_bot  # scripts/run_bot.py
 
-            # Live, important-only par défaut ; le cutoff backlog est dans settings/KV
-            sys.argv = ["run_bot", "--no-dry-run"]
+            # Live. Limite à 6 replies/run pour rester sous la limite 60s de Vercel Hobby
+            # (le cron tourne souvent, donc le backlog se vide sur plusieurs passages).
+            limit = os.environ.get("CRON_LIMIT", "6")
+            sys.argv = ["run_bot", "--no-dry-run", "--limit", limit]
             code = run_bot.main()
             result["exit_code"] = code
         except SystemExit as e:

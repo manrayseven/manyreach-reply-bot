@@ -27,78 +27,151 @@ def _check_key(query: dict) -> bool:
     return query.get("key", [""])[0] == key
 
 
+_INTENT_FR = {
+    "meeting_confirmed": ("RDV confirmé", "#15803d"),
+    "interested_warm": ("Intéressé chaud", "#16a34a"),
+    "interested_lukewarm": ("Intéressé tiède", "#65a30d"),
+    "ask_more_info": ("Demande d'infos", "#0891b2"),
+    "objection_price": ("Objection prix", "#d97706"),
+    "objection_timing": ("Pas le moment", "#d97706"),
+    "objection_already_have_solution": ("Déjà équipé", "#b45309"),
+    "wrong_person_redirect": ("Mauvaise personne", "#7c3aed"),
+    "not_interested_polite": ("Pas intéressé", "#dc2626"),
+    "unsubscribe": ("Désinscription", "#991b1b"),
+    "hostile": ("Hostile", "#991b1b"),
+    "bounce_or_auto": ("Auto/Bounce", "#94a3b8"),
+    "mailinblack_pending": ("MailInBlack", "#a855f7"),
+}
+
+
+def _time_fr(iso: str) -> str:
+    try:
+        dt = datetime.fromisoformat(iso)
+        return dt.strftime("%d/%m %H:%M")
+    except Exception:
+        return iso[:16].replace("T", " ")
+
+
 def _render() -> str:
     enabled = kvstore.is_enabled()
-    last_run = kvstore.get_last_run() or "jamais"
-    actions = kvstore.recent_actions(40)
+    last_run = kvstore.get_last_run()
+    last_run_fr = _time_fr(last_run) if last_run else "jamais"
+    actions = kvstore.recent_actions(60)  # déjà du + récent au + ancien (LPUSH)
     ov = kvstore.get_settings_overrides()
     sending = ov.get("sending", {})
     hours = sending.get("allowed_hours", [9, 19])
     min_age = sending.get("min_reply_age_minutes", 12)
 
-    rows = ""
+    # Feed conversationnel : message reçu -> réponse du bot, du + récent au + ancien
+    feed = ""
+    shown = 0
     for a in actions:
-        when = a.get("at", "")[:16].replace("T", " ")
-        intent = html.escape(str(a.get("intent", "")))
+        intent = a.get("intent", "")
+        if intent in ("bounce_or_auto",):  # on masque le bruit pur
+            continue
+        label, color = _INTENT_FR.get(intent, (intent, "#64748b"))
+        when = _time_fr(a.get("at", ""))
         frm = html.escape(str(a.get("from", "")))
-        sent = "ENVOYÉ" if a.get("auto_send") else ("GARDÉ" if a.get("held") else "review")
-        acts = html.escape(" | ".join(a.get("actions", []))[:160])
-        rows += f"<tr><td>{when}</td><td>{frm}</td><td>{intent}</td><td>{sent}</td><td class='small'>{acts}</td></tr>"
-    if not rows:
-        rows = "<tr><td colspan=5 class='small'>Aucune action encore (le bot n'a rien traité, ou KV vide).</td></tr>"
+        subj = html.escape(str(a.get("subject", "")))
+        status = html.escape(str(a.get("status", "")))
+        reply_txt = html.escape(str(a.get("reply", ""))).replace("\n", "<br>")
+        resp_txt = html.escape(str(a.get("response", ""))).replace("\n", "<br>")
+        status_bg = "#dcfce7" if "envoyé" in status else ("#fef9c3" if "relire" in status or "gardé" in status else "#f1f5f9")
+        shown += 1
+        feed += f"""
+        <div class="msg">
+          <div class="msg-head">
+            <span class="pill" style="background:{color}">{html.escape(label)}</span>
+            <span class="who">{frm}</span>
+            <span class="when">{when}</span>
+            <span class="status" style="background:{status_bg}">{status}</span>
+          </div>
+          <div class="subj">{subj}</div>
+          <div class="bubble in"><div class="lbl">Réponse du prospect</div>{reply_txt or '<i>(vide)</i>'}</div>
+          <div class="bubble out"><div class="lbl">Réponse envoyée par le bot</div>{resp_txt or '<i>(aucune)</i>'}</div>
+        </div>"""
+    if not feed:
+        feed = "<div class='empty'>Aucun message traité pour l'instant. Dès que le bot tournera (cron-job.org), les conversations s'afficheront ici, de la plus récente à la plus ancienne.</div>"
 
     status_color = "#16a34a" if enabled else "#dc2626"
     status_txt = "EN MARCHE" if enabled else "EN PAUSE"
-    toggle_label = "⏸️ Mettre en pause" if enabled else "▶️ Réactiver"
+    toggle_label = "Mettre en pause" if enabled else "Réactiver le bot"
     toggle_val = "0" if enabled else "1"
     keyq = os.environ.get("DASHBOARD_KEY")
     keyparam = f"?key={keyq}" if keyq else ""
 
     return f"""<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ManyReach Bot — Dashboard</title>
+<title>ManyReach Bot — Pilotage</title>
 <style>
- body{{font-family:-apple-system,Segoe UI,Roboto,sans-serif;background:#f1f5f9;margin:0;padding:24px;color:#0f172a}}
- h1{{font-size:22px;margin:0 0 4px}} .muted{{color:#64748b;font-size:13px}}
- .card{{background:#fff;border-radius:10px;padding:18px 20px;margin:16px 0;box-shadow:0 1px 3px rgba(0,0,0,.08);max-width:920px}}
- .badge{{display:inline-block;color:#fff;padding:4px 12px;border-radius:6px;font-weight:600}}
- table{{width:100%;border-collapse:collapse;font-size:13px}} th,td{{text-align:left;padding:7px 8px;border-bottom:1px solid #eef2f7}}
- th{{color:#64748b;font-weight:600}} .small{{color:#64748b;font-size:12px}}
- button,input[type=submit]{{cursor:pointer;border:0;border-radius:7px;padding:10px 16px;font-size:14px;font-weight:600}}
- .btn-stop{{background:{status_color};color:#fff}} .btn-save{{background:#0891b2;color:#fff}}
- input[type=number]{{width:70px;padding:6px;border:1px solid #cbd5e1;border-radius:6px}}
- label{{font-size:13px;color:#334155;margin-right:14px}}
+ :root{{--bg:#0f172a;--card:#fff;--ink:#0f172a;--muted:#64748b;--line:#e2e8f0;--brand:#4f46e5;}}
+ *{{box-sizing:border-box}}
+ body{{font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;background:#eef2f7;margin:0;color:var(--ink);}}
+ .top{{background:linear-gradient(120deg,#4f46e5,#7c3aed);color:#fff;padding:22px 28px;}}
+ .top h1{{margin:0;font-size:20px;letter-spacing:.2px}}
+ .top .sub{{opacity:.85;font-size:13px;margin-top:3px}}
+ .wrap{{max-width:880px;margin:0 auto;padding:20px 16px 60px}}
+ .card{{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 20px;margin:16px 0;box-shadow:0 1px 2px rgba(15,23,42,.04)}}
+ .statusline{{display:flex;align-items:center;gap:14px;flex-wrap:wrap}}
+ .dot{{width:11px;height:11px;border-radius:50%;display:inline-block;background:{status_color};box-shadow:0 0 0 4px {status_color}22}}
+ .stxt{{font-weight:700;font-size:15px}}
+ button,input[type=submit]{{cursor:pointer;border:0;border-radius:9px;padding:10px 18px;font-size:14px;font-weight:600;transition:.15s}}
+ button:hover{{opacity:.9}}
+ .btn-toggle{{background:{status_color};color:#fff;margin-left:auto}}
+ .btn-save{{background:var(--brand);color:#fff}}
+ h3{{font-size:14px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin:0 0 14px}}
+ .fields{{display:flex;gap:18px;flex-wrap:wrap;align-items:flex-end}}
+ .field label{{display:block;font-size:12px;color:var(--muted);margin-bottom:5px}}
+ input[type=number]{{width:90px;padding:9px;border:1px solid #cbd5e1;border-radius:9px;font-size:14px}}
+ .hint{{color:var(--muted);font-size:12px;margin-top:12px}}
+ .msg{{border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:14px}}
+ .msg-head{{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:4px}}
+ .pill{{color:#fff;font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px}}
+ .who{{font-weight:600;font-size:13px}} .when{{color:var(--muted);font-size:12px}}
+ .status{{font-size:11px;padding:3px 9px;border-radius:20px;color:#334155;margin-left:auto}}
+ .subj{{color:var(--muted);font-size:12px;margin:2px 0 10px}}
+ .bubble{{border-radius:10px;padding:10px 13px;font-size:14px;line-height:1.5;margin-top:6px}}
+ .bubble .lbl{{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-bottom:4px}}
+ .bubble.in{{background:#eff6ff;border-left:3px solid #3b82f6}}
+ .bubble.out{{background:#f0fdf4;border-left:3px solid #16a34a}}
+ .empty{{color:var(--muted);text-align:center;padding:30px 10px;font-size:14px}}
 </style></head><body>
-<h1>ManyReach Reply Bot</h1>
-<div class="muted">Dashboard de pilotage · dernier passage : {html.escape(last_run)}</div>
-
-<div class="card">
-  <span class="badge" style="background:{status_color}">{status_txt}</span>
-  <form method="POST" action="/{keyparam}" style="display:inline;margin-left:14px">
-    <input type="hidden" name="action" value="toggle">
-    <input type="hidden" name="enabled" value="{toggle_val}">
-    <button class="btn-stop" type="submit">{toggle_label}</button>
-  </form>
+<div class="top">
+  <h1>📬 ManyReach Reply Bot</h1>
+  <div class="sub">Pilotage en temps réel · dernier passage : {html.escape(last_run_fr)}</div>
 </div>
+<div class="wrap">
 
-<div class="card">
-  <h3>Réglages rapides</h3>
-  <form method="POST" action="/{keyparam}">
-    <input type="hidden" name="action" value="save_settings">
-    <label>Heure début envoi <input type="number" name="hour_start" value="{hours[0]}" min="0" max="23"></label>
-    <label>Heure fin envoi <input type="number" name="hour_end" value="{hours[1]}" min="0" max="23"></label>
-    <label>Délai mini avant réponse (min) <input type="number" name="min_age" value="{min_age}" min="0" max="240"></label>
-    <br><br><input class="btn-save" type="submit" value="Enregistrer">
-  </form>
-  <p class="small">Les réglages complets (voice, règles RDV, cadence) restent dans le code pour l'instant — éditables ici dans une prochaine version.</p>
-</div>
+  <div class="card">
+    <div class="statusline">
+      <span class="dot"></span><span class="stxt">{status_txt}</span>
+      <form method="POST" action="/{keyparam}" style="margin-left:auto">
+        <input type="hidden" name="action" value="toggle">
+        <input type="hidden" name="enabled" value="{toggle_val}">
+        <button class="btn-toggle" type="submit">{toggle_label}</button>
+      </form>
+    </div>
+  </div>
 
-<div class="card">
-  <h3>Suivi des actions ({len(actions)} dernières)</h3>
-  <table>
-    <tr><th>Quand</th><th>Prospect</th><th>Intent</th><th>Statut</th><th>Détail</th></tr>
-    {rows}
-  </table>
+  <div class="card">
+    <h3>Réglages rapides</h3>
+    <form method="POST" action="/{keyparam}">
+      <input type="hidden" name="action" value="save_settings">
+      <div class="fields">
+        <div class="field"><label>Début envoi (h)</label><input type="number" name="hour_start" value="{hours[0]}" min="0" max="23"></div>
+        <div class="field"><label>Fin envoi (h)</label><input type="number" name="hour_end" value="{hours[1]}" min="0" max="23"></div>
+        <div class="field"><label>Délai mini avant réponse (min)</label><input type="number" name="min_age" value="{min_age}" min="0" max="240"></div>
+        <input class="btn-save" type="submit" value="Enregistrer">
+      </div>
+    </form>
+    <div class="hint">Les réglages complets (voix, règles RDV, cadence) sont dans le code — éditables ici dans une prochaine version.</div>
+  </div>
+
+  <div class="card">
+    <h3>Conversations traitées ({shown}) — de la plus récente à la plus ancienne</h3>
+    {feed}
+  </div>
+
 </div>
 </body></html>"""
 

@@ -24,6 +24,7 @@ import argparse
 import json
 import os
 import random
+import re
 import sys
 import textwrap
 import time
@@ -201,8 +202,9 @@ def main() -> int:
     print(f"Already-processed message IDs: {len(processed_ids)}")
     print()
 
-    classifier = Classifier()
-    drafter = Drafter()
+    _models = settings.get("models", {}) or {}
+    classifier = Classifier(model=_models["classifier"]) if _models.get("classifier") else Classifier()
+    drafter = Drafter(model=_models["drafter"]) if _models.get("drafter") else Drafter()
     tag_cache: dict[str, int] = {}
 
     # --- Anti-grillage / timing guardrails ---
@@ -589,13 +591,22 @@ def main() -> int:
 
                 # Journal cloud pour le dashboard (no-op si pas de KV)
                 if kvstore and kvstore.kv_available():
+                    _resp_txt = ""
+                    if draft and draft.body_html:
+                        _resp_txt = re.sub(r"<br\s*/?>", "\n", draft.body_html)
+                        _resp_txt = re.sub(r"</p>", "\n", _resp_txt)
+                        _resp_txt = re.sub(r"<[^>]+>", "", _resp_txt).strip()
+                    _status = "envoyé" if (plan.auto_send and not dry_run) else (
+                        "gardé (hors heures)" if send_held else "à relire"
+                    )
                     kvstore.log_action({
                         "at": now_utc.isoformat(),
                         "from": reply.from_email,
+                        "subject": reply.subject,
                         "intent": classification.intent,
-                        "auto_send": plan.auto_send,
-                        "held": send_held,
-                        "actions": results,
+                        "status": _status,
+                        "reply": _trim_quoted_history(_strip_html(reply.body))[:700],
+                        "response": _resp_txt[:1800] if not draft.skip_send else "(pas de réponse — silencieux)",
                     })
 
                 # Ne pas marquer "traité" si l'envoi a été gardé pour plus tard

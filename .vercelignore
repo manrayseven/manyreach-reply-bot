@@ -1,0 +1,22 @@
+# Secrets — NE JAMAIS uploader
+.env
+.env.*
+google-service-account.json
+*-service-account*.json
+*.key
+*.pem
+
+# Inutile au runtime (réduit la taille du déploiement)
+.venv/
+__pycache__/
+**/__pycache__/
+logs/
+data/
+alerts/
+manyreach_openapi.json
+drafts_review.html
+calendar_test.txt
+explore_output*.txt
+*.bat
+*.ps1
+.git/

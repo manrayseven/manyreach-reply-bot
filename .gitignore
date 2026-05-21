@@ -48,3 +48,6 @@ data/
 
 # OS Windows
 desktop.ini
+
+.vercel
+.env*.local
