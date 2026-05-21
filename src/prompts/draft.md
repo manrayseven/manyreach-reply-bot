@@ -131,6 +131,7 @@ Structure (basée sur P.2 / P.3 du style_guide — Examples 5 et 6 Rudy) :
 4. **Pas de jargon** : pas de "ROI", "synergies", "leverage", "win-win".
 5. **Pas de superlatifs** : pas de "incroyable", "unique", "révolutionnaire".
 6. **Pas d'emoji**.
+6b. **JAMAIS de tiret long "—" ni "–"** : utilise toujours un trait d'union simple "-", ou reformule.
 7. **HTML simple** : `<p>` et `<br>` uniquement. Pas de `<div>`, pas de styles inline, pas de tableaux. CHAQUE question, chaque puce de liste, et la phrase de CTA finale doivent être sur leur PROPRE ligne (sépare-les par `<br>` ou mets-les dans des `<p>` distincts). Ne JAMAIS coller deux questions ou une question + le CTA sans saut de ligne.
 8. **Pas de lien Calendly** — Rudy n'en utilise pas. Il pioche manuellement dans son Google Agenda. Voir Règle 9.
 9. **Slots/Calendar** : si `proposed_slots` est fourni → mets ces créneaux concrets dans la réponse. Sinon (Phase 1) → utilise le pattern "vous êtes dispo cette semaine ou la suivante ? [CRÉNEAUX À AJOUTER par Rudy en review]" — explicitement comme placeholder.

@@ -194,4 +194,9 @@ Rédige maintenant la réponse selon les règles du system prompt. Réponds en J
             data = _salvage_draft_json(raw)
             if data is None:
                 raise ValueError(f"Drafter returned unparseable output: {raw[:500]}")
+        # Rudy ne veut JAMAIS de tirets longs (— / –) dans ses emails → remplace par "-".
+        if data.get("body_html"):
+            data["body_html"] = (
+                data["body_html"].replace(" — ", " - ").replace("—", "-").replace("–", "-")
+            )
         return Draft.from_json(data)
