@@ -38,16 +38,19 @@ INTENT_PROSPECT_UPDATE: dict[str, tuple[str | None, bool | None, list[str]]] = {
 # to validate draft quality on 50-100 real cases. Once trust is established,
 # re-enable auto-send progressively on the safe intents (wrong_person_redirect,
 # objection_timing, not_interested_polite) by uncommenting them below.
+# 100% AUTONOME (validé par Rudy 2026-05-21) : le bot envoie TOUS les intents
+# "réponse". Garde-fous conservés : confidence >= min_autosend_confidence (sinon
+# review), et interested_warm n'auto-send que si des créneaux Calendar sont dispo.
 AUTOSEND_ELIGIBLE = frozenset({
-    # SAFE intents — low stakes, the bot sends on its own:
-    "not_interested_polite",            # politesse + referral, faible enjeu
-    "objection_already_have_solution",  # reframe ponctuel, pas de RDV
-    "wrong_person_redirect",            # demande le bon contact
-    "objection_timing",                 # poli, on note pour plus tard
-    # REVIEW (NON auto — enjeu argent/RDV, Rudy valide) :
-    #   interested_warm, interested_lukewarm, ask_more_info  → mènent à un meeting
-    #   meeting_confirmed  → crée un event, à fiabiliser d'abord
-    #   objection_price    → négociation, mieux vaut Rudy
+    "not_interested_polite",
+    "objection_already_have_solution",
+    "wrong_person_redirect",
+    "objection_timing",
+    "objection_price",
+    "interested_lukewarm",
+    "ask_more_info",
+    "interested_warm",     # + condition créneaux Calendar (voir has_calendar_slots)
+    "meeting_confirmed",   # envoie "c'est noté" + crée l'event si date explicite
 })
 
 # Intents that NEVER send a reply (silent action only)

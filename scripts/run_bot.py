@@ -499,10 +499,21 @@ def main() -> int:
 
                 # Compute concrete calendar slots for meeting-leading intents
                 slot_objs, slot_strs = [], None
+                company_context = ""
                 if classification.intent in SLOT_INTENTS:
                     slot_objs, slot_strs = compute_slots(reply.from_email)
                     if slot_strs:
                         print(f"  SLOTS proposables : {', '.join(slot_strs)}")
+                    # Personnalisation : on scanne le SITE du prospect (uniquement pour
+                    # les prospects chauds → coût tokens minime, et seulement si site connu).
+                    if prospect and prospect.website:
+                        try:
+                            from src.web_context import fetch_company_context
+                            company_context = fetch_company_context(prospect.website)
+                            if company_context:
+                                print(f"  CONTEXTE site récupéré ({len(company_context)} car.)")
+                        except Exception as e:
+                            print(f"  !! fetch site échoué : {e}")
 
                 # Draft
                 draft = drafter.draft(
@@ -513,6 +524,7 @@ def main() -> int:
                     style_guide=style_guide,
                     proposed_slots=slot_strs,
                     silent_on_not_interested=silent_on_not_interested,
+                    company_context=company_context,
                 )
 
                 # If the drafter actually used the slots, reserve them (soft-hold)

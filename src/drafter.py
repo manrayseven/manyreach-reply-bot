@@ -94,6 +94,7 @@ class Drafter:
         style_guide: str = "",
         proposed_slots: list[str] | None = None,
         silent_on_not_interested: bool = True,
+        company_context: str = "",
     ) -> Draft:
         """Generate a reply draft.
 
@@ -159,6 +160,18 @@ Subject: {reply.subject}
 
 ### Config runtime
 - silent_on_not_interested: {silent_on_not_interested}
+
+### Contexte entreprise (extrait du SITE WEB du prospect — pour personnaliser)
+{company_context or '(pas de contexte site — réponds sans, ne fais référence à rien d''extérieur)'}
+
+RÈGLES sur ce contexte (anti-cringe / anti-"IA") :
+- Utilise-le SEULEMENT s'il apporte un détail VRAIMENT pertinent et exact (ex. leur secteur,
+  une spécificité claire de leur activité). Sinon, ignore-le complètement.
+- UN seul détail intégré naturellement, jamais 2-3 (ça sonne robot/stalker).
+- Ne dis JAMAIS "j'ai visité votre site / scanné votre profil". Glisse le détail
+  naturellement comme si tu connaissais le secteur.
+- ZÉRO invention : si tu n'es pas sûr à 100% d'un fait, ne le mentionne pas.
+- En cas de doute, reste générique : mieux vaut sobre que faux.
 
 ### Style guide (voice + entités + training pairs — parse ce dont tu as besoin)
 {style_guide or '(no style guide provided)'}
