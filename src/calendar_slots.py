@@ -42,22 +42,38 @@ class Slot:
 
 class CalendarClient:
     def __init__(self, sa_json_path: str | None = None, calendar_id: str | None = None):
-        sa_path = sa_json_path or os.environ.get(
-            "GOOGLE_SERVICE_ACCOUNT_JSON", "google-service-account.json"
-        )
-        if not Path(sa_path).exists():
-            raise RuntimeError(
-                f"Service account JSON introuvable : {sa_path}. "
-                "Voir GUIDE-GOOGLE-CALENDAR.md"
-            )
         self.calendar_id = calendar_id or os.environ.get("GOOGLE_CALENDAR_ID")
         if not self.calendar_id:
-            raise RuntimeError("GOOGLE_CALENDAR_ID non défini dans .env")
+            raise RuntimeError("GOOGLE_CALENDAR_ID non défini")
 
         from google.oauth2 import service_account
         from googleapiclient.discovery import build
 
-        creds = service_account.Credentials.from_service_account_file(sa_path, scopes=SCOPES)
+        # Deux sources possibles pour la clé du compte de service :
+        #  - LOCAL : un fichier (GOOGLE_SERVICE_ACCOUNT_JSON = chemin)
+        #  - VERCEL/cloud : le JSON entier (ou base64) dans une variable d'env
+        #    GOOGLE_SERVICE_ACCOUNT_INFO (pas de fichier sur disque en serverless)
+        import json as _json
+
+        sa_info_env = os.environ.get("GOOGLE_SERVICE_ACCOUNT_INFO")
+        if sa_info_env:
+            raw = sa_info_env.strip()
+            if not raw.startswith("{"):
+                import base64
+                raw = base64.b64decode(raw).decode("utf-8")
+            creds = service_account.Credentials.from_service_account_info(
+                _json.loads(raw), scopes=SCOPES
+            )
+        else:
+            sa_path = sa_json_path or os.environ.get(
+                "GOOGLE_SERVICE_ACCOUNT_JSON", "google-service-account.json"
+            )
+            if not Path(sa_path).exists():
+                raise RuntimeError(
+                    f"Service account introuvable : ni GOOGLE_SERVICE_ACCOUNT_INFO "
+                    f"(env) ni le fichier {sa_path}. Voir GUIDE-GOOGLE-CALENDAR.md"
+                )
+            creds = service_account.Credentials.from_service_account_file(sa_path, scopes=SCOPES)
 
         # Force httplib2 (used by the Google client) to verify TLS against the
         # certifi CA bundle. On Windows, Python's default SSL store often can't
