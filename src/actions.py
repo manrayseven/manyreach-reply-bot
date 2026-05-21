@@ -229,6 +229,13 @@ def plan_actions(
         and classification.confidence >= min_autosend_confidence
         and bool(draft.body_html)
     )
+    # meeting_confirmed = simple accusé "c'est noté, je vous recontacte au [num]
+    # à [heure] pile" → on l'envoie TOUJOURS dès qu'il y a un body, sans gate de
+    # confidence (intent à très faible risque, et c'est ce que le prospect attend).
+    # Bonus crucial : garantir cet envoi déclenche l'idempotence (un Sent apparaît
+    # dans le thread) → plus de re-traitement à chaque run → plus de doublons d'event.
+    if intent == "meeting_confirmed":
+        can_autosend = bool(draft.body_html)
     # Extra rule: interested_warm only auto-sends when we actually have calendar slots
     if intent == "interested_warm" and not has_calendar_slots:
         can_autosend = False

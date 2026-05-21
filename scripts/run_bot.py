@@ -222,7 +222,15 @@ def main() -> int:
     def send_window_open(when: datetime) -> bool:
         hours = send_cfg.get("allowed_hours", [9, 19])
         days = send_cfg.get("allowed_weekdays", [0, 1, 2, 3, 4])
-        local = when.astimezone()
+        # IMPORTANT : on raisonne en heure de PARIS, pas en heure serveur. Sur
+        # Vercel le serveur tourne en UTC → .astimezone() sans tz donnerait 9-19
+        # UTC = 11h-21h Paris (décalage de 2h). On force donc le fuseau configuré.
+        tz_name = (settings.get("calendar", {}) or {}).get("timezone", "Europe/Paris")
+        try:
+            from zoneinfo import ZoneInfo
+            local = when.astimezone(ZoneInfo(tz_name))
+        except Exception:
+            local = when.astimezone()
         return local.weekday() in days and hours[0] <= local.hour < hours[1]
 
     def reply_old_enough(reply, when: datetime) -> bool:
