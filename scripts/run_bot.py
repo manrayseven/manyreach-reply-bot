@@ -448,12 +448,18 @@ def main() -> int:
                 except Exception as e:
                     print(f"  !! find_prospect_by_email failed: {e}")
 
+                previous_sent_text = ""
                 if prospect is not None:
                     try:
                         thread = mr.get_prospect_thread(prospect.prospect_id)
                         sent_msgs = [m for m in thread if m.type in ("Sent", "SentManual")]
                         if sent_msgs:
                             original_outreach = sent_msgs[0]
+                            # Le DERNIER message qu'on a envoyé avant ce reply
+                            # (peut contenir les créneaux proposés → résolution "ok mardi").
+                            prior = [m for m in sent_msgs if m.created_at <= reply.created_at]
+                            last_sent = (prior or sent_msgs)[-1]
+                            previous_sent_text = _trim_quoted_history(_strip_html(last_sent.body), 1500)
                     except Exception as e:
                         print(f"  !! get_prospect_thread failed: {e}")
 
@@ -475,7 +481,11 @@ def main() -> int:
                         continue
 
                 # Classify
-                classification = classifier.classify(reply, original_outreach=original_outreach)
+                classification = classifier.classify(
+                    reply,
+                    original_outreach=original_outreach,
+                    previous_message=previous_sent_text,
+                )
                 print(
                     f"  CLASSIFIED  intent={classification.intent}  "
                     f"conf={classification.confidence:.2f}  "

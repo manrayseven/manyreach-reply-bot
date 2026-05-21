@@ -182,7 +182,9 @@ def plan_actions(
                     ),
                 )
             )
-        for tag_title in tags:
+        # Tag universel "bot:traité" : permet à Rudy de filtrer dans ManyReach
+        # tout ce que le bot a géré (la version "lu/gris" que l'API n'expose pas).
+        for tag_title in [*tags, "bot:traité"]:
             plan.actions.append(
                 PlannedAction(
                     kind="add_tag",

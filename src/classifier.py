@@ -130,6 +130,7 @@ class Classifier:
         self,
         reply: Message,
         original_outreach: Message | None = None,
+        previous_message: str = "",
     ) -> Classification:
         clean_reply = _trim_quoted_history(_strip_html(reply.body))
         original_text = ""
@@ -142,6 +143,16 @@ class Classifier:
         now_ref = reply.created_at.astimezone() if reply.created_at else datetime.now()
         now_str = now_ref.strftime("%A %d %B %Y %H:%M (%z)")
 
+        prev_block = ""
+        if previous_message:
+            prev_block = (
+                f"## DERNIER message qu'on a envoyé au prospect (juste avant son reply)\n"
+                f"(Si le prospect ACCEPTE/valide un créneau proposé ici — ex. 'ok mardi', "
+                f"'le 1er créneau', 'ça marche pour 14h' — résous confirmed_datetime au "
+                f"créneau EXACT proposé ci-dessous.)\n"
+                f"---\n{previous_message[:1500]}\n\n"
+            )
+
         user_content = (
             f"## Date/heure de référence (pour résoudre les dates relatives)\n"
             f"Le reply a été reçu le : {now_str}\n"
@@ -151,6 +162,7 @@ class Classifier:
             f"From: {original_outreach.from_email if original_outreach else '(unknown)'}\n"
             f"---\n"
             f"{original_text or '(non disponible)'}\n\n"
+            f"{prev_block}"
             f"## Reply reçu\n"
             f"From: {reply.from_email}\n"
             f"Subject: {reply.subject}\n"
