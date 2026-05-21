@@ -145,6 +145,25 @@ def main() -> int:
     args = parser.parse_args()
 
     settings = load_settings(args.settings)
+
+    # État cloud (Vercel KV) — no-op si pas de KV configurée (local).
+    try:
+        from src import kvstore
+        if kvstore.kv_available():
+            if not kvstore.is_enabled():
+                print("Bot EN PAUSE (bouton dashboard) — rien à faire.")
+                return 0
+            # Réglages édités via le dashboard : overlay sur settings.yaml
+            overrides = kvstore.get_settings_overrides()
+            for k, v in overrides.items():
+                if isinstance(v, dict) and isinstance(settings.get(k), dict):
+                    settings[k].update(v)
+                else:
+                    settings[k] = v
+    except Exception as _e:
+        print(f"(KV non disponible : {_e})")
+        kvstore = None  # type: ignore
+
     dry_run = not args.no_dry_run
     limit = args.limit if args.limit is not None else settings.get("limit_per_run")
     campaign_id = args.campaign or settings.get("campaign_filter")
@@ -156,7 +175,9 @@ def main() -> int:
 
     style_guide = load_style_guide(args.training)
 
-    logs_dir = PROJECT_ROOT / settings.get("logs", {}).get("dir", "logs")
+    # LOG_DIR env permet d'écrire ailleurs (ex. /tmp sur Vercel, FS read-only).
+    log_dir_env = os.environ.get("LOG_DIR")
+    logs_dir = Path(log_dir_env) if log_dir_env else PROJECT_ROOT / settings.get("logs", {}).get("dir", "logs")
     logs_dir.mkdir(parents=True, exist_ok=True)
     run_ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
     log_file = logs_dir / f"run_{run_ts}.jsonl"
@@ -566,6 +587,17 @@ def main() -> int:
                 log_entry["actions"] = results
                 logf.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
 
+                # Journal cloud pour le dashboard (no-op si pas de KV)
+                if kvstore and kvstore.kv_available():
+                    kvstore.log_action({
+                        "at": now_utc.isoformat(),
+                        "from": reply.from_email,
+                        "intent": classification.intent,
+                        "auto_send": plan.auto_send,
+                        "held": send_held,
+                        "actions": results,
+                    })
+
                 # Ne pas marquer "traité" si l'envoi a été gardé pour plus tard
                 # (hors heures / plafond) → il sera réessayé au prochain run.
                 if not dry_run and not send_held:
@@ -578,6 +610,9 @@ def main() -> int:
                 traceback.print_exc()
                 log_entry["error"] = repr(e)
                 logf.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
+
+    if kvstore and kvstore.kv_available():
+        kvstore.set_last_run(datetime.now(timezone.utc).isoformat())
 
     print()
     print("─" * 80)
