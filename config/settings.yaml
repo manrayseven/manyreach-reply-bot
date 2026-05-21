@@ -95,7 +95,7 @@ sending:
   # PROTECTION BACKLOG : ne traiter QUE les replies reÃ§us aprÃ¨s cette date.
   # Mets la date/heure de mise en route pour ignorer tout ton historique dÃ©jÃ  gÃ©rÃ©.
   # Format ISO. null = pas de filtre (dÃ©conseillÃ© en prod).
-  process_replies_since: "2026-05-21T22:20:29+02:00"
+  process_replies_since: "2026-05-22T00:00:00+02:00"
 
 # --- Logs ---
 
