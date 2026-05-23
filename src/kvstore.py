@@ -136,6 +136,18 @@ def mark_held_seen(message_id: str) -> bool:
     return res is None  # null = NX a échoué = déjà vu
 
 
+def peek_held_seen(message_id: str) -> bool:
+    """Comme mark_held_seen mais SANS poser le flag : juste lecture.
+
+    Utilisé en TOUT DÉBUT de boucle pour décider d'écarter un reply (économie
+    de tokens) avant même de payer le find_prospect + classifier. Renvoie True
+    si le flag existe déjà (= reply déjà gardé précédemment).
+    """
+    if not kv_available():
+        return False
+    return _cmd("GET", f"bot:held_seen:{message_id}") is not None
+
+
 def clear_held_seen(message_id: str) -> None:
     """À appeler quand le reply est finalement envoyé / traité (pour libérer)."""
     if not kv_available():

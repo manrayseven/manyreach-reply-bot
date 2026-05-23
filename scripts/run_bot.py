@@ -372,7 +372,8 @@ def main() -> int:
         except Exception as e:
             return f"[RDV] échec création event ({e}) — à créer à la main"
 
-    processed_count = 0
+    processed_count = 0          # total iterations (pour stats)
+    heavy_count = 0              # iterations "lourdes" (draft+send) — c'est ELLES qui consomment le quota
     skipped_count = 0
     error_count = 0
     mailinblack_pending: list[dict] = []
@@ -388,7 +389,10 @@ def main() -> int:
             confirmed_statuses=confirmed_statuses,
             email_from=args.only_email,
         ):
-            if limit and processed_count >= limit:
+            # Le quota du cron protège du timeout Vercel — il ne porte QUE sur les
+            # itérations "lourdes" (draft+send Sonnet). Les itérations "cheap"
+            # (defer, silent, déjà-handled) sont quasi-gratuites en temps et tokens.
+            if limit and heavy_count >= limit:
                 break
             if reply.message_id in processed_ids:
                 skipped_count += 1
@@ -414,6 +418,23 @@ def main() -> int:
             if backlog_cutoff and reply.created_at < backlog_cutoff and not args.only_email:
                 print("  >> Antérieur à la date de mise en route — ignoré (backlog)")
                 skipped_count += 1
+                continue
+
+            # === PRÉ-SKIP CHEAP : reply déjà 'gardé' la nuit ET fenêtre toujours
+            # fermée → on saute AVANT même de payer find_prospect + classifier.
+            # Économie majeure de tokens Haiku quand le backlog nocturne s'accumule.
+            # Quand la fenêtre s'ouvre, send_window_open=True → cette branche est
+            # ignorée → traitement complet redémarre normalement.
+            if (
+                not args.only_email
+                and not args.reprocess
+                and not send_window_open(now_utc)
+                and kvstore is not None
+                and kvstore.kv_available()
+                and kvstore.peek_held_seen(reply.message_id)
+            ):
+                print("  >> Reply déjà gardé, fenêtre toujours fermée → skip (0 token)")
+                processed_count += 1
                 continue
 
             # ANTI-RÉPONSE-INSTANTANÉE : laisser le reply "vieillir" un peu
@@ -772,6 +793,7 @@ def main() -> int:
                     # Libère le flag held_seen (KV) si on l'avait posé pendant la nuit
                     if kvstore and kvstore.kv_available():
                         kvstore.clear_held_seen(reply.message_id)
+                heavy_count += 1  # itération lourde (draft+send) consommée — c'est ELLE qui compte vis-à-vis du quota cron
                 processed_count += 1
 
             except Exception as e:

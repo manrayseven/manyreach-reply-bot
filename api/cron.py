@@ -31,9 +31,11 @@ class handler(BaseHTTPRequestHandler):
         try:
             import run_bot  # scripts/run_bot.py
 
-            # Live. Limite à 6 replies/run pour rester sous la limite 60s de Vercel Hobby
-            # (le cron tourne souvent, donc le backlog se vide sur plusieurs passages).
-            limit = os.environ.get("CRON_LIMIT", "6")
+            # Live. Quota = nombre d'itérations LOURDES (draft+send Sonnet) par run,
+            # pour rester sous la limite 60s de Vercel Hobby. Les replies "cheap"
+            # (déjà gardés, silencieux, déjà handled) ne comptent PAS contre ce quota
+            # — donc on peut le mettre confortablement haut sans risque de timeout.
+            limit = os.environ.get("CRON_LIMIT", "15")
             sys.argv = ["run_bot", "--no-dry-run", "--limit", limit]
             code = run_bot.main()
             result["exit_code"] = code
