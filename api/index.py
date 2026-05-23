@@ -52,15 +52,115 @@ def _time_fr(iso: str) -> str:
         return iso[:16].replace("T", " ")
 
 
+def _compute_stats(actions: list) -> dict:
+    """Aggrège l'historique du KV log pour donner une vue de perf simple.
+
+    Logique :
+    - On groupe par prospect (email).
+    - Chaque prospect a un "état effectif" = meeting_confirmed s'il a un
+      meeting_confirmed dans son historique, sinon son DERNIER intent.
+    - On compte : total prospects, RDV pris, intéressés en cours, conversion.
+    - On compte aussi : envoyés vs gardés vs en attente (vue activité brute).
+    """
+    by_email: dict[str, list] = {}
+    sent_count = held_count = pending_count = silent_count = 0
+    for a in actions:
+        email = (a.get("from") or "").lower().strip()
+        if email:
+            by_email.setdefault(email, []).append((
+                a.get("at", ""),
+                a.get("intent", ""),
+                a.get("status", ""),
+            ))
+        status = a.get("status", "")
+        if "envoyé" in status:
+            sent_count += 1
+        elif "attente" in status:
+            pending_count += 1
+        elif "gardé" in status or "relire" in status:
+            held_count += 1
+        elif "silencieux" in status or "silent" in status:
+            silent_count += 1
+
+    intent_counts: dict[str, int] = {}
+    meetings = 0
+    interested = 0
+    for email, items in by_email.items():
+        items.sort(key=lambda x: x[0], reverse=True)
+        has_meeting = any(i[1] == "meeting_confirmed" for i in items)
+        if has_meeting:
+            effective = "meeting_confirmed"
+            meetings += 1
+        else:
+            effective = items[0][1] if items else ""
+        intent_counts[effective] = intent_counts.get(effective, 0) + 1
+        if effective in ("interested_warm", "interested_lukewarm", "ask_more_info"):
+            interested += 1
+
+    engaged = meetings + interested
+    rate = (meetings / engaged) if engaged else 0.0
+    return {
+        "unique_prospects": len(by_email),
+        "sent_count": sent_count,
+        "held_count": held_count,
+        "pending_count": pending_count,
+        "silent_count": silent_count,
+        "intent_counts": intent_counts,
+        "meetings": meetings,
+        "interested_in_pipeline": interested,
+        "engaged_total": engaged,
+        "meeting_rate": rate,
+    }
+
+
 def _render() -> str:
     enabled = kvstore.is_enabled()
     last_run = kvstore.get_last_run()
     last_run_fr = _time_fr(last_run) if last_run else "jamais"
     actions = kvstore.recent_actions(60)  # déjà du + récent au + ancien (LPUSH)
+    actions_full = kvstore.recent_actions(200)  # historique élargi pour les stats
+    stats = _compute_stats(actions_full)
     ov = kvstore.get_settings_overrides()
     sending = ov.get("sending", {})
     hours = sending.get("allowed_hours", [9, 19])
     min_age = sending.get("min_reply_age_minutes", 12)
+
+    # Bloc stats — top 5 intents non-vides
+    def _row(label: str, val, color: str = "#0f172a") -> str:
+        return f"<div class='stat'><div class='stat-v' style='color:{color}'>{val}</div><div class='stat-l'>{label}</div></div>"
+    rate_pct = f"{int(stats['meeting_rate'] * 100)}%" if stats["engaged_total"] else "—"
+    top_intents = sorted(
+        ((k, v) for k, v in stats["intent_counts"].items() if k and v > 0),
+        key=lambda kv: kv[1], reverse=True,
+    )[:6]
+    intent_rows = ""
+    for intent_key, count in top_intents:
+        label, color = _INTENT_FR.get(intent_key, (intent_key, "#64748b"))
+        intent_rows += (
+            f"<tr><td><span class='pill' style='background:{color}'>{html.escape(label)}</span></td>"
+            f"<td style='text-align:right;font-weight:700'>{count}</td></tr>"
+        )
+    if not intent_rows:
+        intent_rows = "<tr><td colspan='2' style='color:#64748b;font-style:italic;padding:10px'>Pas encore de données</td></tr>"
+
+    stats_html = f"""
+    <div class="card">
+      <h3>Performance ({stats['unique_prospects']} prospects sur les ~{len(actions_full)} dernières actions)</h3>
+      <div class="stats-grid">
+        {_row("RDV calés", stats['meetings'], "#15803d")}
+        {_row("Intéressés en cours", stats['interested_in_pipeline'], "#16a34a")}
+        {_row("Taux de conversion en RDV", rate_pct, "#0f172a")}
+        {_row("Réponses envoyées", stats['sent_count'])}
+        {_row("Gardées (fenêtre)", stats['held_count'], "#a16207")}
+        {_row("Silencieuses (unsub/hostile)", stats['silent_count'], "#991b1b")}
+      </div>
+      <table class="intent-table">
+        <thead><tr><th>État final par prospect (top 6)</th><th style="text-align:right">Nombre</th></tr></thead>
+        <tbody>{intent_rows}</tbody>
+      </table>
+      <div class="hint">Conversion = RDV / (RDV + intéressés en cours). Les stats portent sur l'historique récent (max 200 actions stockées dans Vercel KV).</div>
+    </div>
+    """
 
     # Feed conversationnel : message reçu -> réponse du bot, du + récent au + ancien
     feed = ""
@@ -135,6 +235,14 @@ def _render() -> str:
  .bubble.in{{background:#eff6ff;border-left:3px solid #3b82f6}}
  .bubble.out{{background:#f0fdf4;border-left:3px solid #16a34a}}
  .empty{{color:var(--muted);text-align:center;padding:30px 10px;font-size:14px}}
+ .stats-grid{{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:14px}}
+ @media (max-width:640px){{.stats-grid{{grid-template-columns:repeat(2,1fr)}}}}
+ .stat{{background:#f8fafc;border:1px solid var(--line);border-radius:10px;padding:12px 14px;text-align:center}}
+ .stat-v{{font-size:24px;font-weight:800;line-height:1.1}}
+ .stat-l{{font-size:11px;color:var(--muted);margin-top:4px;text-transform:uppercase;letter-spacing:.4px}}
+ .intent-table{{width:100%;border-collapse:collapse;margin-top:8px;font-size:13px}}
+ .intent-table th{{text-align:left;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;padding:8px 6px;border-bottom:1px solid var(--line)}}
+ .intent-table td{{padding:8px 6px;border-bottom:1px solid #f1f5f9}}
 </style></head><body>
 <div class="top">
   <h1>📬 ManyReach Reply Bot</h1>
@@ -166,6 +274,8 @@ def _render() -> str:
     </form>
     <div class="hint">Les réglages complets (voix, règles RDV, cadence) sont dans le code — éditables ici dans une prochaine version.</div>
   </div>
+
+  {stats_html}
 
   <div class="card">
     <h3>Conversations traitées ({shown}) — de la plus récente à la plus ancienne</h3>
