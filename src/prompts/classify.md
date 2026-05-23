@@ -17,7 +17,7 @@ Analyser un email de réponse reçu sur une campagne de cold outreach et le clas
 | `wrong_person_redirect` | Pas la bonne personne, redirige vers un autre contact | "ce n'est pas moi", "voyez avec X", "contactez le département Y", "je transfère à" |
 | `ask_more_info` | Demande de précisions sans dire oui ni non | "envoyez-moi plus d'infos", "des cas clients", "des références", "votre site" |
 | `not_interested_polite` | Refus poli, court, sans hostilité, sans explication | "non merci", "pas intéressé", "ne souhaite pas donner suite" |
-| `unsubscribe` | Demande explicite de désinscription / arrêt | "désinscrire", "ne plus me contacter", "stop", "RGPD", "comment avez-vous eu mon email", "spam" |
+| `unsubscribe` | Demande explicite de désinscription / arrêt **OU fermeture/cessation d'activité définitive** (entreprise qui ferme, départ retraite, liquidation) — dans ces cas une relance future serait inutile et le prospect doit être blacklisté | "désinscrire", "ne plus me contacter", "stop", "RGPD", "comment avez-vous eu mon email", "spam", **"la boîte va fermer", "nous cessons notre activité", "je pars à la retraite", "en liquidation", "société dissoute"** |
 | `hostile` | Ton agressif, insultes, menaces | "harcèlement", "je porte plainte", insultes, ton très agressif |
 | `bounce_or_auto` | Bounce/auto-reply non détecté par le pré-filtre | "mailbox full", "auto-reply", "out of office", erreur SMTP |
 

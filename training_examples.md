@@ -190,12 +190,14 @@ Actions automatiques :
 
 ### P.1 — interested_warm sur SETUP COLD EMAIL (Webmarketing Conseil) ⭐ TEMPLATE CANONIQUE VALIDÉ PAR RUDY
 
-> Rudy a explicitement validé ce texte (2026-05-20). Quand le cold mail pitche le
-> SETUP COLD EMAIL (Webmarketing Conseil) et que le prospect répond "oui",
-> "ça m'intéresse", "envoyez la plaquette", ou répond positivement à l'email
-> "3 options" (1=non / 2=plus tard / 3=oui) → REPRODUIS CE TEXTE quasiment à
-> l'identique (adapte juste le prénom si connu). N'ajoute AUCUNE stat ou preuve
-> non présente ici.
+> Rudy a explicitement validé ce texte (2026-05-23, **MISE À JOUR** : suppression
+> des prix du corps — raison sales : ne pas balancer les tarifs avant d'avoir
+> qualifié + un call. Les curieux trouvent les prix dans la plaquette PDF jointe.).
+> Quand le cold mail pitche le SETUP COLD EMAIL (Webmarketing Conseil) et que le
+> prospect répond "oui", "ça m'intéresse", "envoyez la plaquette", ou répond
+> positivement à l'email "3 options" (1=non / 2=plus tard / 3=oui) → REPRODUIS
+> CE TEXTE quasiment à l'identique (adapte juste le prénom si connu).
+> **N'ajoute AUCUN prix dans le corps**, ni stat, ni preuve non présente ici.
 
 **Réponse idéale (À REPRODUIRE FIDÈLEMENT)** :
 ```
@@ -205,19 +207,13 @@ Ce que je propose est la mise en place d'un système permettant de générer des
 
 Pour vous donner une vue claire, je vous joins ma présentation : https://www.webmarketing-conseil.fr/wp-content/uploads/2026/05/plaquette-cold-email-v2.pdf
 
-3 paliers (Starter, Pro, Scale) selon le volume d'envoi quotidien souhaité, du setup complet jusqu'au suivi optionnel.
-
-En résumé :
-- Setup one-shot entre 2 200€ et 4 500€ HT selon le volume (750 à 3 000 emails/jour)
-- Suivi mensuel optionnel à 290€ HT/mois, sans engagement avec l'ajout de contacts emails chaque mois.
-
-Vous gardez la propriété des domaines et de l'infrastructure (pas de dépendance prestataire)
+Vous gardez la propriété des domaines et de l'infrastructure (pas de dépendance prestataire).
 
 Deux questions pour orienter ma réponse :
 - Quelle est l'offre que vous voulez pousser en priorité ?
 - Vous visez quelle cible prioritaire (intitulé de poste, secteur, taille d'entreprise) ?
 
-Selon votre réponse, je vous dirai quel palier me semble pertinent et on peut caler 15 min en visio si vous voulez creuser.
+Selon votre réponse, on peut caler 15 min en visio pour creuser et voir ce qui colle le mieux à votre cas.
 Bien à vous,
 Rudy Viard
 Fondateur Webmarketing Conseil
@@ -225,6 +221,7 @@ Fondateur Webmarketing Conseil
 
 **Notes pour le drafter (IMPORTANT)** :
 - Reproduis ce texte fidèlement pour le setup cold email. Adapte juste le prénom en ouverture si connu ("Bonjour [Prénom],").
+- **JAMAIS de prix, paliers, montants ou "Starter/Pro/Scale" dans le corps** sur un `interested_warm`. La plaquette PDF en lien contient déjà tout — les curieux y vont d'eux-mêmes. Pricing en clair = uniquement pour `ask_more_info` ou `objection_price`.
 - **PAS de placeholder `[CRÉNEAUX À AJOUTER]` ici** : la CTA est volontairement douce ("on peut caler 15 min en visio si vous voulez creuser"). Les créneaux concrets viendront dans l'échange suivant, une fois que le prospect confirme l'intérêt pour l'appel.
 - **ZÉRO invention** : n'ajoute pas de "trentaine de clients", de chiffres de résultats, ou de preuves qui ne sont pas dans ce template.
 
