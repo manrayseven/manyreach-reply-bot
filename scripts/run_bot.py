@@ -39,7 +39,13 @@ sys.path.insert(0, str(PROJECT_ROOT))
 import yaml  # noqa: E402
 from dotenv import load_dotenv  # noqa: E402
 
-from src.actions import execute_plan, plan_actions, plan_mailinblack_actions  # noqa: E402
+from src.actions import (  # noqa: E402
+    ALWAYS_SILENT,
+    AUTOSEND_ELIGIBLE,
+    execute_plan,
+    plan_actions,
+    plan_mailinblack_actions,
+)
 from src.alerts import send_meeting_alert  # noqa: E402
 from src.classifier import Classifier, _strip_html, _trim_quoted_history  # noqa: E402
 from src.drafter import Drafter  # noqa: E402
@@ -515,6 +521,81 @@ def main() -> int:
                 if classification.redirected_email:
                     print(f"    redirected_email: {classification.redirected_email}")
 
+                # === RACCOURCI 1 : intents silencieux (unsub / hostile / bounce_or_auto) ===
+                # Aucun email à envoyer → on n'a JAMAIS besoin de drafter (économie Sonnet)
+                # et la fenêtre d'envoi n'a aucun sens ici. On exécute tout de suite
+                # (blacklist + tag) et on marque traité.
+                if classification.intent in ALWAYS_SILENT:
+                    silent_plan = plan_actions(
+                        reply=reply,
+                        prospect=prospect,
+                        classification=classification,
+                        draft=None,
+                        min_autosend_confidence=min_conf,
+                        has_calendar_slots=False,
+                    )
+                    silent_results = execute_plan(
+                        silent_plan, reply, mr, dry_run=dry_run, tag_cache=tag_cache
+                    )
+                    for line in silent_results:
+                        print(f"    {line}")
+                    log_entry["intent"] = classification.intent
+                    log_entry["confidence"] = classification.confidence
+                    log_entry["key_phrase"] = classification.key_phrase
+                    log_entry["actions"] = silent_results
+                    log_entry["dry_run"] = dry_run
+                    logf.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
+                    if kvstore and kvstore.kv_available():
+                        kvstore.log_action({
+                            "at": now_utc.isoformat(),
+                            "from": reply.from_email,
+                            "subject": reply.subject,
+                            "intent": classification.intent,
+                            "status": "exécuté (silencieux)",
+                            "reply": _trim_quoted_history(_strip_html(reply.body))[:700],
+                            "response": "(pas de réponse — silencieux)",
+                        })
+                    if not dry_run:
+                        append_processed_id(processed_file, reply.message_id)
+                        if kvstore and kvstore.kv_available():
+                            kvstore.clear_held_seen(reply.message_id)
+                    processed_count += 1
+                    continue
+
+                # === RACCOURCI 2 : intent qui enverrait un mail, mais hors fenêtre ===
+                # Plutôt que de brûler Sonnet à drafter à chaque run de cron (toutes les
+                # 15 min !) pour un message qui ne partira que ce matin, on log UNE FOIS
+                # via held_seen (atomic SET NX) et on saute drafter+plan. On garde le
+                # reply NON-traité → il sera ré-évalué quand la fenêtre s'ouvrira.
+                window_open_now = send_window_open(now_utc) or args.only_email
+                if not window_open_now and classification.intent in AUTOSEND_ELIGIBLE:
+                    already_held = (
+                        kvstore.mark_held_seen(reply.message_id)
+                        if (kvstore and kvstore.kv_available())
+                        else False
+                    )
+                    if already_held:
+                        print("  >> HORS FENÊTRE — déjà gardé précédemment, on saute (économie tokens)")
+                    else:
+                        print("  >> HORS FENÊTRE — pas de draft maintenant, gardé pour 9h-19h Paris")
+                        if kvstore and kvstore.kv_available():
+                            kvstore.log_action({
+                                "at": now_utc.isoformat(),
+                                "from": reply.from_email,
+                                "subject": reply.subject,
+                                "intent": classification.intent,
+                                "status": "en attente (fenêtre 9h-19h Paris)",
+                                "reply": _trim_quoted_history(_strip_html(reply.body))[:700],
+                                "response": "(pas drafté — sera fait à l'ouverture de la fenêtre)",
+                            })
+                    log_entry["intent"] = classification.intent
+                    log_entry["confidence"] = classification.confidence
+                    log_entry["actions"] = ["deferred (hors fenêtre)"]
+                    logf.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
+                    # PAS de append_processed_id → sera réessayé au prochain run
+                    processed_count += 1
+                    continue
+
                 # Compute concrete calendar slots for meeting-leading intents
                 slot_objs, slot_strs = [], None
                 company_context = ""
@@ -688,6 +769,9 @@ def main() -> int:
                 # (hors heures / plafond) → il sera réessayé au prochain run.
                 if not dry_run and not send_held:
                     append_processed_id(processed_file, reply.message_id)
+                    # Libère le flag held_seen (KV) si on l'avait posé pendant la nuit
+                    if kvstore and kvstore.kv_available():
+                        kvstore.clear_held_seen(reply.message_id)
                 processed_count += 1
 
             except Exception as e:

@@ -117,3 +117,27 @@ def set_last_run(iso: str) -> None:
 
 def get_last_run() -> str | None:
     return _cmd("GET", LAST_RUN_KEY)
+
+
+HELD_SEEN_TTL = 86400  # 24h — couvre une nuit + un week-end max raisonnable
+
+
+def mark_held_seen(message_id: str) -> bool:
+    """Marque ce message_id comme déjà 'gardé pour la fenêtre d'envoi'.
+
+    Renvoie True si on l'avait DÉJÀ vu (donc on NE doit PAS re-logger dans le
+    dashboard et NE doit PAS re-classifier/re-drafter). Atomique via SET NX.
+    """
+    if not kv_available():
+        return False
+    key = f"bot:held_seen:{message_id}"
+    # SET key 1 EX 86400 NX → "OK" si créé, null si la clé existait déjà.
+    res = _cmd("SET", key, "1", "EX", str(HELD_SEEN_TTL), "NX")
+    return res is None  # null = NX a échoué = déjà vu
+
+
+def clear_held_seen(message_id: str) -> None:
+    """À appeler quand le reply est finalement envoyé / traité (pour libérer)."""
+    if not kv_available():
+        return
+    _cmd("DEL", f"bot:held_seen:{message_id}")
