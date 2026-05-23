@@ -39,7 +39,11 @@ def _send_via_resend(subject: str, body_text: str) -> bool:
     api_key = os.environ.get("RESEND_API_KEY")
     if not api_key:
         return False
-    from_addr = os.environ.get("RESEND_FROM", "alertes@webmarketing-conseil.fr")
+    # Par défaut on utilise l'expéditeur "onboarding@resend.dev" fourni par Resend :
+    # il fonctionne SANS vérifier de domaine (mode test → envoie vers l'email du
+    # compte Resend). Pour un envoi propre depuis @webmarketing-conseil.fr, vérifie
+    # le domaine sur resend.com puis définis RESEND_FROM en variable d'env.
+    from_addr = os.environ.get("RESEND_FROM", "onboarding@resend.dev")
     try:
         import httpx
 
@@ -69,19 +73,32 @@ def send_meeting_alert(
     proposed_when: str,
     campaign_id: int | None,
     dry_run: bool = True,
+    phone: str | None = None,
+    in_calendar: bool = False,
 ) -> str:
-    """Fire a meeting-booked alert. Returns a human-readable status line."""
+    """Fire a meeting-booked alert. Returns a human-readable status line.
+
+    in_calendar=True  → l'event a réellement été créé dans l'agenda Google.
+    in_calendar=False → RDV détecté mais pas de date exacte exploitable : à caler
+                        manuellement (l'alerte sert justement à ne pas le rater).
+    """
     name = prospect_name or prospect_email
-    subject = f"🤝 RDV potentiel — {name}" + (f" ({company})" if company else "")
+    flag = "✅ RDV ajouté à l'agenda" if in_calendar else "⚠️ RDV à caler manuellement"
+    subject = f"{flag} — {name}" + (f" ({company})" if company else "")
+    action = (
+        "→ Le RDV est déjà dans ton Google Agenda. Vérifie juste qu'il te convient."
+        if in_calendar
+        else "→ Pas de date/heure exploitable automatiquement : ajoute le RDV à ton agenda à la main."
+    )
     body = (
-        f"Un prospect a confirmé/proposé un créneau.\n\n"
+        f"Un prospect a confirmé un rendez-vous.\n\n"
         f"Prospect : {name} <{prospect_email}>\n"
         f"Société  : {company or '(inconnue)'}\n"
+        f"Téléphone: {phone or '(non communiqué)'}\n"
         f"Campagne : {campaign_id or '(inconnue)'}\n"
         f"Créneau  : {proposed_when}\n\n"
         f"Extrait du reply :\n{reply_snippet}\n\n"
-        f"→ Action : vérifie ta dispo, confirme la date exacte, ajoute à ton agenda.\n"
-        f"(Le draft de confirmation est en review dans le run du bot.)"
+        f"{action}"
     )
 
     # Trace locale (audit) — peut échouer sur Vercel (FS read-only), pas grave

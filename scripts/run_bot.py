@@ -620,16 +620,29 @@ def main() -> int:
                     # Release any soft-holds for this prospect (meeting is set)
                     if hold_store and not dry_run:
                         hold_store.clear(reply.from_email)
-                    alert_line = send_meeting_alert(
-                        prospect_email=reply.from_email,
-                        prospect_name=(prospect.first_name if prospect else None),
-                        company=(prospect.company if prospect else None),
-                        reply_snippet=_short(classification.key_phrase, 200),
-                        proposed_when=(classification.confirmed_datetime or classification.key_phrase),
-                        campaign_id=reply.campaign_id,
-                        dry_run=dry_run,
-                    )
-                    print(f"    {alert_line}")
+                    # Alerte email à Rudy. On NE renvoie PAS d'alerte si l'event
+                    # était un doublon déjà présent (sinon spam à chaque run).
+                    is_duplicate = bool(event_line) and "déjà existant" in event_line
+                    in_calendar = bool(event_line) and "event créé" in event_line
+                    if not is_duplicate:
+                        # firstName ManyReach parfois corrompu → on préfère le nom
+                        # extrait du reply, sinon la société.
+                        alert_name = (
+                            classification.prospect_name
+                            or (prospect.company if prospect and prospect.company else None)
+                        )
+                        alert_line = send_meeting_alert(
+                            prospect_email=reply.from_email,
+                            prospect_name=alert_name,
+                            company=(prospect.company if prospect else None),
+                            reply_snippet=_short(classification.key_phrase, 200),
+                            proposed_when=(classification.confirmed_datetime or classification.key_phrase),
+                            campaign_id=reply.campaign_id,
+                            dry_run=dry_run,
+                            phone=classification.contact_phone,
+                            in_calendar=in_calendar,
+                        )
+                        print(f"    {alert_line}")
 
                 log_entry["reply_clean"] = _trim_quoted_history(_strip_html(reply.body))
                 log_entry["original_clean"] = (
