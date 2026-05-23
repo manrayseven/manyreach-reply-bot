@@ -204,14 +204,15 @@ class CalendarClient:
         email: str,
         start: datetime,
         tz_name: str = "Europe/Paris",
-        window_hours: int = 12,
+        window_hours: int = 168,
     ) -> bool | None:
         """True if an event referencing this prospect email already exists near `start`.
 
-        Idempotence guard against duplicate meeting events: the bot can re-process
-        the same reply across several cron runs (e.g. while the ack-reply hasn't
-        yet propagated into the ManyReach thread, or when the reply is held in
-        review). The calendar is the source of truth, so we look there directly.
+        Idempotence guard against duplicate meeting events. Window par défaut = 7
+        JOURS (168h) : couvre les cas où le LLM a classifié le même reply avec
+        deux dates différentes entre deux runs (ex. lundi 11h et mardi 11h pour
+        "option à 11h"). Principe : un prospect = au plus un RDV planifié à la
+        fois sur la semaine, on ne crée pas un 2e event si un est déjà posé.
 
         Returns True/False, or None if the lookup itself failed (caller decides).
         """
