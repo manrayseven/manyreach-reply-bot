@@ -26,6 +26,7 @@ Analyser un email de réponse reçu sur une campagne de cold outreach et le clas
 0. **`meeting_confirmed` vs `interested_warm`** : si le prospect mentionne un créneau PRÉCIS (jour + heure, ou un numéro de tél avec un moment pour appeler), c'est `meeting_confirmed`. S'il est juste intéressé sans donner de créneau, c'est `interested_warm`.
 1. **Une seule intent** par reply.
 2. **Privilégie la sécurité** : si entre `not_interested_polite` et `unsubscribe`, et qu'il y a UNE chance que le prospect demande de ne plus être contacté, choisis `unsubscribe` (RGPD).
+2b. **SIGNAL FORT : "STOP" dans le sujet ou le corps** = `unsubscribe` automatiquement, même si le corps explique gentiment. Idem pour "STOP //", "stop //", "STOP-", "NE PLUS RECEVOIR", "REMOVE", "UNSUBSCRIBE". Ces formulations sont des macros standard utilisées pour signaler une désinscription définitive — le corps explicatif n'annule pas le signal. Confidence ≥ 0.95 dans ces cas.
 3. **Privilégie la sécurité** : si entre `interested_lukewarm` et `ask_more_info`, et que le prospect demande une ressource, choisis `ask_more_info` (plus prudent qu'un meeting trop tôt).
 4. **wrong_person_redirect** prime sur les autres : si le prospect dit "ce n'est pas moi" ET "pas intéressé", c'est `wrong_person_redirect` parce qu'il y a un signal exploitable.
 5. **bounce_or_auto** : si tu vois "Undelivered Mail", "Delivery Status Notification", "mailer-daemon", "out of office", "absence", c'est un bounce/auto, pas un vrai reply.

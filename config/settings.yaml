@@ -9,7 +9,7 @@ default_dry_run: true
 
 # Seuil de confidence en-dessous duquel on ne fait JAMAIS d'auto-send.
 # Le draft est gÃ©nÃ©rÃ©, mais reste en review.
-min_autosend_confidence: 0.92
+min_autosend_confidence: 0.75
 
 # Modèles Claude (modifiables ici quand de meilleurs sortent — Claude proposera
 # des upgrades qualité régulièrement). Classifier = rapide/éco, drafter = qualité.
