@@ -331,14 +331,15 @@ class handler(BaseHTTPRequestHandler):
                     sys.path.insert(0, scripts_dir)
                 import run_bot
                 old_argv = sys.argv
-                # Déclenchement humain manuel : budget 50s (Vercel maxDuration 60),
-                # 8 heavies max, --ignore-window pour forcer l'envoi peu importe
-                # l'heure, --important-only + 7j pour ne pas itérer la mer.
-                os.environ["RUN_BUDGET_SECONDS"] = "50"
+                # Déclenchement humain manuel : budget 45s (Vercel maxDuration 60,
+                # on garde 15s de marge pour le finalize sinon 504). Limit 6
+                # heavies, --ignore-window pour forcer peu importe l'heure,
+                # --important-only + 7j pour ne pas itérer la mer.
+                os.environ["RUN_BUDGET_SECONDS"] = "45"
                 sys.argv = [
                     "run_bot",
                     "--no-dry-run",
-                    "--limit", "8",
+                    "--limit", "6",
                     "--ignore-window",
                     "--important-only",
                     "--since-days", "7",
