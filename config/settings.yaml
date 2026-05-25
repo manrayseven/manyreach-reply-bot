@@ -83,7 +83,9 @@ sending:
   # N'envoyer que pendant ces heures (sinon le draft attend le prochain run en heures ouvrÃ©es).
   # Ã‰vite les rÃ©ponses Ã  3h du matin = signature de robot.
   allowed_hours: [9, 19]              # envoi autorisÃ© de 9h Ã  19h
-  allowed_weekdays: [0, 1, 2, 3, 4]   # lundi=0 ... vendredi=4 (pas le week-end)
+  # Rudy ENVOIE en cold uniquement la semaine, mais il veut que les REPONSES du
+  # bot partent vite, y compris samedi/dimanche. D'ou 7j/7 ici.
+  allowed_weekdays: [0, 1, 2, 3, 4, 5, 6]   # lundi=0 ... dimanche=6 (week-end inclus)
   # Ne JAMAIS rÃ©pondre instantanÃ©ment : attendre que le reply ait "vieilli" un peu.
   # (un humain ne rÃ©pond pas en 3 secondes). RÃ©glÃ© en minutes, lÃ©gÃ¨rement randomisÃ©.
   min_reply_age_minutes: 12
