@@ -331,7 +331,9 @@ class handler(BaseHTTPRequestHandler):
                     sys.path.insert(0, scripts_dir)
                 import run_bot
                 old_argv = sys.argv
-                sys.argv = ["run_bot", "--no-dry-run", "--limit", "5"]
+                # --ignore-window : déclenchement humain manuel → force l'envoi
+                # quelle que soit l'heure. Sinon le clic ne ferait rien hors 7h-22h.
+                sys.argv = ["run_bot", "--no-dry-run", "--limit", "5", "--ignore-window"]
                 try:
                     run_bot.main()
                 finally:

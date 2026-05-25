@@ -149,6 +149,15 @@ def main() -> int:
             "Sert à tester le bot sur UN seul prospect choisi."
         ),
     )
+    parser.add_argument(
+        "--ignore-window",
+        action="store_true",
+        help=(
+            "Ignore allowed_hours/allowed_weekdays — envoi immédiat quelle que "
+            "soit l'heure. À utiliser pour le bouton 'Lancer maintenant' du "
+            "dashboard (Rudy force un passage humain-déclenché)."
+        ),
+    )
     args = parser.parse_args()
 
     settings = load_settings(args.settings)
@@ -226,6 +235,9 @@ def main() -> int:
     max_sends = int(send_cfg.get("max_sends_per_run", 25))
 
     def send_window_open(when: datetime) -> bool:
+        # --ignore-window force l'ouverture (déclenchement manuel par Rudy).
+        if args.ignore_window:
+            return True
         hours = send_cfg.get("allowed_hours", [9, 19])
         days = send_cfg.get("allowed_weekdays", [0, 1, 2, 3, 4])
         # IMPORTANT : on raisonne en heure de PARIS, pas en heure serveur. Sur
