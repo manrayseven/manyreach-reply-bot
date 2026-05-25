@@ -217,7 +217,8 @@ def _render() -> str:
  .stxt{{font-weight:700;font-size:15px}}
  button,input[type=submit]{{cursor:pointer;border:0;border-radius:9px;padding:10px 18px;font-size:14px;font-weight:600;transition:.15s}}
  button:hover{{opacity:.9}}
- .btn-toggle{{background:{status_color};color:#fff;margin-left:auto}}
+ .btn-toggle{{background:{status_color};color:#fff}}
+ .btn-run{{background:#0f172a;color:#fff}}
  .btn-save{{background:var(--brand);color:#fff}}
  h3{{font-size:14px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin:0 0 14px}}
  .fields{{display:flex;gap:18px;flex-wrap:wrap;align-items:flex-end}}
@@ -253,7 +254,11 @@ def _render() -> str:
   <div class="card">
     <div class="statusline">
       <span class="dot"></span><span class="stxt">{status_txt}</span>
-      <form method="POST" action="/{keyparam}" style="margin-left:auto">
+      <form method="POST" action="/{keyparam}" style="margin-left:auto;display:flex;gap:8px">
+        <input type="hidden" name="action" value="run_now">
+        <button class="btn-run" type="submit" title="Force un passage du bot maintenant (purge le backlog si le cron externe est en rade)">▶ Lancer maintenant</button>
+      </form>
+      <form method="POST" action="/{keyparam}">
         <input type="hidden" name="action" value="toggle">
         <input type="hidden" name="enabled" value="{toggle_val}">
         <button class="btn-toggle" type="submit">{toggle_label}</button>
@@ -308,6 +313,23 @@ class handler(BaseHTTPRequestHandler):
         action = form.get("action")
         if action == "toggle":
             kvstore.set_enabled(form.get("enabled") == "1")
+        elif action == "run_now":
+            # Lancement manuel synchrone du bot (jusqu'à maxDuration=60s).
+            # Utile pour purger un backlog quand le cron externe est en rade.
+            os.environ.setdefault("LOG_DIR", "/tmp/mr-logs")
+            try:
+                sys.path.insert(0, str(ROOT / "scripts"))
+                import importlib, run_bot
+                importlib.reload(run_bot)  # recharge sys.argv frais
+                # Quota plus généreux pour un déclenchement manuel (cheap iters
+                # ne comptent pas, donc safe vs timeout 60s).
+                limit = form.get("limit", "30")
+                sys.argv = ["run_bot", "--no-dry-run", "--limit", limit]
+                run_bot.main()
+            except SystemExit:
+                pass
+            except Exception as e:  # noqa: BLE001
+                print(f"run_now error: {e}")
         elif action == "save_settings":
             ov = kvstore.get_settings_overrides()
             sending = ov.get("sending", {})
