@@ -331,9 +331,18 @@ class handler(BaseHTTPRequestHandler):
                     sys.path.insert(0, scripts_dir)
                 import run_bot
                 old_argv = sys.argv
-                # --ignore-window : déclenchement humain manuel → force l'envoi
-                # quelle que soit l'heure. Sinon le clic ne ferait rien hors 7h-22h.
-                sys.argv = ["run_bot", "--no-dry-run", "--limit", "5", "--ignore-window"]
+                # Déclenchement humain manuel : budget 50s (Vercel maxDuration 60),
+                # 8 heavies max, --ignore-window pour forcer l'envoi peu importe
+                # l'heure, --important-only + 7j pour ne pas itérer la mer.
+                os.environ["RUN_BUDGET_SECONDS"] = "50"
+                sys.argv = [
+                    "run_bot",
+                    "--no-dry-run",
+                    "--limit", "8",
+                    "--ignore-window",
+                    "--important-only",
+                    "--since-days", "7",
+                ]
                 try:
                     run_bot.main()
                 finally:

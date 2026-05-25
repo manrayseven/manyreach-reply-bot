@@ -31,12 +31,19 @@ class handler(BaseHTTPRequestHandler):
         try:
             import run_bot  # scripts/run_bot.py
 
-            # Quota d'itérations LOURDES (draft+send Sonnet). Chaque iter coûte
-            # 5-10s (Sonnet + send) → on garde 5 max pour rentrer dans les ~25s
-            # avant le timeout de cron-job.org (free tier = 30s). Les itérations
-            # cheap (déjà gardés, silencieux, déjà handled) ne comptent PAS.
-            limit = os.environ.get("CRON_LIMIT", "5")
-            sys.argv = ["run_bot", "--no-dry-run", "--limit", limit]
+            # Quota d'itérations LOURDES (draft+send Sonnet). Cron-job.org coupe
+            # à 30s → on cible 3 heavies max + on restreint la file aux replies
+            # IMPORTANTS (statuts Interested/MaybeLater/etc.) sur les 7 derniers
+            # jours. Ça évite d'itérer sur 100+ replies juste pour les passer en
+            # idempotence-skip.
+            limit = os.environ.get("CRON_LIMIT", "3")
+            sys.argv = [
+                "run_bot",
+                "--no-dry-run",
+                "--limit", limit,
+                "--important-only",
+                "--since-days", "7",
+            ]
             code = run_bot.main()
             result["exit_code"] = code
         except SystemExit as e:

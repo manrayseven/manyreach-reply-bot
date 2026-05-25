@@ -390,10 +390,11 @@ def main() -> int:
     error_count = 0
     mailinblack_pending: list[dict] = []
 
-    # BUDGET DE TEMPS strict : on s'arrête proprement avant le timeout pour
-    # toujours sauvegarder last_run + finir le KV log. Cron-job.org coupe à 30s,
-    # Vercel à 60s → on cible 25s par défaut pour rester sous les deux.
-    run_budget_s = float(os.environ.get("RUN_BUDGET_SECONDS", "25"))
+    # BUDGET DE TEMPS strict. Cron-job.org coupe à 30s, Vercel à 60s.
+    # Défaut 22s pour les passages cron-job.org (laisse 8s pour le finalize
+    # KV + set_last_run). Le bouton "Lancer maintenant" passe 50s via env
+    # var (il a 60s côté Vercel).
+    run_budget_s = float(os.environ.get("RUN_BUDGET_SECONDS", "22"))
     run_start_ts = time.time()
     def _time_left() -> float:
         return run_budget_s - (time.time() - run_start_ts)
