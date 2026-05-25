@@ -812,11 +812,18 @@ def main() -> int:
                         "response": _resp_txt[:1800] if not draft.skip_send else "(pas de réponse — silencieux)",
                     })
 
-                # Ne pas marquer "traité" si l'envoi a été gardé pour plus tard
-                # (hors heures / plafond) → il sera réessayé au prochain run.
-                if not dry_run and not send_held:
+                # Ne marquer "traité" QUE si on a vraiment envoyé quelque chose
+                # (sinon : send_held → fenêtre, OU auto_send=False → review). Dans
+                # ces cas, il faut pouvoir ré-évaluer au prochain run (sinon ça
+                # reste figé dans le cache /tmp ephemeral Vercel = silence définitif).
+                actually_sent = (
+                    not dry_run
+                    and not send_held
+                    and plan.auto_send
+                    and any(a.kind == "send_reply" for a in plan.actions)
+                )
+                if actually_sent:
                     append_processed_id(processed_file, reply.message_id)
-                    # Libère le flag held_seen (KV) si on l'avait posé pendant la nuit
                     if kvstore and kvstore.kv_available():
                         kvstore.clear_held_seen(reply.message_id)
                 heavy_count += 1  # itération lourde (draft+send) consommée — c'est ELLE qui compte vis-à-vis du quota cron
