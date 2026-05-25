@@ -31,11 +31,11 @@ class handler(BaseHTTPRequestHandler):
         try:
             import run_bot  # scripts/run_bot.py
 
-            # Live. Quota = nombre d'itérations LOURDES (draft+send Sonnet) par run,
-            # pour rester sous la limite 60s de Vercel Hobby. Les replies "cheap"
-            # (déjà gardés, silencieux, déjà handled) ne comptent PAS contre ce quota
-            # — donc on peut le mettre confortablement haut sans risque de timeout.
-            limit = os.environ.get("CRON_LIMIT", "15")
+            # Quota d'itérations LOURDES (draft+send Sonnet). Chaque iter coûte
+            # 5-10s (Sonnet + send) → on garde 5 max pour rentrer dans les ~25s
+            # avant le timeout de cron-job.org (free tier = 30s). Les itérations
+            # cheap (déjà gardés, silencieux, déjà handled) ne comptent PAS.
+            limit = os.environ.get("CRON_LIMIT", "5")
             sys.argv = ["run_bot", "--no-dry-run", "--limit", limit]
             code = run_bot.main()
             result["exit_code"] = code

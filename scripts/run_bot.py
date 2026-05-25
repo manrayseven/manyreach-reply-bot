@@ -378,6 +378,14 @@ def main() -> int:
     error_count = 0
     mailinblack_pending: list[dict] = []
 
+    # BUDGET DE TEMPS strict : on s'arrête proprement avant le timeout pour
+    # toujours sauvegarder last_run + finir le KV log. Cron-job.org coupe à 30s,
+    # Vercel à 60s → on cible 25s par défaut pour rester sous les deux.
+    run_budget_s = float(os.environ.get("RUN_BUDGET_SECONDS", "25"))
+    run_start_ts = time.time()
+    def _time_left() -> float:
+        return run_budget_s - (time.time() - run_start_ts)
+
     if args.only_email:
         print(f">>> MODE TEST CONTRÔLÉ : uniquement {args.only_email} (envoi forcé si --no-dry-run)")
         confirmed_statuses = None  # ignore status filter, target the email directly
@@ -393,6 +401,11 @@ def main() -> int:
             # itérations "lourdes" (draft+send Sonnet). Les itérations "cheap"
             # (defer, silent, déjà-handled) sont quasi-gratuites en temps et tokens.
             if limit and heavy_count >= limit:
+                break
+            # Budget de temps : si on s'approche du timeout, on s'arrête net pour
+            # AU MOINS sauver last_run et finir proprement (sinon dashboard mort).
+            if _time_left() < 6.0:
+                print(f"  >> BUDGET TEMPS écoulé ({run_budget_s}s) — arrêt propre")
                 break
             if reply.message_id in processed_ids:
                 skipped_count += 1
