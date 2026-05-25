@@ -236,10 +236,10 @@ def plan_actions(
     # dans le thread) → plus de re-traitement à chaque run → plus de doublons d'event.
     if intent == "meeting_confirmed":
         can_autosend = bool(draft.body_html)
-    # Extra rule: interested_warm only auto-sends when we actually have calendar slots
-    if intent == "interested_warm" and not has_calendar_slots:
-        can_autosend = False
-        plan.review_reason = "interested_warm sans créneaux Calendar → review"
+    # Note historique : on bloquait l'auto-send d'interested_warm sans créneaux
+    # Calendar. Rudy veut 100% autonome → on autorise quand même (le drafter
+    # produit une CTA douce "vous êtes dispo cette semaine ?" qui marche très
+    # bien sans créneaux concrets). Pas de gate ici.
 
     if not can_autosend and not plan.review_reason:
         plan.review_reason = (
