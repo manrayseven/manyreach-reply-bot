@@ -63,7 +63,6 @@ def _compute_stats(actions: list) -> dict:
     - On compte aussi : envoyés vs gardés vs en attente (vue activité brute).
     """
     by_email: dict[str, list] = {}
-    sent_count = held_count = pending_count = silent_count = 0
     for a in actions:
         email = (a.get("from") or "").lower().strip()
         if email:
@@ -72,14 +71,20 @@ def _compute_stats(actions: list) -> dict:
                 a.get("intent", ""),
                 a.get("status", ""),
             ))
-        status = a.get("status", "")
-        if "envoyé" in status:
+
+    # Counts UNIQUE par prospect (pas par action) — sinon les crashes de cron ou
+    # le re-traitement avant les fixes gonflaient artificiellement les chiffres.
+    sent_count = held_count = pending_count = silent_count = 0
+    for email, items in by_email.items():
+        statuses = " ".join((s or "") for _, _, s in items).lower()
+        # Priorité au statut le plus "fort" pour ce prospect (envoyé > attente > gardé > silencieux)
+        if "envoyé" in statuses:
             sent_count += 1
-        elif "attente" in status:
+        elif "attente" in statuses:
             pending_count += 1
-        elif "gardé" in status or "relire" in status:
+        elif "gardé" in statuses or "relire" in statuses:
             held_count += 1
-        elif "silencieux" in status or "silent" in status:
+        elif "silencieux" in statuses or "silent" in statuses:
             silent_count += 1
 
     intent_counts: dict[str, int] = {}
@@ -254,7 +259,8 @@ def _render() -> str:
   <div class="card">
     <div class="statusline">
       <span class="dot"></span><span class="stxt">{status_txt}</span>
-      <form method="POST" action="/{keyparam}" style="margin-left:auto;display:flex;gap:8px">
+      <form method="POST" action="/{keyparam}" style="margin-left:auto;display:flex;gap:8px"
+            onsubmit="var b=this.querySelector('button'); b.disabled=true; b.innerHTML='⏳ Lancement (jusqu\\'à 25s)...'; b.style.opacity=.7; return true;">
         <input type="hidden" name="action" value="run_now">
         <button class="btn-run" type="submit" title="Force un passage du bot maintenant (purge le backlog si le cron externe est en rade)">▶ Lancer maintenant</button>
       </form>
@@ -314,22 +320,39 @@ class handler(BaseHTTPRequestHandler):
         if action == "toggle":
             kvstore.set_enabled(form.get("enabled") == "1")
         elif action == "run_now":
-            # Lancement manuel synchrone du bot (jusqu'à maxDuration=60s).
-            # Utile pour purger un backlog quand le cron externe est en rade.
+            # Lancement manuel synchrone du bot (jusqu'à maxDuration=60s côté Vercel,
+            # 25s côté run_budget_s pour avoir le temps de finir proprement).
             os.environ.setdefault("LOG_DIR", "/tmp/mr-logs")
+            from datetime import datetime as _dt, timezone as _tz
+            log_status = "exécuté"
             try:
-                sys.path.insert(0, str(ROOT / "scripts"))
-                import importlib, run_bot
-                importlib.reload(run_bot)  # recharge sys.argv frais
-                # Quota plus généreux pour un déclenchement manuel (cheap iters
-                # ne comptent pas, donc safe vs timeout 60s).
-                limit = form.get("limit", "30")
-                sys.argv = ["run_bot", "--no-dry-run", "--limit", limit]
-                run_bot.main()
+                scripts_dir = str(ROOT / "scripts")
+                if scripts_dir not in sys.path:
+                    sys.path.insert(0, scripts_dir)
+                import run_bot
+                old_argv = sys.argv
+                sys.argv = ["run_bot", "--no-dry-run", "--limit", "5"]
+                try:
+                    run_bot.main()
+                finally:
+                    sys.argv = old_argv
             except SystemExit:
                 pass
             except Exception as e:  # noqa: BLE001
-                print(f"run_now error: {e}")
+                import traceback
+                log_status = f"erreur ({e})"
+                traceback.print_exc()
+            # Trace dans le dashboard pour que Rudy voie que le bouton a bien tourné
+            if kvstore.kv_available():
+                kvstore.log_action({
+                    "at": _dt.now(_tz.utc).isoformat(),
+                    "from": "(manuel)",
+                    "subject": "🖱 Lancer maintenant",
+                    "intent": "run_now",
+                    "status": log_status,
+                    "reply": "",
+                    "response": "",
+                })
         elif action == "save_settings":
             ov = kvstore.get_settings_overrides()
             sending = ov.get("sending", {})
