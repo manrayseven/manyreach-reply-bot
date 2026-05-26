@@ -36,7 +36,7 @@ class handler(BaseHTTPRequestHandler):
             # SANS filtre --important-only : ManyReach met parfois plusieurs
             # heures à classifier un reply en Interested/NotInterested → sans ça
             # les replies tout frais étaient invisibles.
-            limit = os.environ.get("CRON_LIMIT", "3")
+            limit = os.environ.get("CRON_LIMIT", "5")
             sys.argv = [
                 "run_bot",
                 "--no-dry-run",

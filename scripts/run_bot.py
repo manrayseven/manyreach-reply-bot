@@ -964,17 +964,15 @@ def main() -> int:
                         "response": _resp_txt[:1800] if not draft.skip_send else "(pas de réponse — silencieux)",
                     })
 
-                # Marquer "traité" quand le bot a DÉLIBÉRÉMENT agi (auto_send=True
-                # — envoi réel OU action silencieuse via drafter.skip_send).
-                # On ne marque PAS si :
-                #  - send_held (gardé pour la fenêtre d'envoi)
-                #  - auto_send=False (confidence trop basse → review attendant Rudy)
-                acted = (
-                    not dry_run
-                    and not send_held
-                    and plan.auto_send
-                )
-                if acted:
+                # Marquer comme traité dès que le bot a TENTÉ de gérer le reply
+                # (classify + plan ont tourné). Même si l'envoi a été held en
+                # review pour confidence basse, on a essayé → on ne ré-essaie
+                # pas indéfiniment. Sinon les prospects en review consomment le
+                # quota cron et BLOQUENT les nouveaux replies (cause du retard
+                # global). Seule exception : send_held (fenêtre/cap), où il faut
+                # vraiment re-essayer plus tard.
+                attempted = (not dry_run) and (not send_held)
+                if attempted:
                     append_processed_id(processed_file, reply.message_id)
                     if kvstore and kvstore.kv_available():
                         kvstore.clear_held_seen(reply.message_id)
