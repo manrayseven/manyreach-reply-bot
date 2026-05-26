@@ -829,17 +829,17 @@ def main() -> int:
                         "response": _resp_txt[:1800] if not draft.skip_send else "(pas de réponse — silencieux)",
                     })
 
-                # Ne marquer "traité" QUE si on a vraiment envoyé quelque chose
-                # (sinon : send_held → fenêtre, OU auto_send=False → review). Dans
-                # ces cas, il faut pouvoir ré-évaluer au prochain run (sinon ça
-                # reste figé dans le cache /tmp ephemeral Vercel = silence définitif).
-                actually_sent = (
+                # Marquer "traité" quand le bot a DÉLIBÉRÉMENT agi (auto_send=True
+                # — envoi réel OU action silencieuse via drafter.skip_send).
+                # On ne marque PAS si :
+                #  - send_held (gardé pour la fenêtre d'envoi)
+                #  - auto_send=False (confidence trop basse → review attendant Rudy)
+                acted = (
                     not dry_run
                     and not send_held
                     and plan.auto_send
-                    and any(a.kind == "send_reply" for a in plan.actions)
                 )
-                if actually_sent:
+                if acted:
                     append_processed_id(processed_file, reply.message_id)
                     if kvstore and kvstore.kv_available():
                         kvstore.clear_held_seen(reply.message_id)
