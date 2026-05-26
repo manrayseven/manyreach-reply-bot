@@ -47,7 +47,8 @@ Retourne UNIQUEMENT ce JSON (pas de markdown, pas de prose) :
   "confirmed_datetime": null,
   "contact_phone": null,
   "zoom_link": null,
-  "offer_label": null
+  "offer_label": null,
+  "prospect_offers_calendar": false
 }
 ```
 
@@ -67,6 +68,7 @@ Champs RDV (remplis-les SURTOUT pour `meeting_confirmed`, sinon `null`) :
   (Rudy cale à la main) qu'une date inventée qui crée un faux RDV dans l'agenda.
 - `contact_phone` : le numéro de téléphone sur lequel appeler le prospect (depuis le reply OU sa signature). Format brut tel qu'écrit. Sinon `null`.
 - `zoom_link` : si le prospect a donné SON propre lien de visio (Zoom/Meet/Teams), mets-le ici. Sinon `null`.
+- `prospect_offers_calendar` : `true` UNIQUEMENT si le prospect propose SON calendrier / un lien de booking pour que Rudy choisisse un créneau ("I'll share my calendar", "pick a time", "feel free to book", "voici mon Calendly / Calendly link", "réservez sur mon agenda", "choisissez un créneau qui vous convient sur mon agenda"). Dans ces cas, le bot ne peut pas réserver lui-même → Rudy doit le faire manuellement. Garde l'intent `interested_warm` et mets `confirmed_datetime: null`. Sinon `false`.
 - `offer_label` : raison de l'appel = label court de l'offre pitchée dans le cold mail (ex. "Cold Email", "Audit SEO", "Refonte site", "Audit digital"). Déduis-le du cold mail. Si vraiment indéterminable → "échange".
 - `prospect_name` : prénom + nom du prospect, extrait de sa signature (ex. "Sarah Laroye"). Sinon le prénom seul si connu. Sinon `null`.
 

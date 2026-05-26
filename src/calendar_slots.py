@@ -249,15 +249,33 @@ class CalendarClient:
         duration_min: int,
         description: str,
         tz_name: str = "Europe/Paris",
+        attendee_emails: list[str] | None = None,
     ) -> dict:
-        """Create a calendar event. Returns the created event resource."""
+        """Create a calendar event. Returns the created event resource.
+
+        attendee_emails : emails à inviter en tant qu'invités. Notification email
+        envoyée via sendUpdates="all". Sur Gmail personnel + service account ça
+        peut échouer (Domain-Wide Delegation requise) → on retombe en silencieux
+        sans bloquer la création de l'event.
+        """
         end = start + timedelta(minutes=duration_min)
-        event = {
+        event: dict = {
             "summary": title,
             "description": description,
             "start": {"dateTime": start.isoformat(), "timeZone": tz_name},
             "end": {"dateTime": end.isoformat(), "timeZone": tz_name},
         }
+        if attendee_emails:
+            event["attendees"] = [{"email": e} for e in attendee_emails]
+            # Tentative d'envoi des invitations email aux attendees
+            try:
+                return self.service.events().insert(
+                    calendarId=self.calendar_id, body=event, sendUpdates="all"
+                ).execute()
+            except Exception:
+                # Service account / Gmail perso → l'invitation email échoue.
+                # On recrée l'event sans sendUpdates (attendees gardés en metadata).
+                pass
         return self.service.events().insert(calendarId=self.calendar_id, body=event).execute()
 
 

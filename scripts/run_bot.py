@@ -372,6 +372,9 @@ def main() -> int:
         )
         if exists is True:
             return f"[RDV] event déjà existant pour {reply.from_email} le {start.isoformat()} — pas de doublon"
+        # Invite Rudy en attendee → il aura l'event dans sa boîte
+        # contact@webmarketing-conseil.fr (notif + apparition dans son agenda perso).
+        notify_email = os.environ.get("NOTIFY_EMAIL", "contact@webmarketing-conseil.fr")
         try:
             calendar_client.create_event(
                 title=title,
@@ -379,8 +382,9 @@ def main() -> int:
                 duration_min=int(cal_cfg.get("meeting_duration_minutes", 30)),
                 description=description,
                 tz_name=cal_cfg.get("timezone", "Europe/Paris"),
+                attendee_emails=[notify_email] if notify_email else None,
             )
-            return f"[EXEC] event créé : '{title}' le {start.isoformat()}"
+            return f"[EXEC] event créé : '{title}' le {start.isoformat()} (Rudy invité : {notify_email})"
         except Exception as e:
             return f"[RDV] échec création event ({e}) — à créer à la main"
 
@@ -584,6 +588,46 @@ def main() -> int:
                     print(f"    redirected_to: {classification.redirected_to}")
                 if classification.redirected_email:
                     print(f"    redirected_email: {classification.redirected_email}")
+
+                # === RACCOURCI 0 : prospect partage SON calendrier / lien de booking ===
+                # Le bot ne peut pas booker dans le calendrier du prospect.
+                # → on N'envoie PAS de réponse (sinon on raconte n'importe quoi)
+                # → on alerte Rudy par email pour qu'il aille booker manuellement
+                # → on marque traité (sinon retraitement infini)
+                if classification.prospect_offers_calendar:
+                    print("  >> Prospect partage SON calendrier → alerte Rudy, pas de réponse auto")
+                    alert_line = send_meeting_alert(
+                        prospect_email=reply.from_email,
+                        prospect_name=(classification.prospect_name or (prospect.company if prospect else None)),
+                        company=(prospect.company if prospect else None),
+                        reply_snippet=_short(_trim_quoted_history(_strip_html(reply.body)), 400),
+                        proposed_when="Le prospect partage son propre calendrier — Rudy doit booker manuellement",
+                        campaign_id=reply.campaign_id,
+                        dry_run=dry_run,
+                        phone=classification.contact_phone,
+                        in_calendar=False,
+                    )
+                    print(f"    {alert_line}")
+                    log_entry["intent"] = "interested_warm_calendar_shared"
+                    log_entry["confidence"] = classification.confidence
+                    log_entry["key_phrase"] = classification.key_phrase
+                    log_entry["actions"] = ["alerte envoyée (prospect partage son calendrier)"]
+                    log_entry["dry_run"] = dry_run
+                    logf.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
+                    if kvstore and kvstore.kv_available():
+                        kvstore.log_action({
+                            "at": now_utc.isoformat(),
+                            "from": reply.from_email,
+                            "subject": reply.subject,
+                            "intent": "interested_warm",
+                            "status": "⚠️ ALERTE : prospect partage son calendrier — à booker à la main",
+                            "reply": _trim_quoted_history(_strip_html(reply.body))[:700],
+                            "response": "(aucune — Rudy doit aller sur le calendrier du prospect)",
+                        })
+                    if not dry_run:
+                        append_processed_id(processed_file, reply.message_id)
+                    processed_count += 1
+                    continue
 
                 # === RACCOURCI 1 : intents silencieux (unsub / hostile / bounce_or_auto) ===
                 # Aucun email à envoyer → on n'a JAMAIS besoin de drafter (économie Sonnet)
