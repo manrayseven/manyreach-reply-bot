@@ -32,17 +32,16 @@ class handler(BaseHTTPRequestHandler):
             import run_bot  # scripts/run_bot.py
 
             # Quota d'itérations LOURDES (draft+send Sonnet). Cron-job.org coupe
-            # à 30s → on cible 3 heavies max + on restreint la file aux replies
-            # IMPORTANTS (statuts Interested/MaybeLater/etc.) sur les 7 derniers
-            # jours. Ça évite d'itérer sur 100+ replies juste pour les passer en
-            # idempotence-skip.
+            # à 30s → 3 heavies max. On regarde les replies des 2 derniers jours
+            # SANS filtre --important-only : ManyReach met parfois plusieurs
+            # heures à classifier un reply en Interested/NotInterested → sans ça
+            # les replies tout frais étaient invisibles.
             limit = os.environ.get("CRON_LIMIT", "3")
             sys.argv = [
                 "run_bot",
                 "--no-dry-run",
                 "--limit", limit,
-                "--important-only",
-                "--since-days", "7",
+                "--since-days", "2",
             ]
             code = run_bot.main()
             result["exit_code"] = code
