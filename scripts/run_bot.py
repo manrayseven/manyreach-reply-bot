@@ -619,6 +619,27 @@ def main() -> int:
                     processed_count += 1
                     continue
 
+                # ORPHAN REPLY (pas de prospect dans la base ManyReach) : la thread
+                # idempotence ne marche pas (besoin d'un prospect_id), donc le bot
+                # re-renvoyait à chaque run (vu pour sekou : 7 envois en 30 min).
+                # Sentinel KV "orphan_sent:{message_id}" : SET NX 30 jours → un
+                # envoi maxi par orphan.
+                if (
+                    prospect is None
+                    and not args.only_email
+                    and not args.reprocess
+                    and kvstore is not None
+                    and kvstore.kv_available()
+                ):
+                    already_orphan = kvstore.mark_orphan_sent(reply.message_id)
+                    if already_orphan:
+                        print(f"  >> Orphan reply déjà traité (no prospect link) — skip définitif")
+                        if not dry_run:
+                            append_processed_id(processed_file, reply.message_id)
+                        processed_count += 1
+                        continue
+                    print(f"  >> Orphan reply (no prospect link) — 1er traitement, marqué pour ne pas re-renvoyer")
+
                 previous_sent_text = ""
                 if prospect is not None:
                     try:

@@ -155,6 +155,25 @@ def clear_held_seen(message_id: str) -> None:
     _cmd("DEL", f"bot:held_seen:{message_id}")
 
 
+ORPHAN_TTL = 30 * 24 * 3600  # 30 jours — bot ne renvoie qu'une fois aux orphans
+
+
+def mark_orphan_sent(message_id: str) -> bool:
+    """Marque qu'on a tenté de répondre à un reply ORPHAN (pas de prospect).
+
+    Pour ces replies sans prospect dans ManyReach, la thread idempotence
+    classique ne marche pas (get_prospect_thread a besoin d'un prospect_id).
+    Sans ce flag KV, le bot re-renvoie à chaque run (vu pour sekou : 7 envois).
+
+    Renvoie True si on l'avait DÉJÀ vu (= skip), False si c'est nouveau.
+    """
+    if not kv_available():
+        return False
+    key = f"bot:orphan_sent:{message_id}"
+    res = _cmd("SET", key, "1", "EX", str(ORPHAN_TTL), "NX")
+    return res is None  # null = NX échoué = déjà vu
+
+
 def acquire_send_lock(message_id: str, ttl_seconds: int = 90) -> bool:
     """Acquiert un verrou exclusif pour envoyer une réponse à ce reply.
 
