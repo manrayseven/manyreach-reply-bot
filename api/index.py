@@ -331,16 +331,16 @@ class handler(BaseHTTPRequestHandler):
                     sys.path.insert(0, scripts_dir)
                 import run_bot
                 old_argv = sys.argv
-                # Déclenchement humain manuel : budget 45s (Vercel maxDuration 60,
-                # on garde 15s de marge pour le finalize sinon 504). Limit 6
-                # heavies, --ignore-window pour forcer peu importe l'heure.
-                # PAS de --important-only : on veut aussi les replies frais que
-                # ManyReach n'a pas encore classifiés. 3 jours de fenêtre.
-                os.environ["RUN_BUDGET_SECONDS"] = "45"
+                # Déclenchement humain manuel : budget 35s (Vercel maxDuration 60,
+                # marge confortable pour le finalize). Limit 4 heavies (chaque
+                # heavy = 5-12s draft+send Sonnet). --ignore-window force l'envoi
+                # peu importe l'heure. PAS de --important-only : on veut aussi
+                # les replies frais que ManyReach n'a pas encore classifiés.
+                os.environ["RUN_BUDGET_SECONDS"] = "35"
                 sys.argv = [
                     "run_bot",
                     "--no-dry-run",
-                    "--limit", "6",
+                    "--limit", "4",
                     "--ignore-window",
                     "--since-days", "3",
                 ]
