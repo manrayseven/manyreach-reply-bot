@@ -48,7 +48,8 @@ Retourne UNIQUEMENT ce JSON (pas de markdown, pas de prose) :
   "contact_phone": null,
   "zoom_link": null,
   "offer_label": null,
-  "prospect_offers_calendar": false
+  "prospect_offers_calendar": false,
+  "recontact_datetime": null
 }
 ```
 
@@ -72,6 +73,15 @@ Champs RDV (remplis-les SURTOUT pour `meeting_confirmed`, sinon `null`) :
 - `contact_phone` : le numéro de téléphone sur lequel appeler le prospect (depuis le reply OU sa signature). Format brut tel qu'écrit. Sinon `null`.
 - `zoom_link` : si le prospect a donné SON propre lien de visio (Zoom/Meet/Teams), mets-le ici. Sinon `null`.
 - `prospect_offers_calendar` : `true` UNIQUEMENT si le prospect propose SON calendrier / un lien de booking pour que Rudy choisisse un créneau ("I'll share my calendar", "pick a time", "feel free to book", "voici mon Calendly / Calendly link", "réservez sur mon agenda", "choisissez un créneau qui vous convient sur mon agenda"). Dans ces cas, le bot ne peut pas réserver lui-même → Rudy doit le faire manuellement. Garde l'intent `interested_warm` et mets `confirmed_datetime: null`. Sinon `false`.
+- `recontact_datetime` : **pour `objection_timing` UNIQUEMENT**. Date ISO 8601 (jour à 10h Paris, ex. `2026-08-26T10:00:00+02:00`) à laquelle le bot doit relancer ce prospect. Déduis-la du reply :
+  - "dans 3 mois" → aujourd'hui + 90 jours
+  - "dans 6 mois" → aujourd'hui + 180 jours
+  - "en septembre" → 1er septembre de l'année courante (ou suivante si déjà passé)
+  - "Q3" / "Q4" → 1er juillet / 1er octobre
+  - "à la rentrée" → 1er septembre
+  - "rappelez-moi le 15 octobre" → 15 octobre à 10h00
+  - "réouverture le 25 juin" / "back on Y" → la date donnée
+  Si le prospect dit "plus tard" sans précision → laisse `null` (le bot prend J+90 par défaut). Sinon `null` aussi pour les autres intents.
 - `offer_label` : raison de l'appel = label court de l'offre pitchée dans le cold mail (ex. "Cold Email", "Audit SEO", "Refonte site", "Audit digital"). Déduis-le du cold mail. Si vraiment indéterminable → "échange".
 - `prospect_name` : prénom + nom du prospect, extrait de sa signature (ex. "Sarah Laroye"). Sinon le prénom seul si connu. Sinon `null`.
 

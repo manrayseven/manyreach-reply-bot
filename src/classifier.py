@@ -52,6 +52,10 @@ class Classification:
     # peut pas réserver dans le calendrier du prospect), et on prévient Rudy par
     # email pour qu'il aille booker lui-même.
     prospect_offers_calendar: bool = False
+    # Pour les objection_timing : date à laquelle relancer ("dans 3 mois" → ISO 8601
+    # de la date cible, "septembre" → 1er septembre, "Q4" → 1er octobre). Sinon
+    # null → on prend par défaut J+90 quand on crée l'event.
+    recontact_datetime: str | None = None
 
     @classmethod
     def from_json(cls, data: dict) -> "Classification":
@@ -72,6 +76,7 @@ class Classification:
             offer_label=data.get("offer_label") or None,
             prospect_name=data.get("prospect_name") or None,
             prospect_offers_calendar=bool(data.get("prospect_offers_calendar", False)),
+            recontact_datetime=data.get("recontact_datetime") or None,
         )
 
 

@@ -388,6 +388,77 @@ def main() -> int:
         except Exception as e:
             return f"[RDV] échec création event ({e}) — à créer à la main"
 
+    def _schedule_recontact_event(
+        *, calendar_client, reply, prospect, classification, cal_cfg
+    ) -> str | None:
+        """Crée un event Google Agenda "🔁 Relance" à la date demandée par le
+        prospect (objection_timing). Idempotent : si un event existe déjà pour
+        cette adresse dans les 6 mois à venir, on n'en crée pas un nouveau.
+        """
+        from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+
+        # Date cible : recontact_datetime fourni par le classifier, sinon J+90.
+        iso = classification.recontact_datetime
+        try:
+            start = _dt.fromisoformat(iso) if iso else (_dt.now(_tz.utc) + _td(days=90))
+            if start.tzinfo is None:
+                start = start.replace(tzinfo=_tz.utc)
+        except ValueError:
+            start = _dt.now(_tz.utc) + _td(days=90)
+
+        # On cale à 10h Paris pour visibilité dans l'agenda
+        try:
+            from zoneinfo import ZoneInfo
+            paris = ZoneInfo(cal_cfg.get("timezone", "Europe/Paris"))
+            start = start.astimezone(paris).replace(hour=10, minute=0, second=0, microsecond=0)
+        except Exception:
+            pass
+
+        # Idempotence : si un event "relance" existe déjà pour ce prospect dans une fenêtre
+        # large, on n'en crée pas un autre.
+        exists = calendar_client.event_exists_for(
+            email=reply.from_email,
+            start=start,
+            tz_name=cal_cfg.get("timezone", "Europe/Paris"),
+            window_hours=24 * 60,  # 60 jours
+        )
+        if exists is True:
+            return f"[RELANCE] event de relance déjà présent pour {reply.from_email} → pas de doublon"
+
+        who = (
+            classification.prospect_name
+            or (prospect.company if prospect and prospect.company else None)
+            or reply.from_email
+        )
+        title = f"🔁 Relance : {who}"
+        notes = (
+            f"Raison du report (extrait du reply) : {classification.key_phrase}\n\n"
+            f"Le bot peut être branché pour envoyer la relance automatiquement "
+            f"(cf. moteur run_bumps) ; sinon, relance manuelle à cette date."
+        )
+        from src.calendar_slots import build_meeting_description
+        description = build_meeting_description(
+            email=reply.from_email,
+            phone=classification.contact_phone,
+            zoom_link=classification.zoom_link,
+            website=(prospect.website if prospect else None),
+            company=(prospect.company if prospect else None),
+            notes=notes,
+        )
+        notify_email = os.environ.get("NOTIFY_EMAIL", "contact@webmarketing-conseil.fr")
+        try:
+            calendar_client.create_event(
+                title=title,
+                start=start,
+                duration_min=15,
+                description=description,
+                tz_name=cal_cfg.get("timezone", "Europe/Paris"),
+                attendee_emails=[notify_email] if notify_email else None,
+            )
+            return f"[RELANCE] event de relance posé : '{title}' le {start.date().isoformat()}"
+        except Exception as e:
+            return f"[RELANCE] échec création event relance ({e})"
+
     processed_count = 0          # total iterations (pour stats)
     heavy_count = 0              # iterations "lourdes" (draft+send) — c'est ELLES qui consomment le quota
     skipped_count = 0
@@ -832,6 +903,26 @@ def main() -> int:
                             in_calendar=in_calendar,
                         )
                         print(f"    {alert_line}")
+
+                # objection_timing → on pose un event Google Agenda "🔁 Relance"
+                # à la date demandée par le prospect (ou J+90 par défaut). Comme
+                # ça même si le bumps engine n'est pas câblé, Rudy voit le rappel
+                # dans son agenda. Le bumps engine pourra ensuite envoyer la
+                # relance automatique.
+                if (
+                    classification.intent == "objection_timing"
+                    and calendar_client is not None
+                    and not dry_run
+                ):
+                    relance_line = _schedule_recontact_event(
+                        calendar_client=calendar_client,
+                        reply=reply,
+                        prospect=prospect,
+                        classification=classification,
+                        cal_cfg=cal_cfg,
+                    )
+                    if relance_line:
+                        print(f"    {relance_line}")
 
                 log_entry["reply_clean"] = _trim_quoted_history(_strip_html(reply.body))
                 log_entry["original_clean"] = (
