@@ -198,7 +198,15 @@ def main() -> int:
     run_ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
     log_file = logs_dir / f"run_{run_ts}.jsonl"
     processed_file = logs_dir / "processed_messages.txt"
-    processed_ids = set() if args.reprocess else load_processed_ids(processed_file)
+    # Sur Vercel /tmp est éphémère ET partagé entre invocations d'une instance
+    # warm → le cache pollue à l'infini sans persistance fiable. On le désactive
+    # complètement : la SEULE source d'idempotence sur Vercel = la thread
+    # ManyReach (Sent/SentManual après le Reply). Plus de pollution.
+    on_vercel_tmp = str(processed_file).startswith("/tmp")
+    if args.reprocess or on_vercel_tmp:
+        processed_ids = set()
+    else:
+        processed_ids = load_processed_ids(processed_file)
 
     since = datetime.now(timezone.utc).replace(
         hour=0, minute=0, second=0, microsecond=0
