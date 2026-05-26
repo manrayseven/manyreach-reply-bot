@@ -519,6 +519,23 @@ def main() -> int:
                 except Exception as e:
                     print(f"  !! find_prospect_by_email failed: {e}")
 
+                # STATUT TERMINAL : si le prospect est déjà Unsub ou Hostile, on
+                # ne retraite pas (le bot l'a déjà géré dans un run précédent OU
+                # Rudy l'a fait à la main). Évite les doublons silencieux à
+                # chaque cron — important parce que /tmp processed_ids est
+                # éphémère sur Vercel.
+                if (
+                    prospect is not None
+                    and not args.only_email
+                    and not args.reprocess
+                    and prospect.sending_status in ("Unsub", "Hostile")
+                ):
+                    print(f"  >> Statut terminal ({prospect.sending_status}) — skip silencieux")
+                    if not dry_run:
+                        append_processed_id(processed_file, reply.message_id)
+                    processed_count += 1
+                    continue
+
                 previous_sent_text = ""
                 if prospect is not None:
                     try:
