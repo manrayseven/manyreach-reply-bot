@@ -260,9 +260,15 @@ def _render() -> str:
     <div class="statusline">
       <span class="dot"></span><span class="stxt">{status_txt}</span>
       <form method="POST" action="/{keyparam}" style="margin-left:auto;display:flex;gap:8px"
-            onsubmit="var b=this.querySelector('button'); b.disabled=true; b.innerHTML='⏳ Lancement (jusqu\\'à 25s)...'; b.style.opacity=.7; return true;">
+            onsubmit="var b=this.querySelector('button'); b.disabled=true; b.innerHTML='⏳ Lancement (jusqu\\'à 35s)...'; b.style.opacity=.7; return true;">
         <input type="hidden" name="action" value="run_now">
         <button class="btn-run" type="submit" title="Force un passage du bot maintenant (purge le backlog si le cron externe est en rade)">▶ Lancer maintenant</button>
+      </form>
+      <form method="POST" action="/{keyparam}" style="display:flex;gap:6px"
+            onsubmit="var b=this.querySelector('button'); b.disabled=true; b.innerHTML='⏳...'; b.style.opacity=.7; return true;">
+        <input type="hidden" name="action" value="run_email">
+        <input type="email" name="only_email" placeholder="forcer 1 prospect…" required style="padding:9px 11px;border:1px solid #cbd5e1;border-radius:9px;font-size:13px;min-width:200px">
+        <button class="btn-run" type="submit" title="Force le traitement IMMÉDIAT de ce prospect uniquement (bypass cache + idempotence)">▶ Pour cet email</button>
       </form>
       <form method="POST" action="/{keyparam}">
         <input type="hidden" name="action" value="toggle">
@@ -319,9 +325,11 @@ class handler(BaseHTTPRequestHandler):
         action = form.get("action")
         if action == "toggle":
             kvstore.set_enabled(form.get("enabled") == "1")
-        elif action == "run_now":
-            # Lancement manuel synchrone du bot (jusqu'à maxDuration=60s côté Vercel,
-            # 25s côté run_budget_s pour avoir le temps de finir proprement).
+        elif action == "run_now" or action == "run_email":
+            # Lancement manuel synchrone du bot. Si action=run_email + champ
+            # only_email présent, on force le traitement de CE prospect précis
+            # (ignore cache, idempotence thread, send_lock).
+            only_email = (form.get("only_email") or "").strip().lower()
             os.environ.setdefault("LOG_DIR", "/tmp/mr-logs")
             from datetime import datetime as _dt, timezone as _tz
             log_status = "exécuté"
@@ -331,19 +339,25 @@ class handler(BaseHTTPRequestHandler):
                     sys.path.insert(0, scripts_dir)
                 import run_bot
                 old_argv = sys.argv
-                # Déclenchement humain manuel : budget 35s (Vercel maxDuration 60,
-                # marge confortable pour le finalize). Limit 4 heavies (chaque
-                # heavy = 5-12s draft+send Sonnet). --ignore-window force l'envoi
-                # peu importe l'heure. PAS de --important-only : on veut aussi
-                # les replies frais que ManyReach n'a pas encore classifiés.
                 os.environ["RUN_BUDGET_SECONDS"] = "35"
-                sys.argv = [
-                    "run_bot",
-                    "--no-dry-run",
-                    "--limit", "4",
-                    "--ignore-window",
-                    "--since-days", "3",
-                ]
+                if action == "run_email" and only_email:
+                    # Mode ciblé : un seul prospect, on bypass tout
+                    sys.argv = [
+                        "run_bot",
+                        "--no-dry-run",
+                        "--only-email", only_email,
+                        "--ignore-window",
+                        "--reprocess",
+                    ]
+                    log_status = f"exécuté pour {only_email}"
+                else:
+                    sys.argv = [
+                        "run_bot",
+                        "--no-dry-run",
+                        "--limit", "5",
+                        "--ignore-window",
+                        "--since-days", "3",
+                    ]
                 try:
                     run_bot.main()
                 finally:
