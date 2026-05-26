@@ -314,6 +314,20 @@ def execute_plan(
                 )
                 continue
             if not dry_run:
+                # SEND-LOCK : avant d'envoyer, on pose un verrou KV exclusif sur
+                # ce message_id. Si un autre run (cron en parallèle ou clic manuel
+                # simultané) a déjà la main, on skip → plus de double-send.
+                try:
+                    from src import kvstore as _kv
+                    if _kv.kv_available() and not _kv.acquire_send_lock(
+                        action.payload["message_id"]
+                    ):
+                        results.append(
+                            f"[DUPLICATE-LOCK] envoi déjà en cours pour {action.payload.get('message_id', '?')} — skip"
+                        )
+                        continue
+                except Exception:  # noqa: BLE001
+                    pass  # pas de KV ou erreur réseau → on continue (pas de protection)
                 client.send_reply(
                     message_id=action.payload["message_id"],
                     body_html=action.payload["body_html"],

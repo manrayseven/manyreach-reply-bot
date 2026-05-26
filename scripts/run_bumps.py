@@ -70,7 +70,13 @@ def main() -> int:
     def send_window_open():
         hours = send_cfg.get("allowed_hours", [9, 19])
         days = send_cfg.get("allowed_weekdays", [0, 1, 2, 3, 4])
-        local = now.astimezone()
+        # IMPORTANT : heure Paris, pas heure serveur (UTC sur Vercel).
+        tz_name = (settings.get("calendar", {}) or {}).get("timezone", "Europe/Paris")
+        try:
+            from zoneinfo import ZoneInfo
+            local = now.astimezone(ZoneInfo(tz_name))
+        except Exception:
+            local = now.astimezone()
         return local.weekday() in days and hours[0] <= local.hour < hours[1]
 
     print(f"\n=== Relances — {'DRY-RUN' if dry_run else 'LIVE'} — cadence J+{bump_days} ===\n")

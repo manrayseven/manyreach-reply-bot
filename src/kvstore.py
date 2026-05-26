@@ -153,3 +153,22 @@ def clear_held_seen(message_id: str) -> None:
     if not kv_available():
         return
     _cmd("DEL", f"bot:held_seen:{message_id}")
+
+
+def acquire_send_lock(message_id: str, ttl_seconds: int = 90) -> bool:
+    """Acquiert un verrou exclusif pour envoyer une réponse à ce reply.
+
+    Empêche un duplicate send quand deux runs parallèles (cron + clic manuel,
+    ou deux crons qui se chevauchent à cause de timeouts précédents) tentent
+    de répondre au même message avant que le Sent ne soit visible dans le
+    thread ManyReach. TTL = 90s : couvre largement le temps d'envoi + de
+    propagation dans la thread.
+
+    Renvoie True si le lock a été acquis (= on peut envoyer), False si déjà
+    pris par un autre run (= on doit skip cet envoi).
+    """
+    if not kv_available():
+        return True  # pas de KV → pas de protection (on tente quand même)
+    key = f"bot:send_lock:{message_id}"
+    res = _cmd("SET", key, "1", "EX", str(ttl_seconds), "NX")
+    return res is not None  # "OK" = créé = on a le lock
