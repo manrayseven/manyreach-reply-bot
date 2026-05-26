@@ -16,7 +16,7 @@ Analyser un email de réponse reçu sur une campagne de cold outreach et le clas
 | `wrong_person_redirect` | Pas la bonne personne, redirige vers un autre contact | "ce n'est pas moi", "voyez avec X", "contactez le département Y", "je transfère à" |
 | `ask_more_info` | Demande de précisions sans dire oui ni non | "envoyez-moi plus d'infos", "des cas clients", "des références", "votre site" |
 | `not_interested_polite` | Refus poli, court, sans hostilité, sans explication | "non merci", "pas intéressé", "ne souhaite pas donner suite" |
-| `unsubscribe` | Demande explicite de désinscription / arrêt **OU fermeture/cessation d'activité DÉFINITIVE** (liquidation, dissolution, retraite définitive sans repreneur). ⚠️ NE PAS confondre avec une fermeture saisonnière, congés, fermeture temporaire, indisponibilité de 1 mois etc. → ceux-là vont en `objection_timing` (relance à la réouverture). | "désinscrire", "ne plus me contacter", "stop", "RGPD", "spam", **"société en liquidation", "société dissoute", "cessation d'activité définitive", "je pars à la retraite définitivement"** |
+| `unsubscribe` | Demande explicite de désinscription / arrêt **OU fermeture/cessation d'activité DÉFINITIVE** (liquidation, dissolution, retraite, fin de carrière, départ professionnel sans repreneur). ⚠️ NE PAS confondre avec une fermeture saisonnière, congés, fermeture temporaire, indisponibilité de 1 mois etc. → ceux-là vont en `objection_timing` (relance à la réouverture). | "désinscrire", "ne plus me contacter", "stop", "RGPD", "spam", **"société en liquidation", "société dissoute", "cessation d'activité", "je pars à la retraite", "fin de carrière", "je suis en fin de carrière", "je quitte mon poste sans repreneur"** |
 | `objection_timing` | Pas le bon moment + **fermeture saisonnière / congés / indisponibilité temporaire** (réouverture prévue, "back in X", "fermé jusqu'au Y", "en vacances jusqu'à") | "rappelez-moi en septembre", "dans 3 mois", "occupé en ce moment", **"fermeture saisonnière", "réouverture le X", "fermé jusqu'au Y", "back on Monday", "out of office until"** |
 | `hostile` | Ton agressif, insultes, menaces | "harcèlement", "je porte plainte", insultes, ton très agressif |
 | `bounce_or_auto` | Bounce/auto-reply non détecté par le pré-filtre | "mailbox full", "auto-reply", "out of office", erreur SMTP |
@@ -64,8 +64,11 @@ Champs RDV (remplis-les SURTOUT pour `meeting_confirmed`, sinon `null`) :
   la date de référence fournie.
   **Mets `null` (ne devine JAMAIS) si** : le prospect dit juste "c'est bon", "je vous
   attends", "ok ça marche", "parfait", fait référence à un RDV déjà convenu, accepte
-  sans répéter la date, ou ne donne pas explicitement jour+heure. Mieux vaut `null`
-  (Rudy cale à la main) qu'une date inventée qui crée un faux RDV dans l'agenda.
+  sans répéter la date, OU dit une période vague comme **"semaine prochaine", "dans la
+  semaine", "en début de semaine", "courant juin", "lundi" sans heure, "10h" sans jour**.
+  Mieux vaut `null` (Rudy/le drafter propose un créneau précis) qu'une date inventée qui
+  crée un faux RDV à un moment qui ne correspond pas à ce que le prospect attend
+  (cause directe de no-shows).
 - `contact_phone` : le numéro de téléphone sur lequel appeler le prospect (depuis le reply OU sa signature). Format brut tel qu'écrit. Sinon `null`.
 - `zoom_link` : si le prospect a donné SON propre lien de visio (Zoom/Meet/Teams), mets-le ici. Sinon `null`.
 - `prospect_offers_calendar` : `true` UNIQUEMENT si le prospect propose SON calendrier / un lien de booking pour que Rudy choisisse un créneau ("I'll share my calendar", "pick a time", "feel free to book", "voici mon Calendly / Calendly link", "réservez sur mon agenda", "choisissez un créneau qui vous convient sur mon agenda"). Dans ces cas, le bot ne peut pas réserver lui-même → Rudy doit le faire manuellement. Garde l'intent `interested_warm` et mets `confirmed_datetime: null`. Sinon `false`.

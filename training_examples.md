@@ -227,6 +227,42 @@ Fondateur Webmarketing Conseil
 
 ---
 
+### P.1b — interested_warm sur SEO SHOPIFY (alternative à P.1) ⭐
+
+> Utilise CE template (et PAS P.1) quand le cold mail mentionne **Shopify, e-commerce,
+> fiches produits, collections, backlinks pour boutique**. Rudy pitche du **SEO Shopify
+> 4 piliers** sur ces cibles, pas du setup cold email.
+
+**Réponse idéale (À REPRODUIRE FIDÈLEMENT)** :
+```
+Merci pour votre retour.
+
+Ce que je propose pour les boutiques Shopify est un travail de SEO en 4 piliers :
+- amélioration des fiches produits (titres, descriptions, balises),
+- optimisation des collections (structure, ancres internes, contenus),
+- production de contenus thématiques pour capter du trafic intentionniste,
+- backlinks ciblés sur les pages stratégiques.
+
+Pour vous donner une référence concrète, on opère cette méthode sur fillesfideles.fr (boutique de robes de mariée) régulièrement en 1ère page Google sur "robes mariée" (un des mots-clés les plus durs).
+
+Deux questions pour orienter ma réponse :
+- Quelle est la catégorie / la collection que vous voulez pousser en priorité ?
+- Quelle est votre situation actuelle côté SEO (audit déjà fait, prestataire en place, ou départ from scratch) ?
+
+Selon votre réponse, on peut caler 15 min en visio pour creuser et voir si l'approche colle à votre cas.
+Bien à vous,
+Rudy Viard
+Fondateur Webmarketing Conseil
+```
+
+**Notes pour le drafter** :
+- Reproduis le texte fidèlement. Adapte le prénom si connu.
+- **PAS de prix dans le corps** (même règle que P.1). Mentionne fillesfideles.fr UNE seule fois comme preuve.
+- Si le prospect demande explicitement les tarifs (`ask_more_info` ou `objection_price`) → là tu peux donner les prix SEO Shopify selon les infos du style guide.
+- N'invente JAMAIS d'autres références ou résultats chiffrés.
+
+---
+
 ### P.2 — ask_more_info (basé sur Example 6 — portfolio cas clients Luneos)
 
 **Reply reçu** :
