@@ -631,14 +631,14 @@ def main() -> int:
                     and kvstore is not None
                     and kvstore.kv_available()
                 ):
-                    already_orphan = kvstore.mark_orphan_sent(reply.message_id)
+                    already_orphan = kvstore.mark_orphan_sent(reply.from_email)
                     if already_orphan:
-                        print(f"  >> Orphan reply déjà traité (no prospect link) — skip définitif")
+                        print(f"  >> Orphan sender {reply.from_email} déjà traité — skip définitif")
                         if not dry_run:
                             append_processed_id(processed_file, reply.message_id)
                         processed_count += 1
                         continue
-                    print(f"  >> Orphan reply (no prospect link) — 1er traitement, marqué pour ne pas re-renvoyer")
+                    print(f"  >> Orphan sender {reply.from_email} — 1er traitement, marqué pour ne pas re-renvoyer")
 
                 previous_sent_text = ""
                 if prospect is not None:

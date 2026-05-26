@@ -158,20 +158,31 @@ def clear_held_seen(message_id: str) -> None:
 ORPHAN_TTL = 30 * 24 * 3600  # 30 jours — bot ne renvoie qu'une fois aux orphans
 
 
-def mark_orphan_sent(message_id: str) -> bool:
-    """Marque qu'on a tenté de répondre à un reply ORPHAN (pas de prospect).
+def mark_orphan_sent(sender_email: str) -> bool:
+    """Marque qu'on a tenté de répondre à un sender ORPHAN (pas de prospect lié).
 
     Pour ces replies sans prospect dans ManyReach, la thread idempotence
-    classique ne marche pas (get_prospect_thread a besoin d'un prospect_id).
-    Sans ce flag KV, le bot re-renvoie à chaque run (vu pour sekou : 7 envois).
+    classique ne marche pas. Sans ce flag KV, le bot re-renvoie à chaque run
+    (vu pour sekou : 10+ envois sur la journée parce que ManyReach peut avoir
+    PLUSIEURS replies orphelins du même sender, chacun avec un message_id
+    différent → message_id-based lock laisse passer). On verrouille par EMAIL.
 
     Renvoie True si on l'avait DÉJÀ vu (= skip), False si c'est nouveau.
     """
     if not kv_available():
         return False
-    key = f"bot:orphan_sent:{message_id}"
+    key = f"bot:orphan_sent_email:{sender_email.lower().strip()}"
     res = _cmd("SET", key, "1", "EX", str(ORPHAN_TTL), "NX")
     return res is None  # null = NX échoué = déjà vu
+
+
+def force_mark_orphan(sender_email: str) -> None:
+    """Force le marquage d'un sender orphan comme déjà traité — utilisé en
+    urgence pour arrêter un loop en cours (sekou-like)."""
+    if not kv_available():
+        return
+    key = f"bot:orphan_sent_email:{sender_email.lower().strip()}"
+    _cmd("SET", key, "1", "EX", str(ORPHAN_TTL))
 
 
 def acquire_send_lock(message_id: str, ttl_seconds: int = 90) -> bool:
