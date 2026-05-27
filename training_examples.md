@@ -61,11 +61,11 @@ Fondateur Webmarketing Conseil
 - Étude de cas refonte : https://www.webmarketing-conseil.fr/refonte-site-internet/
 - Réalisations Luneos : https://www.luneos.fr/realisations (peut être référencé même en signant WC, c'est l'agence dans laquelle Rudy travaille)
 
-**Pricing transparency (pour calibrer les objection_price)** :
-- Setup cold email one-shot : **2 200€ HT (Starter) / 3 200€ HT (Pro) / 4 500€ HT (Scale)**
-- Suivi mensuel optionnel : **290€ HT/mois, sans engagement**
-- Volumes : 750 / 1500 / 3000 emails/jour selon palier
+**Pricing transparency (pour calibrer les objection_price et ask_more_info)** — MIS À JOUR 2026-05-27 :
+- Setup cold email one-shot : **2 200€ HT (Starter) / 3 200€ HT (Pro) / 4 500€ HT (Scale)** selon volume (750 → 3 000 emails/jour)
+- Suivi mensuel optionnel : **390€ HT/mois**, sans engagement, comprenant **maintenance + ajout de contacts chaque mois**
 - Bénéfice clé : le client garde la propriété des domaines + infrastructure (pas de dépendance prestataire)
+- ⚠️ Rappel règle 10b du draft.md : **PAS de prix dans le corps des `interested_warm` / `interested_lukewarm`** (le but est d'amener au call). Prix uniquement quand le prospect les demande explicitement (`ask_more_info`) ou objecte sur le tarif (`objection_price`).
 
 ---
 
