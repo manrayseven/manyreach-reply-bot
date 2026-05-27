@@ -13,16 +13,27 @@ Stored as JSON at data/slot_holds.json (gitignored).
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_PATH = PROJECT_ROOT / "data" / "slot_holds.json"
+
+
+def _default_store_path() -> Path:
+    """Sur Vercel le FS est read-only sauf /tmp → on respecte LOG_DIR
+    (typiquement /tmp/mr-logs sur Vercel). Sinon on tombe sur data/ du repo.
+    Lu à CHAQUE init (pas en module-level) pour gérer les warm instances où
+    LOG_DIR pourrait être posé après l'import du module."""
+    log_dir = os.environ.get("LOG_DIR")
+    if log_dir:
+        return Path(log_dir) / "slot_holds.json"
+    return PROJECT_ROOT / "data" / "slot_holds.json"
 
 
 class SlotHoldStore:
     def __init__(self, path: Path | None = None, hold_days: int = 5):
-        self.path = path or DEFAULT_PATH
+        self.path = path or _default_store_path()
         self.hold_days = hold_days
         self._holds: list[dict] = self._load()
         self._prune()
@@ -36,10 +47,17 @@ class SlotHoldStore:
             return []
 
     def _save(self) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(
-            json.dumps(self._holds, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            self.path.write_text(
+                json.dumps(self._holds, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+        except OSError as e:
+            # FS read-only (cas Vercel /var/task quand LOG_DIR pas posé) ou
+            # autre erreur disque → on perd juste la persistance soft-hold, on
+            # NE crash PAS le bot (sinon tous les drafts proposant des créneaux
+            # plantent silencieusement → bug observé sur secelectroclim).
+            print(f"  !! SlotHoldStore._save échec ({e}) — soft-hold non persisté")
 
     def _prune(self) -> None:
         """Drop holds older than hold_days and slots already in the past."""
