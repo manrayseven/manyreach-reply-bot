@@ -31,6 +31,9 @@ INTENT_PROSPECT_UPDATE: dict[str, tuple[str | None, bool | None, list[str]]] = {
     # the bot would only risk wrongly archiving a valid prospect (empty replies,
     # auto-replies from working mailboxes, etc.). Just tag for audit, send nothing.
     "bounce_or_auto":                  (None,             None,  ["bot:bounce-or-auto"]),
+    # ack_only = remerciement seul → on ne touche RIEN (pas de status update,
+    # pas de blacklist, juste un tag d'audit). Le prospect reste à son statut.
+    "ack_only":                        (None,             None,  ["bot:ack-only"]),
 }
 
 # Intents eligible for auto-send.
@@ -54,7 +57,9 @@ AUTOSEND_ELIGIBLE = frozenset({
 })
 
 # Intents that NEVER send a reply (silent action only)
-ALWAYS_SILENT = frozenset({"unsubscribe", "hostile", "bounce_or_auto"})
+# ack_only = le prospect a juste dit "merci" après notre réponse → on se tait,
+# sinon on entre dans une boucle infinie de "merci → c'est noté → merci → ...".
+ALWAYS_SILENT = frozenset({"unsubscribe", "hostile", "bounce_or_auto", "ack_only"})
 
 
 ActionKind = Literal[

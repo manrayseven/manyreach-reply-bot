@@ -20,6 +20,7 @@ Analyser un email de réponse reçu sur une campagne de cold outreach et le clas
 | `objection_timing` | Pas le bon moment + **fermeture saisonnière / congés / indisponibilité temporaire** (réouverture prévue, "back in X", "fermé jusqu'au Y", "en vacances jusqu'à") | "rappelez-moi en septembre", "dans 3 mois", "occupé en ce moment", **"fermeture saisonnière", "réouverture le X", "fermé jusqu'au Y", "back on Monday", "out of office until"** |
 | `hostile` | Ton agressif, insultes, menaces | "harcèlement", "je porte plainte", insultes, ton très agressif |
 | `bounce_or_auto` | Bounce/auto-reply non détecté par le pré-filtre | "mailbox full", "auto-reply", "out of office", erreur SMTP |
+| `ack_only` | ⚠️ Le prospect a déjà reçu une réponse du bot et il **accuse réception SANS nouvelle demande** : remerciement court, "bien noté", "merci pour votre retour", "ok merci". Pas de question, pas de relance, pas de nouvelle info. → Le bot doit **se taire** (silencieux), on ne renvoie pas un nième "c'est noté, à plus" qui crée une boucle infinie de politesse. | "merci pour votre réponse", "bien noté merci", "ok merci", "thanks", "thank you", "noted, thanks", "parfait merci", "ok parfait" — **et le reply est court (moins de ~25 mots) et ne contient PAS de question, de date, de demande de prix, ou de nouvelle info** |
 
 ## Règles
 

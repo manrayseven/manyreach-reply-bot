@@ -28,6 +28,7 @@ VALID_INTENTS = frozenset(
         "unsubscribe",
         "hostile",
         "bounce_or_auto",
+        "ack_only",  # le prospect remercie/accuse réception → on se TAIT (silencieux)
     }
 )
 
