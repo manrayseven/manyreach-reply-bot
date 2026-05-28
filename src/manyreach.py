@@ -111,12 +111,32 @@ class ManyReachClient:
         self.close()
 
     def _request(self, method: str, path: str, **kwargs: Any) -> Any:
-        resp = self._client.request(method, path, **kwargs)
-        if resp.status_code >= 400:
-            raise ManyReachError(resp.status_code, resp.text, str(resp.request.url))
-        if resp.status_code == 204 or not resp.content:
-            return None
-        return resp.json()
+        # Résilience au rate-limit ManyReach (60 req/min). Sur 429, on respecte
+        # le Retry-After (ou un backoff progressif) et on réessaie, plutôt que
+        # de faire planter tout le run (cause de replies non-envoyés quand l'API
+        # est saturée par le cron + autres appels).
+        import time as _t
+        max_attempts = 5
+        for attempt in range(max_attempts):
+            resp = self._client.request(method, path, **kwargs)
+            if resp.status_code == 429 and attempt < max_attempts - 1:
+                retry_after = resp.headers.get("Retry-After")
+                try:
+                    wait = float(retry_after) if retry_after else 0
+                except ValueError:
+                    wait = 0
+                # défaut : backoff 3s, 6s, 9s, 12s (le reset de fenêtre ManyReach
+                # est à la minute, mais souvent quelques secondes suffisent)
+                wait = max(wait, 3.0 * (attempt + 1))
+                _t.sleep(min(wait, 15.0))
+                continue
+            if resp.status_code >= 400:
+                raise ManyReachError(resp.status_code, resp.text, str(resp.request.url))
+            if resp.status_code == 204 or not resp.content:
+                return None
+            return resp.json()
+        # Tous les essais épuisés sur 429
+        raise ManyReachError(429, "rate limit — tous les retries épuisés", path)
 
     # ----- Messages / Replies -----
 
@@ -223,19 +243,28 @@ class ManyReachClient:
         if campaign_id is not None:
             params["campaignId"] = campaign_id
         page = 1
-        while True:
+        max_pages = 6  # garde-fou dur (ManyReach renvoie newest-first)
+        while page <= max_pages:
             params["page"] = page
             data = self._request("GET", "/messages", params=params)
             items = (data or {}).get("items", [])
             if not items:
                 return
+            page_had_recent = False
             for item in items:
                 if item.get("type") != "Reply":
                     continue
                 msg = Message.from_api(item)
                 if since and msg.created_at < since:
                     continue
+                page_had_recent = True
                 yield msg
+            # ARRÊT ANTICIPÉ : ManyReach renvoie du plus récent au plus ancien.
+            # Si une page entière est plus vieille que `since`, toutes les pages
+            # suivantes le sont aussi → inutile de continuer (économie d'appels
+            # API = moins de risque de rate-limit 429).
+            if since and not page_had_recent:
+                return
             if len(items) < page_size:
                 return
             page += 1
