@@ -185,6 +185,29 @@ def force_mark_orphan(sender_email: str) -> None:
     _cmd("SET", key, "1", "EX", str(ORPHAN_TTL))
 
 
+REPLIED_TTL = 30 * 24 * 3600  # 30 jours
+
+
+def already_replied(message_id: str) -> bool:
+    """True si on a DÉJÀ envoyé une réponse à ce reply (flag permanent KV).
+
+    Garde-fou anti-double-envoi INDÉPENDANT de l'indexation ManyReach : même si
+    le Sent met du temps à apparaître dans le thread (donc l'idempotence thread
+    ne le voit pas encore), ce flag bloque tout 2e envoi. Posé APRÈS un envoi
+    réussi via mark_replied(). TTL 30 jours.
+    """
+    if not kv_available():
+        return False
+    return _cmd("GET", f"bot:replied:{message_id}") is not None
+
+
+def mark_replied(message_id: str) -> None:
+    """À appeler APRÈS un envoi réussi → bloque tout futur envoi sur ce reply."""
+    if not kv_available():
+        return
+    _cmd("SET", f"bot:replied:{message_id}", "1", "EX", str(REPLIED_TTL))
+
+
 def acquire_send_lock(message_id: str, ttl_seconds: int = 600) -> bool:
     """Acquiert un verrou exclusif pour envoyer une réponse à ce reply.
 

@@ -26,6 +26,12 @@ Analyser un email de réponse reçu sur une campagne de cold outreach et le clas
 
 0. **`meeting_confirmed` vs `interested_warm`** : si le prospect mentionne un créneau PRÉCIS (jour + heure, ou un numéro de tél avec un moment pour appeler), c'est `meeting_confirmed`. S'il est juste intéressé sans donner de créneau, c'est `interested_warm`.
 1. **Une seule intent** par reply.
+0b. ⚠️ **NÉGATION — lis la phrase ENTIÈRE, pas juste les mots-clés**. Un reply contenant le mot "intéressé" n'est PAS forcément `interested_*`. Détecte la négation :
+   - "je ne suis **pas** intéressé", "**pas** intéressé pour le moment", "ça ne m'intéresse **pas**", "**no** thanks", "**not** interested" → c'est un REFUS, jamais interested_warm.
+   - Le mot "Oui" en début de phrase ne signifie PAS "oui je suis intéressé" : "Oui je ne suis pas intéressé" = REFUS (le "oui" est juste un accusé de lecture poli).
+   - "pas intéressé **pour le moment** / **en ce moment**" → `objection_timing` (pas le bon moment, recontact futur).
+   - "pas intéressé" tout court, sans notion de timing → `not_interested_polite`.
+   - Ne classe `interested_warm`/`interested_lukewarm` QUE si le prospect exprime un signal POSITIF clair SANS négation ("ça m'intéresse", "volontiers", "avec plaisir", "dites-m'en plus").
 2. **Privilégie la sécurité** : si entre `not_interested_polite` et `unsubscribe`, et qu'il y a UNE chance que le prospect demande de ne plus être contacté, choisis `unsubscribe` (RGPD).
 2b. **SIGNAL FORT : "STOP" dans le sujet ou le corps** = `unsubscribe` automatiquement, même si le corps explique gentiment. Idem pour "STOP //", "stop //", "STOP-", "NE PLUS RECEVOIR", "REMOVE", "UNSUBSCRIBE". Ces formulations sont des macros standard utilisées pour signaler une désinscription définitive — le corps explicatif n'annule pas le signal. Confidence ≥ 0.95 dans ces cas.
 3. **Privilégie la sécurité** : si entre `interested_lukewarm` et `ask_more_info`, et que le prospect demande une ressource, choisis `ask_more_info` (plus prudent qu'un meeting trop tôt).

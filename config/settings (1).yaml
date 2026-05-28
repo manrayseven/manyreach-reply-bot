@@ -1,0 +1,52 @@
+# Configuration utilisateur du bot.
+# Édite ces valeurs selon tes préférences.
+
+# --- Comportement général ---
+
+# Par défaut, le bot tourne en dry-run (aucun appel d'écriture vers ManyReach).
+# Passe à false UNIQUEMENT quand tu es confiant.
+default_dry_run: true
+
+# Seuil de confidence en-dessous duquel on ne fait JAMAIS d'auto-send.
+# Le draft est généré, mais reste en review.
+min_autosend_confidence: 0.92
+
+# Si true, ne pas envoyer de réponse aux not_interested_polite (juste tagger + stop sequence).
+# Si false, envoie un court accusé de réception poli.
+silent_on_not_interested: true
+
+# Nombre max de replies traités par run (utile pour les premiers tests).
+# null = pas de limite.
+limit_per_run: 20
+
+# Si null, on traite toutes les campagnes. Sinon liste d'IDs.
+campaign_filter: null
+#  - 11572
+
+# --- Identité ---
+# La voice, les signatures par entité, et les liens backup sont définis
+# dans training_examples.md (sections "Voice globale" + "Entités"). Le drafter
+# parse ce doc directement — pas besoin de dupliquer ici.
+
+# --- Calendrier (phase 2 — Google Calendar) ---
+# Pour l'instant, le bot utilise un pattern textuel pour les créneaux.
+# En phase 2, on connectera Google Calendar.
+
+calendar:
+  enabled: false
+  timezone: "Europe/Paris"
+  working_hours:
+    monday:    [["10:00", "12:00"], ["14:00", "18:00"]]
+    tuesday:   [["10:00", "12:00"], ["14:00", "18:00"]]
+    wednesday: [["10:00", "12:00"], ["14:00", "18:00"]]
+    thursday:  [["10:00", "12:00"], ["14:00", "18:00"]]
+    friday:    [["10:00", "12:00"]]
+  meeting_duration_minutes: 30
+  buffer_minutes: 15
+  days_ahead: 5
+
+# --- Logs ---
+
+logs:
+  dir: "logs"
+  format: "jsonl"  # jsonl = un JSON par ligne, facile à grep

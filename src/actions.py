@@ -319,26 +319,35 @@ def execute_plan(
                 )
                 continue
             if not dry_run:
-                # SEND-LOCK : avant d'envoyer, on pose un verrou KV exclusif sur
-                # ce message_id. Si un autre run (cron en parallèle ou clic manuel
-                # simultané) a déjà la main, on skip → plus de double-send.
+                _mid = action.payload["message_id"]
+                _kv = None
                 try:
-                    from src import kvstore as _kv
-                    if _kv.kv_available() and not _kv.acquire_send_lock(
-                        action.payload["message_id"]
-                    ):
-                        results.append(
-                            f"[DUPLICATE-LOCK] envoi déjà en cours pour {action.payload.get('message_id', '?')} — skip"
-                        )
-                        continue
+                    from src import kvstore as _kv  # noqa: PLC0415
                 except Exception:  # noqa: BLE001
-                    pass  # pas de KV ou erreur réseau → on continue (pas de protection)
+                    _kv = None
+                # GARDE-FOU 1 (permanent) : a-t-on DÉJÀ répondu à ce reply ?
+                # Indépendant de l'indexation ManyReach → bloque tout 2e envoi
+                # même si le Sent n'est pas encore visible dans le thread.
+                if _kv is not None and _kv.kv_available() and _kv.already_replied(_mid):
+                    results.append(f"[DÉJÀ RÉPONDU] {_mid} — skip (anti-double-envoi)")
+                    continue
+                # GARDE-FOU 2 (mutex court) : verrou exclusif pendant l'envoi pour
+                # les runs concurrents (cron + clic manuel simultanés).
+                if _kv is not None and _kv.kv_available() and not _kv.acquire_send_lock(_mid):
+                    results.append(f"[DUPLICATE-LOCK] envoi en cours pour {_mid} — skip")
+                    continue
                 client.send_reply(
-                    message_id=action.payload["message_id"],
+                    message_id=_mid,
                     body_html=action.payload["body_html"],
                     subject=action.payload.get("subject"),
                     send_as_reply=True,
                 )
+                # GARDE-FOU 3 : on marque "répondu" (permanent 30j) APRÈS succès.
+                if _kv is not None and _kv.kv_available():
+                    try:
+                        _kv.mark_replied(_mid)
+                    except Exception:  # noqa: BLE001
+                        pass
                 results.append(f"[ENVOYÉ ✓] {action.description}")
             else:
                 results.append(f"[DRY-RUN] ENVERRAIT {action.description}")
