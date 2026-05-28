@@ -185,7 +185,7 @@ def force_mark_orphan(sender_email: str) -> None:
     _cmd("SET", key, "1", "EX", str(ORPHAN_TTL))
 
 
-def acquire_send_lock(message_id: str, ttl_seconds: int = 90) -> bool:
+def acquire_send_lock(message_id: str, ttl_seconds: int = 600) -> bool:
     """Acquiert un verrou exclusif pour envoyer une réponse à ce reply.
 
     Empêche un duplicate send quand deux runs parallèles (cron + clic manuel,
