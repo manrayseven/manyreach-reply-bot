@@ -482,17 +482,37 @@ def main() -> int:
     def _time_left() -> float:
         return run_budget_s - (time.time() - run_start_ts)
 
+    def _mark_done(message_id: str) -> None:
+        """Marque un reply comme TERMINÉ : fichier local (dev) + KV persistant
+        (prod Vercel, survit aux cold starts → plus de famine, plus de re-fetch).
+        Inerte en dry-run (zéro effet de bord)."""
+        if dry_run:
+            return
+        append_processed_id(processed_file, message_id)
+        if kvstore is not None and kvstore.kv_available():
+            try:
+                kvstore.mark_kv_processed(message_id)
+            except Exception:  # noqa: BLE001
+                pass
+
     if args.only_email:
         print(f">>> MODE TEST CONTRÔLÉ : uniquement {args.only_email} (envoi forcé si --no-dry-run)")
         confirmed_statuses = None  # ignore status filter, target the email directly
 
     with ManyReachClient() as mr, log_file.open("w", encoding="utf-8") as logf:
-        for reply in mr.list_replies(
+        # FIFO ANTI-FAMINE : on matérialise les replies et on les trie du PLUS
+        # ANCIEN au plus récent. Ainsi un reply arrivé hier soir (différé hors
+        # fenêtre) passe AVANT les frais du matin → plus jamais de starvation.
+        # (Le tri sur ~quelques centaines d'items de metadata est instantané.)
+        _replies = list(mr.list_replies(
             campaign_id=campaign_id,
             since=since,
             confirmed_statuses=confirmed_statuses,
             email_from=args.only_email,
-        ):
+        ))
+        _replies.sort(key=lambda r: r.created_at)  # oldest first
+        print(f"Replies en file (fenêtre {args.since_days}j) : {len(_replies)}")
+        for reply in _replies:
             # Le quota du cron protège du timeout Vercel — il ne porte QUE sur les
             # itérations "lourdes" (draft+send Sonnet). Les itérations "cheap"
             # (defer, silent, déjà-handled) sont quasi-gratuites en temps et tokens.
@@ -504,6 +524,18 @@ def main() -> int:
                 print(f"  >> BUDGET TEMPS écoulé ({run_budget_s}s) — arrêt propre")
                 break
             if reply.message_id in processed_ids:
+                skipped_count += 1
+                continue
+            # SKIP KV CHEAP : reply déjà arrivé à une décision terminale dans un
+            # run précédent (KV persistant, survit aux cold starts Vercel). On
+            # saute AVANT find_prospect + get_thread (économie d'appels + évite la
+            # famine : on atteint vite le plus vieux NON-traité). Bypass --reprocess.
+            if (
+                not args.reprocess
+                and kvstore is not None
+                and kvstore.kv_available()
+                and kvstore.is_kv_processed(reply.message_id)
+            ):
                 skipped_count += 1
                 continue
 
@@ -577,7 +609,7 @@ def main() -> int:
                     log_entry["mailinblack_destination"] = reply.to_email
                     logf.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
                     if not dry_run:
-                        append_processed_id(processed_file, reply.message_id)
+                        _mark_done(reply.message_id)
                     processed_count += 1
                     continue
 
@@ -589,7 +621,7 @@ def main() -> int:
                     log_entry["actions"] = ["skip (pre-filtered bounce)"]
                     logf.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
                     if not dry_run:
-                        append_processed_id(processed_file, reply.message_id)
+                        _mark_done(reply.message_id)
                     processed_count += 1
                     continue
 
@@ -615,7 +647,7 @@ def main() -> int:
                 ):
                     print(f"  >> Statut terminal ({prospect.sending_status}) — skip silencieux")
                     if not dry_run:
-                        append_processed_id(processed_file, reply.message_id)
+                        _mark_done(reply.message_id)
                     processed_count += 1
                     continue
 
@@ -635,7 +667,7 @@ def main() -> int:
                     if already_orphan:
                         print(f"  >> Orphan sender {reply.from_email} déjà traité — skip définitif")
                         if not dry_run:
-                            append_processed_id(processed_file, reply.message_id)
+                            _mark_done(reply.message_id)
                         processed_count += 1
                         continue
                     print(f"  >> Orphan sender {reply.from_email} — 1er traitement, marqué pour ne pas re-renvoyer")
@@ -671,6 +703,9 @@ def main() -> int:
                         log_entry["intent"] = "already_handled"
                         log_entry["actions"] = ["skip (déjà répondu dans le thread)"]
                         logf.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
+                        # Marqueur KV → on ne refera plus le get_thread coûteux pour
+                        # ce reply (cas répondu manuellement par Rudy notamment).
+                        _mark_done(reply.message_id)
                         skipped_count += 1
                         continue
 
@@ -727,7 +762,7 @@ def main() -> int:
                             "response": "(aucune — Rudy doit aller sur le calendrier du prospect)",
                         })
                     if not dry_run:
-                        append_processed_id(processed_file, reply.message_id)
+                        _mark_done(reply.message_id)
                     processed_count += 1
                     continue
 
@@ -766,7 +801,7 @@ def main() -> int:
                             "response": "(pas de réponse — silencieux)",
                         })
                     if not dry_run:
-                        append_processed_id(processed_file, reply.message_id)
+                        _mark_done(reply.message_id)
                         if kvstore and kvstore.kv_available():
                             kvstore.clear_held_seen(reply.message_id)
                     processed_count += 1
@@ -1004,7 +1039,7 @@ def main() -> int:
                 # vraiment re-essayer plus tard.
                 attempted = (not dry_run) and (not send_held)
                 if attempted:
-                    append_processed_id(processed_file, reply.message_id)
+                    _mark_done(reply.message_id)
                     if kvstore and kvstore.kv_available():
                         kvstore.clear_held_seen(reply.message_id)
                 heavy_count += 1  # itération lourde (draft+send) consommée — c'est ELLE qui compte vis-à-vis du quota cron

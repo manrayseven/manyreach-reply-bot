@@ -185,6 +185,27 @@ def force_mark_orphan(sender_email: str) -> None:
     _cmd("SET", key, "1", "EX", str(ORPHAN_TTL))
 
 
+PROCESSED_TTL = 14 * 24 * 3600  # 14 jours — remplace /tmp processed_ids (éphémère sur Vercel)
+
+
+def is_kv_processed(message_id: str) -> bool:
+    """True si ce reply a déjà atteint une décision TERMINALE (envoyé, silencieux,
+    ou déjà-traité-manuellement). Permet de skip CHEAP en tout début de boucle,
+    AVANT les appels coûteux find_prospect + get_thread. Persistant (KV) →
+    survit aux cold starts Vercel, contrairement à /tmp processed_ids."""
+    if not kv_available():
+        return False
+    return _cmd("GET", f"bot:processed:{message_id}") is not None
+
+
+def mark_kv_processed(message_id: str) -> None:
+    """Marque ce reply comme terminé (TTL 14j). À NE PAS appeler pour les
+    différés (hors fenêtre) ni les holds (cap) → ceux-là doivent réessayer."""
+    if not kv_available():
+        return
+    _cmd("SET", f"bot:processed:{message_id}", "1", "EX", str(PROCESSED_TTL))
+
+
 REPLIED_TTL = 30 * 24 * 3600  # 30 jours
 
 
