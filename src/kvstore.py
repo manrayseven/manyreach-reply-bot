@@ -198,6 +198,22 @@ def is_kv_processed(message_id: str) -> bool:
     return _cmd("GET", f"bot:processed:{message_id}") is not None
 
 
+def filter_processed(message_ids: list[str]) -> set[str]:
+    """Renvoie le sous-ensemble des message_ids DÉJÀ traités, en UN SEUL appel
+    MGET (au lieu de N appels GET). Critique pour la perf : éviter ~200 round-trips
+    KV par run de cron (cause de runs à 44s)."""
+    if not kv_available() or not message_ids:
+        return set()
+    keys = [f"bot:processed:{m}" for m in message_ids]
+    res = _cmd("MGET", *keys)
+    done: set[str] = set()
+    if isinstance(res, list):
+        for mid, val in zip(message_ids, res):
+            if val is not None:
+                done.add(mid)
+    return done
+
+
 def mark_kv_processed(message_id: str) -> None:
     """Marque ce reply comme terminé (TTL 14j). À NE PAS appeler pour les
     différés (hors fenêtre) ni les holds (cap) → ceux-là doivent réessayer."""

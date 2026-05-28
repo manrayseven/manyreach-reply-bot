@@ -518,6 +518,19 @@ def main() -> int:
             # récupéré et on traite quand même (le reste passera au prochain run).
             print(f"  !! Listing interrompu ({_e}) — on traite les {len(_replies)} déjà récupérés")
         _replies.sort(key=lambda r: r.created_at)  # oldest first
+        # PRÉ-FILTRE GROUPÉ : un seul MGET KV pour écarter tous les déjà-traités,
+        # au lieu d'un GET par reply dans la boucle (~200 round-trips = ~20s).
+        if (
+            not args.reprocess
+            and not args.only_email
+            and kvstore is not None
+            and kvstore.kv_available()
+            and _replies
+        ):
+            _done = kvstore.filter_processed([r.message_id for r in _replies])
+            if _done:
+                _replies = [r for r in _replies if r.message_id not in _done]
+            print(f"  {len(_done)} déjà traités (skip groupé), {len(_replies)} à examiner")
         print(f"Replies en file (fenêtre {args.since_days}j) : {len(_replies)}")
         for reply in _replies:
             # Le quota du cron protège du timeout Vercel — il ne porte QUE sur les
@@ -535,18 +548,8 @@ def main() -> int:
             if reply.message_id in processed_ids:
                 skipped_count += 1
                 continue
-            # SKIP KV CHEAP : reply déjà arrivé à une décision terminale dans un
-            # run précédent (KV persistant, survit aux cold starts Vercel). On
-            # saute AVANT find_prospect + get_thread (économie d'appels + évite la
-            # famine : on atteint vite le plus vieux NON-traité). Bypass --reprocess.
-            if (
-                not args.reprocess
-                and kvstore is not None
-                and kvstore.kv_available()
-                and kvstore.is_kv_processed(reply.message_id)
-            ):
-                skipped_count += 1
-                continue
+            # (Le pré-filtre groupé MGET ci-dessus a déjà écarté les déjà-traités
+            # → plus besoin d'un GET KV par reply ici.)
 
             print("─" * 80)
             print(f"REPLY  from={reply.from_email}  campaign={reply.campaign_id}")
