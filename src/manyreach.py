@@ -116,27 +116,22 @@ class ManyReachClient:
         # de faire planter tout le run (cause de replies non-envoyés quand l'API
         # est saturée par le cron + autres appels).
         import time as _t
-        max_attempts = 5
+        # Retry 429 COURT : 2 tentatives, 2s d'attente max. Le budget du run cron
+        # est de ~22s → on ne peut PAS se permettre de dormir 15s (ça tuait le run
+        # avant l'envoi). Si ça rate-limit encore après 1 retry court, on lève
+        # l'erreur : le run suivant (cron 5 min) reprendra ce reply (FIFO).
+        max_attempts = 2
         for attempt in range(max_attempts):
             resp = self._client.request(method, path, **kwargs)
             if resp.status_code == 429 and attempt < max_attempts - 1:
-                retry_after = resp.headers.get("Retry-After")
-                try:
-                    wait = float(retry_after) if retry_after else 0
-                except ValueError:
-                    wait = 0
-                # défaut : backoff 3s, 6s, 9s, 12s (le reset de fenêtre ManyReach
-                # est à la minute, mais souvent quelques secondes suffisent)
-                wait = max(wait, 3.0 * (attempt + 1))
-                _t.sleep(min(wait, 15.0))
+                _t.sleep(2.0)
                 continue
             if resp.status_code >= 400:
                 raise ManyReachError(resp.status_code, resp.text, str(resp.request.url))
             if resp.status_code == 204 or not resp.content:
                 return None
             return resp.json()
-        # Tous les essais épuisés sur 429
-        raise ManyReachError(429, "rate limit — tous les retries épuisés", path)
+        raise ManyReachError(429, "rate limit — retry court épuisé", path)
 
     # ----- Messages / Replies -----
 

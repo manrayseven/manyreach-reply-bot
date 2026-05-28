@@ -504,12 +504,19 @@ def main() -> int:
         # ANCIEN au plus récent. Ainsi un reply arrivé hier soir (différé hors
         # fenêtre) passe AVANT les frais du matin → plus jamais de starvation.
         # (Le tri sur ~quelques centaines d'items de metadata est instantané.)
-        _replies = list(mr.list_replies(
-            campaign_id=campaign_id,
-            since=since,
-            confirmed_statuses=confirmed_statuses,
-            email_from=args.only_email,
-        ))
+        _replies = []
+        try:
+            for _rep in mr.list_replies(
+                campaign_id=campaign_id,
+                since=since,
+                confirmed_statuses=confirmed_statuses,
+                email_from=args.only_email,
+            ):
+                _replies.append(_rep)
+        except Exception as _e:  # noqa: BLE001
+            # 429 ou autre pendant la pagination → on garde ce qu'on a déjà
+            # récupéré et on traite quand même (le reste passera au prochain run).
+            print(f"  !! Listing interrompu ({_e}) — on traite les {len(_replies)} déjà récupérés")
         _replies.sort(key=lambda r: r.created_at)  # oldest first
         print(f"Replies en file (fenêtre {args.since_days}j) : {len(_replies)}")
         for reply in _replies:
