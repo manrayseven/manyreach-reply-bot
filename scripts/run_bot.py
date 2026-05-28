@@ -658,8 +658,10 @@ def main() -> int:
                 # IDEMPOTENCE : si une réponse (Sent/SentManual) existe déjà APRÈS ce
                 # reply, c'est que le thread a déjà été traité — par le bot OU par Rudy
                 # à la main. On ne retraite pas (zéro doublon + respect du travail manuel).
-                # Bypass en mode test explicite (--only-email) ou --reprocess.
-                if not args.only_email and not args.reprocess and thread:
+                # SEUL --reprocess bypasse (debug). --only-email respecte désormais
+                # l'idempotence → le bouton "Pour cet email" ne double-envoie plus,
+                # mais retry si l'envoi précédent avait échoué (pas de Sent dans le thread).
+                if not args.reprocess and thread:
                     already_handled = any(
                         m.type in ("Sent", "SentManual") and m.created_at > reply.created_at
                         for m in thread

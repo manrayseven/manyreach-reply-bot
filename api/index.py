@@ -341,13 +341,15 @@ class handler(BaseHTTPRequestHandler):
                 old_argv = sys.argv
                 os.environ["RUN_BUDGET_SECONDS"] = "35"
                 if action == "run_email" and only_email:
-                    # Mode ciblé : un seul prospect, on bypass tout
+                    # Mode ciblé : un seul prospect. PAS de --reprocess → on garde
+                    # l'idempotence thread (si un Sent existe déjà après le reply,
+                    # on skip → plus de double-envoi quand on force 2x le même).
+                    # Mais si l'envoi précédent avait échoué (pas de Sent), on retry.
                     sys.argv = [
                         "run_bot",
                         "--no-dry-run",
                         "--only-email", only_email,
                         "--ignore-window",
-                        "--reprocess",
                     ]
                     log_status = f"exécuté pour {only_email}"
                 else:

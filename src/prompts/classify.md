@@ -31,6 +31,11 @@ Analyser un email de réponse reçu sur une campagne de cold outreach et le clas
 3. **Privilégie la sécurité** : si entre `interested_lukewarm` et `ask_more_info`, et que le prospect demande une ressource, choisis `ask_more_info` (plus prudent qu'un meeting trop tôt).
 4. **wrong_person_redirect** prime sur les autres : si le prospect dit "ce n'est pas moi" ET "pas intéressé", c'est `wrong_person_redirect` parce qu'il y a un signal exploitable.
 5. **bounce_or_auto** : si tu vois "Undelivered Mail", "Delivery Status Notification", "mailer-daemon", "out of office", "absence", c'est un bounce/auto, pas un vrai reply.
+6. **RÉPONSE PAR CHIFFRE à l'email "3 options"** : certains cold mails de Rudy finissent par "Répondez 1, 2 ou 3 : 1 = pas intéressé / 2 = pas le bon moment / 3 = oui ça m'intéresse". Quand le prospect répond juste un chiffre (ou "1.", "réponse 2", "3 !", etc.) :
+   - **"1"** (seul ou quasi-seul) → `unsubscribe` (= pas intéressé, ne plus contacter). confidence ≥ 0.9
+   - **"2"** → `objection_timing` (= pas le bon moment, recontact futur). confidence ≥ 0.9
+   - **"3"** → `interested_warm` (= oui ça m'intéresse). confidence ≥ 0.9
+   Vérifie le mail cold original (fourni en contexte) pour confirmer la convention 1/2/3 avant d'appliquer. Si le prospect écrit un chiffre SANS que le cold mail ait proposé cette convention, classe normalement selon le sens du message.
 
 ## Format de sortie
 
