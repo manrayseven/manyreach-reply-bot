@@ -238,7 +238,11 @@ class ManyReachClient:
         if campaign_id is not None:
             params["campaignId"] = campaign_id
         page = 1
-        max_pages = 6  # garde-fou dur (ManyReach renvoie newest-first)
+        # Cap dur à 2 pages (200 replies les plus récents). Le listing est la
+        # phase la plus lente du run (chaque page = 1 appel + risque 429). 2 pages
+        # = ~3s, ça tient dans le budget cron. Les replies au-delà des 200 plus
+        # récents (rare) sont rattrapés par le bouton "Pour cet email".
+        max_pages = int(os.environ.get("LIST_MAX_PAGES", "2"))
         while page <= max_pages:
             params["page"] = page
             data = self._request("GET", "/messages", params=params)

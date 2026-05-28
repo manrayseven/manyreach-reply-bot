@@ -525,10 +525,12 @@ def main() -> int:
             # (defer, silent, déjà-handled) sont quasi-gratuites en temps et tokens.
             if limit and heavy_count >= limit:
                 break
-            # Budget de temps : si on s'approche du timeout, on s'arrête net pour
-            # AU MOINS sauver last_run et finir proprement (sinon dashboard mort).
-            if _time_left() < 6.0:
-                print(f"  >> BUDGET TEMPS écoulé ({run_budget_s}s) — arrêt propre")
+            # Budget de temps : une itération LOURDE (classify+draft Sonnet+send)
+            # dure ~12s. On s'arrête s'il reste moins de 14s pour ne PAS démarrer
+            # une itération qu'on ne pourrait pas finir avant le timeout. Garantit
+            # que set_last_run + le finalize KV tournent toujours.
+            if _time_left() < 14.0:
+                print(f"  >> BUDGET TEMPS ({run_budget_s}s) — arrêt avant nouvelle itération lourde")
                 break
             if reply.message_id in processed_ids:
                 skipped_count += 1

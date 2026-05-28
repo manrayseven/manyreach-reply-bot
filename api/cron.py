@@ -27,21 +27,26 @@ class handler(BaseHTTPRequestHandler):
 
         # FS read-only sur Vercel sauf /tmp
         os.environ.setdefault("LOG_DIR", "/tmp/mr-logs")
+        # Budget de temps serré : on vise < 28s pour que cron-job.org (timeout 30s)
+        # reçoive un "Succès" et que set_last_run tourne toujours. Listing borné à
+        # 2 pages (LIST_MAX_PAGES) → phase liste rapide.
+        os.environ.setdefault("RUN_BUDGET_SECONDS", "26")
+        os.environ.setdefault("LIST_MAX_PAGES", "2")
         result: dict = {"ok": True}
         try:
             import run_bot  # scripts/run_bot.py
 
-            # Quota d'itérations LOURDES (draft+send Sonnet). Cron-job.org coupe
-            # à 30s → 3 heavies max. On regarde les replies des 2 derniers jours
-            # SANS filtre --important-only : ManyReach met parfois plusieurs
-            # heures à classifier un reply en Interested/NotInterested → sans ça
-            # les replies tout frais étaient invisibles.
-            limit = os.environ.get("CRON_LIMIT", "5")
+            # Quota d'itérations LOURDES (draft+send Sonnet). Chaque heavy ~12s →
+            # avec budget 26s on en fait 1-2 par run. Cron 5 min = 12-24/h en
+            # autonome. La file FIFO garantit que rien ne starve (le plus vieux
+            # non-répondu passe toujours en premier). --since-days 1 = moins de
+            # data à lister (plus rapide). Au-delà : bouton "Pour cet email".
+            limit = os.environ.get("CRON_LIMIT", "3")
             sys.argv = [
                 "run_bot",
                 "--no-dry-run",
                 "--limit", limit,
-                "--since-days", "2",
+                "--since-days", "1",
             ]
             code = run_bot.main()
             result["exit_code"] = code
