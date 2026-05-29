@@ -227,7 +227,12 @@ def main() -> int:
 
     _models = settings.get("models", {}) or {}
     classifier = Classifier(model=_models["classifier"]) if _models.get("classifier") else Classifier()
-    drafter = Drafter(model=_models["drafter"]) if _models.get("drafter") else Drafter()
+    _drafter_kwargs = {}
+    if _models.get("drafter"):
+        _drafter_kwargs["model"] = _models["drafter"]
+    if _models.get("drafter_simple"):
+        _drafter_kwargs["simple_model"] = _models["drafter_simple"]
+    drafter = Drafter(**_drafter_kwargs)
     tag_cache: dict[str, int] = {}
 
     # --- Anti-grillage / timing guardrails ---

@@ -71,11 +71,23 @@ class Draft:
         )
 
 
+# Intents "simples" → réponse courte/templatée → Haiku (5-10x moins cher).
+# Les intents à ENJEU (prospects chauds, RDV, demande d'info, objection prix)
+# restent sur le modèle qualité (Sonnet).
+SIMPLE_DRAFT_INTENTS = frozenset({
+    "not_interested_polite",
+    "wrong_person_redirect",
+    "objection_already_have_solution",
+    "objection_timing",
+})
+
+
 class Drafter:
     def __init__(
         self,
         api_key: str | None = None,
         model: str = "claude-sonnet-4-6",
+        simple_model: str | None = None,
     ):
         key = api_key or os.environ.get("ANTHROPIC_API_KEY")
         if not key:
@@ -83,6 +95,9 @@ class Drafter:
         # max_retries: ride through transient "Overloaded" (529) spikes.
         self.client = anthropic.Anthropic(api_key=key, max_retries=6)
         self.model = model
+        # Modèle éco pour les intents simples (défaut Haiku 4.5). Override possible
+        # via settings.yaml > models.drafter_simple.
+        self.simple_model = simple_model or "claude-haiku-4-5-20251001"
         self.system_prompt = PROMPT_PATH.read_text(encoding="utf-8")
 
     def draft(
@@ -183,8 +198,16 @@ Rédige maintenant la réponse selon les règles du system prompt et du style gu
         # à 10% du prix). Avant il était dans le message user = renvoyé plein tarif à
         # CHAQUE draft. Idem pour le system prompt. Le message user ne contient plus
         # que le contexte spécifique à ce reply (petit).
+        # Routage modèle : Haiku (éco) pour les intents simples, Sonnet (qualité)
+        # pour les prospects à enjeu. La majorité des replies étant des refus,
+        # ça réduit fortement le coût sans toucher à la qualité des leads chauds.
+        chosen_model = (
+            self.simple_model
+            if classification.intent in SIMPLE_DRAFT_INTENTS
+            else self.model
+        )
         msg = self.client.messages.create(
-            model=self.model,
+            model=chosen_model,
             max_tokens=3000,
             system=[
                 {

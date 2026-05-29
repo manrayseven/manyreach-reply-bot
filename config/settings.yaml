@@ -15,7 +15,8 @@ min_autosend_confidence: 0.0
 # des upgrades qualité régulièrement). Classifier = rapide/éco, drafter = qualité.
 models:
   classifier: "claude-haiku-4-5-20251001"
-  drafter: "claude-sonnet-4-6"
+  drafter: "claude-sonnet-4-6"            # prospects à enjeu (interested, RDV, ask_more_info, objection_price)
+  drafter_simple: "claude-haiku-4-5-20251001"  # refus simples (not_interested, wrong_person, déjà équipé, timing) → éco
 
 # Comportement sur not_interested_polite.
 # Rudy a confirmÃ© : il rÃ©pond TOUJOURS (politesse + referral-ask + valeur), pas de silence.
