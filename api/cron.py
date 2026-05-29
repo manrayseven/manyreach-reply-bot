@@ -41,7 +41,7 @@ class handler(BaseHTTPRequestHandler):
             # autonome. La file FIFO garantit que rien ne starve (le plus vieux
             # non-répondu passe toujours en premier). --since-days 1 = moins de
             # data à lister (plus rapide). Au-delà : bouton "Pour cet email".
-            limit = os.environ.get("CRON_LIMIT", "3")
+            limit = os.environ.get("CRON_LIMIT", "6")
             sys.argv = [
                 "run_bot",
                 "--no-dry-run",
