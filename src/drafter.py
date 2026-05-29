@@ -173,14 +173,16 @@ RÈGLES sur ce contexte (anti-cringe / anti-"IA") :
 - ZÉRO invention : si tu n'es pas sûr à 100% d'un fait, ne le mentionne pas.
 - En cas de doute, reste générique : mieux vaut sobre que faux.
 
-### Style guide (voice + entités + training pairs — parse ce dont tu as besoin)
-{style_guide or '(no style guide provided)'}
-
 ---
 
-Rédige maintenant la réponse selon les règles du system prompt. Réponds en JSON uniquement.
+Rédige maintenant la réponse selon les règles du system prompt et du style guide. Réponds en JSON uniquement.
 """
 
+        # OPTIMISATION COÛT : le style guide (gros, ~quasi statique) est mis dans
+        # le bloc SYSTEM avec cache_control → mis en cache par l'API Claude (lectures
+        # à 10% du prix). Avant il était dans le message user = renvoyé plein tarif à
+        # CHAQUE draft. Idem pour le system prompt. Le message user ne contient plus
+        # que le contexte spécifique à ce reply (petit).
         msg = self.client.messages.create(
             model=self.model,
             max_tokens=3000,
@@ -189,7 +191,13 @@ Rédige maintenant la réponse selon les règles du system prompt. Réponds en J
                     "type": "text",
                     "text": self.system_prompt,
                     "cache_control": {"type": "ephemeral"},
-                }
+                },
+                {
+                    "type": "text",
+                    "text": "## STYLE GUIDE (voix + entités + training pairs)\n"
+                    + (style_guide or "(no style guide provided)"),
+                    "cache_control": {"type": "ephemeral"},
+                },
             ],
             messages=[{"role": "user", "content": user_content}],
         )
