@@ -84,10 +84,19 @@ def main() -> int:
         print("Hors fenêtre d'envoi — on ne relance pas maintenant. Réessaie en heures ouvrées.")
         return 0
 
+    import os as _os, time as _time
+    budget_s = float(_os.environ.get("BUMPS_BUDGET_SECONDS", "45"))
+    start_ts = _time.time()
+
     seen: set[str] = set()
     n_bumped = 0
     with ManyReachClient() as mr:
         for reply in mr.list_replies(confirmed_statuses=BUMP_STATUSES, max_per_status=args.limit):
+            # Budget de temps : on s'arrête avant le timeout Vercel (60s). Le reste
+            # sera relancé au prochain run quotidien (la cadence J+2/J+5 tolère ça).
+            if (_time.time() - start_ts) > budget_s:
+                print(f"  >> Budget {budget_s}s atteint — stop, suite au prochain run quotidien")
+                break
             email = reply.from_email
             if email in seen:
                 continue

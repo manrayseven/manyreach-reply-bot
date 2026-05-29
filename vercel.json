@@ -4,6 +4,9 @@
     "api/bumps.py": { "maxDuration": 60 },
     "api/index.py": { "maxDuration": 60 }
   },
+  "crons": [
+    { "path": "/api/bumps", "schedule": "0 8 * * *" }
+  ],
   "rewrites": [
     { "source": "/", "destination": "/api/index" }
   ]
