@@ -135,6 +135,7 @@ class Drafter:
                 f"jobPosition: {prospect.job_position or '?'}",
                 f"industry: {prospect.industry or '?'}",
                 f"website: {prospect.website or '?'}",
+                f"sendingStatus (AVANT ce reply): {prospect.sending_status or '?'}",
             ]
             prospect_info = "\n".join(parts)
 

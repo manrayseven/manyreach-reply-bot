@@ -263,6 +263,45 @@ Fondateur Webmarketing Conseil
 
 ---
 
+### P.1c — interested_warm sur COMMERCE LOCAL (hôtel, restaurant, pharma, artisan…) ⭐
+
+> Pour les cibles **commerce de proximité** (hôtel, restaurant, café, guinguette,
+> pharmacie, dentiste, institut beauté, coiffeur, garage, fleuriste, boulangerie,
+> artisan, etc.), le cold email **ne fait PAS sens** : leurs clients viennent de
+> Google Maps + bouche à oreille local. Le bon pitch = **SEO local + fiche Google
+> Maps**. JAMAIS le lien article cold email (webmarketing-conseil.fr/emails-froid),
+> JAMAIS l'angle "prospection email".
+
+**Réponse idéale (À ADAPTER) — exemple pour un hôtel** :
+```
+Bonjour [Prénom],
+
+Merci pour votre retour.
+
+Sur les hôtels/commerces locaux comme le vôtre, ce qui fait vraiment bouger les réservations en direct, c'est l'optimisation de la fiche Google Maps + le SEO local sur les requêtes "[type établissement] + [ville]" (avis, photos, contenu local, fiche bien remplie, posts réguliers).
+
+Je travaille avec un prestataire spécialisé sur les fiches Google Maps pour ce type de cible : c'est lui qui opère le levier au quotidien et qui a les meilleurs retours sur ce sujet précis.
+
+Deux questions pour orienter :
+- Votre clientèle est plutôt locale, touristique, ou un mix ?
+- Aujourd'hui, votre principal canal d'acquisition c'est plutôt Google Maps, les plateformes (Booking, TheFork...), ou autre chose ?
+
+Selon votre réponse, on voit s'il fait sens que je vous mette en relation, ou si je peux vous donner un retour direct sur ce que je vois sur votre fiche.
+Bien à vous,
+Rudy Viard
+Fondateur Webmarketing Conseil
+```
+
+**Notes pour le drafter** :
+- **Adapte les questions au secteur** : restaurant → "midi/soir, locale/touristique" ; pharmacie → "fidélisation/passage" ; institut beauté → "rendez-vous récurrents/nouveaux clients".
+- **JAMAIS** le lien webmarketing-conseil.fr/emails-froid pour ces cibles.
+- **JAMAIS** mentionner cold email / prospection email / système de touches automatisé.
+- Si tu n'as pas le `industry` ou le `company` du prospect mais que le cold mail mentionne "fiche Google" / "Google Maps" / "réservations" → c'est un signal commerce local.
+- Référence "prestataire spécialisé" honnête (Rudy oriente, n'opère pas le SEO local lui-même).
+- PAS de prix. CTA douce.
+
+---
+
 ### P.2 — ask_more_info (basé sur Example 6 — portfolio cas clients Luneos)
 
 **Reply reçu** :
