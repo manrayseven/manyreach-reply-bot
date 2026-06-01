@@ -45,8 +45,15 @@ _INTENT_FR = {
 
 
 def _time_fr(iso: str) -> str:
+    """Affiche les timestamps en HEURE DE PARIS (le KV stocke en UTC mais Rudy
+    lit en local). Évite la confusion 'rien depuis 12h' alors qu'en UTC c'est OK."""
     try:
         dt = datetime.fromisoformat(iso)
+        try:
+            from zoneinfo import ZoneInfo
+            dt = dt.astimezone(ZoneInfo("Europe/Paris"))
+        except Exception:
+            pass
         return dt.strftime("%d/%m %H:%M")
     except Exception:
         return iso[:16].replace("T", " ")
