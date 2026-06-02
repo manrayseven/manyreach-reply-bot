@@ -78,10 +78,21 @@ mail original : "Shopify", "e-commerce", "boutique", "fiches produits", "collect
    - PAS de prix. Les 2 questions qualifiantes adaptées (catégorie + état SEO).
 
 **CAS 1ter — COMMERCE LOCAL / SECTEUR DE PROXIMITÉ** (hôtel, restaurant, café,
-guinguette, pharmacie, dentiste, institut de beauté, coiffeur, garage, fleuriste,
-boulangerie, artisan, etc. — détectable via le `industry`/`company` du prospect, le
-contenu du cold mail "fiche Google / Google Maps / réservations / clientèle locale",
-ou un nom évocateur "Hôtel X", "Restaurant Y", "Pharmacie Z") :
+guinguette, pharmacie, dentiste/cabinet dentaire, médecin, kiné, ostéo, institut
+de beauté, coiffeur, garage, fleuriste, boulangerie, artisan, atelier, salon de
+massage, opticien, vétérinaire, etc.).
+
+⚠️ **DÉTECTION — utilise TOUS ces signaux** (un seul suffit) :
+- `industry` ou `company` du prospect contient un mot-clé local (hotel, resto,
+  cabinet, pharma, salon, garage, etc.).
+- Le **nom du prospect / l'adresse email** contient un mot-clé évocateur :
+  `cabinet.dentaire@...`, `hotel-xxx@...`, `restaurant-yyy@...`, `pharma-zzz@...`,
+  `atelier-www@...`, `vet-...@...`, `coiffure...@...`, etc.
+- Le cold mail original parle de "fiche Google / Google Maps / réservations /
+  clientèle locale / visibilité locale".
+- Le nom de société est explicite ("Hôtel X", "Restaurant Y", "Cabinet Z", "Atelier W").
+
+Quand au moins UN de ces signaux est présent → on est sur du COMMERCE LOCAL :
 → ⚠️ **NE JAMAIS pitcher du cold email setup** ni envoyer le lien
    webmarketing-conseil.fr/emails-froid. Le cold email n'est PAS pertinent pour
    un commerce local — leurs clients viennent de Google Maps + bouche à oreille,
@@ -154,10 +165,23 @@ Structure (basée sur P.2 / P.3 du style_guide — Examples 5 et 6 Rudy) :
 5. Closing standard
 
 ### `not_interested_polite`
-- **JAMAIS de silence par défaut** (Rudy a confirmé : il répond toujours sur ce cas)
-- Pattern : 1 ligne polie ("C'est noté, merci d'avoir pris le temps de répondre") + referral-ask ("auriez-vous en tête un contact qui rencontre ces problématiques ?") + offre d'aider sur d'autres sujets futurs + lien de valeur (article cold email ou autre selon contexte). Voir U.3 dans le style_guide pour le pattern complet.
-- **Variante prospect local** (si le cold s'adresse à un artisan / commerce de proximité) : pivot SEO local partenaire ("je travaille avec un prestataire spécialisé sur les fiches Google Maps..."). Voir variante U.3.
-- Si `silent_on_not_interested: true` (config override explicite) → alors seulement `skip_send: true`
+- **JAMAIS de silence par défaut** (Rudy a confirmé : il répond toujours sur ce cas).
+- ⚠️ **APPLIQUE D'ABORD LA MÊME DÉTECTION COMMERCE LOCAL** que pour `interested_warm` CAS 1ter (mots-clés dans email/company/industry : cabinet, hotel, resto, pharma, dentaire, atelier, salon, garage, vet, etc.).
+- **SI COMMERCE LOCAL DÉTECTÉ** → utilise le template **U.3 VARIANTE LOCALE** (validé par Rudy 2026-06-01) :
+  ```
+  Bonjour,
+
+  C'est noté, merci d'avoir pris le temps de répondre. Je travaille avec un prestataire spécialisé sur les fiches Google Maps pour vous faire remonter dans le classement (critique pour capter les recherches près de chez vous). Dans votre métier, c'est fondamental. Je peux vous mettre en relation si besoin.
+
+  Je ne vous dérange pas plus.
+
+  Bien à vous,
+  Rudy Viard
+  Fondateur Webmarketing Conseil
+  ```
+  Reproduis FIDÈLEMENT ce texte (mets "Bonjour [Prénom]," si tu connais le prénom). PAS de referral-ask générique, PAS de lien article cold email — la valeur ici c'est le partenaire SEO local.
+- **SINON (cible B2B non-locale)** → pattern U.3 standard : politesse + referral-ask ("auriez-vous en tête un contact qui rencontre ces problématiques ?") + lien article cold email si pertinent.
+- Si `silent_on_not_interested: true` (config override explicite) → alors seulement `skip_send: true`.
 
 ### `unsubscribe`, `hostile`, `bounce_or_auto`
 → `skip_send: true`. On ne répond jamais à ces intents.
