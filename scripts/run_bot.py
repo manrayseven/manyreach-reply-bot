@@ -1068,6 +1068,22 @@ def main() -> int:
                 traceback.print_exc()
                 log_entry["error"] = repr(e)
                 logf.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
+                # JOURNAL KV : on EXPOSE l'erreur dans le dashboard pour qu'on la
+                # voie. Avant, les exceptions disparaissaient dans /tmp (éphémère
+                # Vercel) → cause des "trous" silencieux du flux.
+                if kvstore is not None and kvstore.kv_available():
+                    try:
+                        kvstore.log_action({
+                            "at": datetime.now(timezone.utc).isoformat(),
+                            "from": reply.from_email,
+                            "subject": reply.subject,
+                            "intent": "error",
+                            "status": f"❌ ERREUR : {str(e)[:200]}",
+                            "reply": _trim_quoted_history(_strip_html(reply.body))[:500],
+                            "response": traceback.format_exc()[-800:],
+                        })
+                    except Exception:  # noqa: BLE001
+                        pass
 
     if kvstore and kvstore.kv_available():
         kvstore.set_last_run(datetime.now(timezone.utc).isoformat())
