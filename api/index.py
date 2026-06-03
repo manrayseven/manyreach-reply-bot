@@ -125,159 +125,252 @@ def _compute_stats(actions: list) -> dict:
     }
 
 
+ALERT_INTENTS = {
+    "interested_warm", "interested_lukewarm", "ask_more_info",
+    "meeting_confirmed", "objection_timing",
+}
+
+
 def _render() -> str:
     enabled = kvstore.is_enabled()
     last_run = kvstore.get_last_run()
     last_run_fr = _time_fr(last_run) if last_run else "jamais"
-    actions = kvstore.recent_actions(60)  # déjà du + récent au + ancien (LPUSH)
-    actions_full = kvstore.recent_actions(200)  # historique élargi pour les stats
+    actions = kvstore.recent_actions(80)
+    actions_full = kvstore.recent_actions(200)
     stats = _compute_stats(actions_full)
     ov = kvstore.get_settings_overrides()
     sending = ov.get("sending", {})
     hours = sending.get("allowed_hours", [9, 19])
     min_age = sending.get("min_reply_age_minutes", 12)
 
-    # Bloc stats — top 5 intents non-vides
-    def _row(label: str, val, color: str = "#0f172a") -> str:
-        return f"<div class='stat'><div class='stat-v' style='color:{color}'>{val}</div><div class='stat-l'>{label}</div></div>"
-    rate_pct = f"{int(stats['meeting_rate'] * 100)}%" if stats["engaged_total"] else "—"
-    top_intents = sorted(
-        ((k, v) for k, v in stats["intent_counts"].items() if k and v > 0),
-        key=lambda kv: kv[1], reverse=True,
-    )[:6]
-    intent_rows = ""
-    for intent_key, count in top_intents:
-        label, color = _INTENT_FR.get(intent_key, (intent_key, "#64748b"))
-        intent_rows += (
-            f"<tr><td><span class='pill' style='background:{color}'>{html.escape(label)}</span></td>"
-            f"<td style='text-align:right;font-weight:700'>{count}</td></tr>"
-        )
-    if not intent_rows:
-        intent_rows = "<tr><td colspan='2' style='color:#64748b;font-style:italic;padding:10px'>Pas encore de données</td></tr>"
-
-    stats_html = f"""
-    <div class="card">
-      <h3>Performance ({stats['unique_prospects']} prospects sur les ~{len(actions_full)} dernières actions)</h3>
-      <div class="stats-grid">
-        {_row("RDV calés", stats['meetings'], "#15803d")}
-        {_row("Intéressés en cours", stats['interested_in_pipeline'], "#16a34a")}
-        {_row("Taux de conversion en RDV", rate_pct, "#0f172a")}
-        {_row("Réponses envoyées", stats['sent_count'])}
-        {_row("Gardées (fenêtre)", stats['held_count'], "#a16207")}
-        {_row("Silencieuses (unsub/hostile)", stats['silent_count'], "#991b1b")}
-      </div>
-      <table class="intent-table">
-        <thead><tr><th>État final par prospect (top 6)</th><th style="text-align:right">Nombre</th></tr></thead>
-        <tbody>{intent_rows}</tbody>
-      </table>
-      <div class="hint">Conversion = RDV / (RDV + intéressés en cours). Les stats portent sur l'historique récent (max 200 actions stockées dans Vercel KV).</div>
-    </div>
-    """
-
-    # Feed conversationnel : message reçu -> réponse du bot, du + récent au + ancien
-    feed = ""
-    shown = 0
+    # Tri 3 catégories : alertes Rudy (priorité), envois auto, erreurs, silencieux
+    alerts = []        # à traiter par Rudy (leads chauds, RDV, plus tard, redirect)
+    sent_list = []     # envois auto du bot
+    error_list = []    # ❌ erreurs
+    silent_list = []   # silencieux + ack + autre
     for a in actions:
         intent = a.get("intent", "")
-        if intent in ("bounce_or_auto",):  # on masque le bruit pur
-            continue
-        label, color = _INTENT_FR.get(intent, (intent, "#64748b"))
-        when = _time_fr(a.get("at", ""))
-        frm = html.escape(str(a.get("from", "")))
-        subj = html.escape(str(a.get("subject", "")))
-        status = html.escape(str(a.get("status", "")))
-        reply_txt = html.escape(str(a.get("reply", ""))).replace("\n", "<br>")
-        resp_txt = html.escape(str(a.get("response", ""))).replace("\n", "<br>")
-        status_bg = "#dcfce7" if "envoyé" in status else ("#fef9c3" if "relire" in status or "gardé" in status else "#f1f5f9")
-        shown += 1
-        feed += f"""
-        <div class="msg">
-          <div class="msg-head">
-            <span class="pill" style="background:{color}">{html.escape(label)}</span>
-            <span class="who">{frm}</span>
-            <span class="when">{when}</span>
-            <span class="status" style="background:{status_bg}">{status}</span>
-          </div>
-          <div class="subj">{subj}</div>
-          <div class="bubble in"><div class="lbl">Réponse du prospect</div>{reply_txt or '<i>(vide)</i>'}</div>
-          <div class="bubble out"><div class="lbl">Réponse envoyée par le bot</div>{resp_txt or '<i>(aucune)</i>'}</div>
-        </div>"""
-    if not feed:
-        feed = "<div class='empty'>Aucun message traité pour l'instant. Dès que le bot tournera (cron-job.org), les conversations s'afficheront ici, de la plus récente à la plus ancienne.</div>"
+        status = a.get("status", "")
+        if intent == "error" or "ERREUR" in status:
+            error_list.append(a)
+        elif intent in ALERT_INTENTS or "ALERTE" in status:
+            alerts.append(a)
+        elif "envoyé" in status:
+            sent_list.append(a)
+        elif intent != "bounce_or_auto":
+            silent_list.append(a)
 
+    keyq = os.environ.get("DASHBOARD_KEY")
+    keyparam = f"?key={keyq}" if keyq else ""
+
+    # Couleur statut bot
     status_color = "#16a34a" if enabled else "#dc2626"
     status_txt = "EN MARCHE" if enabled else "EN PAUSE"
     toggle_label = "Mettre en pause" if enabled else "Réactiver le bot"
     toggle_val = "0" if enabled else "1"
-    keyq = os.environ.get("DASHBOARD_KEY")
-    keyparam = f"?key={keyq}" if keyq else ""
+
+    # Calcul "fraîcheur" du dernier passage
+    last_run_freshness = ""
+    if last_run:
+        try:
+            from datetime import datetime as _dt, timezone as _tz
+            lr = _dt.fromisoformat(last_run)
+            mins = int((_dt.now(_tz.utc) - lr).total_seconds() / 60)
+            if mins < 10:
+                last_run_freshness = f'<span class="fresh-ok">à jour ({mins} min)</span>'
+            elif mins < 30:
+                last_run_freshness = f'<span class="fresh-warn">il y a {mins} min</span>'
+            else:
+                last_run_freshness = f'<span class="fresh-ko">⚠️ il y a {mins} min — le cron ne tourne peut-être plus</span>'
+        except Exception:
+            pass
+
+    def _alert_row(a: dict) -> str:
+        intent = a.get("intent", "")
+        intent_emoji = {
+            "interested_warm": "🔥",
+            "interested_lukewarm": "🟡",
+            "ask_more_info": "❓",
+            "meeting_confirmed": "📅",
+            "objection_timing": "⏰",
+            "wrong_person_redirect": "↪️",
+        }.get(intent, "🔔")
+        intent_label = _INTENT_FR.get(intent, (intent, "#64748b"))[0]
+        when = _time_fr(a.get("at", ""))
+        frm = html.escape(str(a.get("from", "")))
+        reply_txt = html.escape(str(a.get("reply", "")))[:300]
+        return f"""
+        <div class="alert-row">
+          <div class="alert-head">
+            <span class="alert-icon">{intent_emoji}</span>
+            <span class="alert-intent">{html.escape(intent_label)}</span>
+            <a class="alert-email" href="mailto:{frm}">{frm}</a>
+            <span class="alert-when">{when}</span>
+          </div>
+          <div class="alert-msg">{reply_txt}</div>
+        </div>"""
+
+    def _sent_row(a: dict) -> str:
+        intent = a.get("intent", "")
+        intent_label, intent_color = _INTENT_FR.get(intent, (intent, "#64748b"))
+        when = _time_fr(a.get("at", ""))
+        frm = html.escape(str(a.get("from", "")))
+        return f"""<div class="sent-row">
+          <span class="sent-when">{when}</span>
+          <span class="sent-pill" style="background:{intent_color}22;color:{intent_color}">{html.escape(intent_label)}</span>
+          <span class="sent-email">{frm}</span>
+        </div>"""
+
+    def _error_row(a: dict) -> str:
+        when = _time_fr(a.get("at", ""))
+        frm = html.escape(str(a.get("from", "")))
+        status = html.escape(str(a.get("status", "")))[:200]
+        return f"""<div class="error-row">
+          <div class="error-head"><span class="error-when">{when}</span><span class="error-email">{frm}</span></div>
+          <div class="error-msg">{status}</div>
+        </div>"""
+
+    # Sections HTML
+    alerts_html = "".join(_alert_row(a) for a in alerts[:25])
+    if not alerts_html:
+        alerts_html = '<div class="empty-section">Aucune alerte à traiter — tu es à jour ✓</div>'
+    sent_html = "".join(_sent_row(a) for a in sent_list[:40])
+    if not sent_html:
+        sent_html = '<div class="empty-section">Aucun envoi récent.</div>'
+    errors_html = "".join(_error_row(a) for a in error_list[:5])
+
+    # KPIs simples
+    rate_pct = f"{int(stats['meeting_rate'] * 100)}%" if stats["engaged_total"] else "—"
+
+    # Bloc stats compact
+    stats_html = f"""
+    <div class="kpi-grid">
+      <div class="kpi"><div class="kpi-v">{len(alerts)}</div><div class="kpi-l">🔔 À traiter</div></div>
+      <div class="kpi"><div class="kpi-v">{len(sent_list)}</div><div class="kpi-l">✓ Envoyés auto</div></div>
+      <div class="kpi"><div class="kpi-v">{stats['silent_count']}</div><div class="kpi-l">🔇 Silencieux</div></div>
+      <div class="kpi"><div class="kpi-v">{len(error_list)}</div><div class="kpi-l">❌ Erreurs</div></div>
+    </div>"""
 
     return f"""<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ManyReach Bot — Pilotage</title>
+<title>ManyReach Bot</title>
 <style>
- :root{{--bg:#0f172a;--card:#fff;--ink:#0f172a;--muted:#64748b;--line:#e2e8f0;--brand:#4f46e5;}}
- *{{box-sizing:border-box}}
- body{{font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;background:#eef2f7;margin:0;color:var(--ink);}}
- .top{{background:linear-gradient(120deg,#4f46e5,#7c3aed);color:#fff;padding:22px 28px;}}
- .top h1{{margin:0;font-size:20px;letter-spacing:.2px}}
- .top .sub{{opacity:.85;font-size:13px;margin-top:3px}}
- .wrap{{max-width:880px;margin:0 auto;padding:20px 16px 60px}}
- .card{{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 20px;margin:16px 0;box-shadow:0 1px 2px rgba(15,23,42,.04)}}
- .statusline{{display:flex;align-items:center;gap:14px;flex-wrap:wrap}}
- .dot{{width:11px;height:11px;border-radius:50%;display:inline-block;background:{status_color};box-shadow:0 0 0 4px {status_color}22}}
- .stxt{{font-weight:700;font-size:15px}}
- button,input[type=submit]{{cursor:pointer;border:0;border-radius:9px;padding:10px 18px;font-size:14px;font-weight:600;transition:.15s}}
- button:hover{{opacity:.9}}
+ *{{box-sizing:border-box;margin:0;padding:0}}
+ body{{font-family:-apple-system,'Inter','Segoe UI',Roboto,sans-serif;background:#f5f6fa;color:#1a1d29;font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}}
+ a{{color:#4f46e5;text-decoration:none}}
+ a:hover{{text-decoration:underline}}
+ .wrap{{max-width:960px;margin:0 auto;padding:24px 20px 60px}}
+
+ /* HEADER */
+ .header{{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:12px}}
+ .header h1{{font-size:18px;font-weight:700;letter-spacing:-.01em}}
+ .header h1 .dot{{display:inline-block;width:8px;height:8px;border-radius:50%;background:{status_color};margin-right:8px;vertical-align:middle;box-shadow:0 0 0 3px {status_color}22}}
+ .header .status{{font-size:13px;color:#6b7280}}
+ .fresh-ok{{color:#15803d;font-weight:600}}
+ .fresh-warn{{color:#b45309;font-weight:600}}
+ .fresh-ko{{color:#b91c1c;font-weight:600}}
+
+ /* CARDS */
+ .card{{background:#fff;border-radius:12px;padding:20px;margin-bottom:20px;box-shadow:0 1px 3px rgba(0,0,0,.04),0 0 0 1px rgba(0,0,0,.04)}}
+ .card h2{{font-size:13px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:#6b7280;margin-bottom:14px;display:flex;align-items:center;gap:8px}}
+ .card h2 .badge{{background:#1a1d29;color:#fff;font-size:11px;padding:2px 8px;border-radius:10px;font-weight:700;letter-spacing:0}}
+ .card.alerts{{background:#fffbeb;border:1px solid #fde68a}}
+ .card.alerts h2{{color:#92400e}}
+ .card.alerts h2 .badge{{background:#f59e0b}}
+ .card.errors{{background:#fef2f2;border:1px solid #fecaca}}
+ .card.errors h2{{color:#991b1b}}
+ .card.errors h2 .badge{{background:#dc2626}}
+
+ /* KPI GRID */
+ .kpi-grid{{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px}}
+ @media (max-width:640px){{.kpi-grid{{grid-template-columns:repeat(2,1fr)}}}}
+ .kpi{{background:#fff;border-radius:10px;padding:16px;box-shadow:0 1px 2px rgba(0,0,0,.04),0 0 0 1px rgba(0,0,0,.04);text-align:center}}
+ .kpi-v{{font-size:28px;font-weight:800;color:#1a1d29;line-height:1}}
+ .kpi-l{{font-size:11px;color:#6b7280;margin-top:6px;font-weight:500;letter-spacing:.02em;text-transform:uppercase}}
+
+ /* ALERTS */
+ .alert-row{{padding:14px 0;border-bottom:1px solid #fde68a}}
+ .alert-row:last-child{{border-bottom:0;padding-bottom:0}}
+ .alert-row:first-child{{padding-top:0}}
+ .alert-head{{display:flex;align-items:center;gap:10px;margin-bottom:6px;flex-wrap:wrap}}
+ .alert-icon{{font-size:18px}}
+ .alert-intent{{font-size:11px;font-weight:700;color:#92400e;text-transform:uppercase;letter-spacing:.05em;background:#fef3c7;padding:3px 8px;border-radius:6px}}
+ .alert-email{{font-weight:600;color:#1a1d29;font-size:13px}}
+ .alert-when{{color:#6b7280;font-size:12px;margin-left:auto}}
+ .alert-msg{{color:#374151;font-size:13px;line-height:1.5;padding-left:28px}}
+
+ /* SENT FEED */
+ .sent-row{{display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid #f3f4f6;font-size:13px}}
+ .sent-row:last-child{{border-bottom:0}}
+ .sent-when{{color:#9ca3af;font-size:11px;font-variant-numeric:tabular-nums;min-width:90px}}
+ .sent-pill{{font-size:11px;font-weight:600;padding:2px 8px;border-radius:6px;white-space:nowrap}}
+ .sent-email{{color:#374151;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
+
+ /* ERRORS */
+ .error-row{{padding:10px 0;border-bottom:1px solid #fecaca}}
+ .error-row:last-child{{border-bottom:0}}
+ .error-head{{display:flex;gap:10px;font-size:12px;margin-bottom:4px}}
+ .error-when{{color:#7f1d1d;font-variant-numeric:tabular-nums}}
+ .error-email{{color:#991b1b;font-weight:600}}
+ .error-msg{{font-size:12px;color:#7f1d1d;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:#fff;padding:6px 10px;border-radius:6px}}
+
+ .empty-section{{color:#9ca3af;text-align:center;padding:20px;font-style:italic;font-size:13px}}
+
+ /* ACTIONS BAR */
+ .actions{{display:flex;flex-wrap:wrap;gap:8px;align-items:center}}
+ button,input[type=submit]{{cursor:pointer;border:0;border-radius:8px;padding:9px 16px;font-size:13px;font-weight:600;font-family:inherit;transition:opacity .15s}}
+ button:hover{{opacity:.85}}
+ button:disabled{{opacity:.5;cursor:wait}}
+ .btn-primary{{background:#1a1d29;color:#fff}}
  .btn-toggle{{background:{status_color};color:#fff}}
- .btn-run{{background:#0f172a;color:#fff}}
- .btn-save{{background:var(--brand);color:#fff}}
- h3{{font-size:14px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin:0 0 14px}}
- .fields{{display:flex;gap:18px;flex-wrap:wrap;align-items:flex-end}}
- .field label{{display:block;font-size:12px;color:var(--muted);margin-bottom:5px}}
- input[type=number]{{width:90px;padding:9px;border:1px solid #cbd5e1;border-radius:9px;font-size:14px}}
- .hint{{color:var(--muted);font-size:12px;margin-top:12px}}
- .msg{{border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:14px}}
- .msg-head{{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:4px}}
- .pill{{color:#fff;font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px}}
- .who{{font-weight:600;font-size:13px}} .when{{color:var(--muted);font-size:12px}}
- .status{{font-size:11px;padding:3px 9px;border-radius:20px;color:#334155;margin-left:auto}}
- .subj{{color:var(--muted);font-size:12px;margin:2px 0 10px}}
- .bubble{{border-radius:10px;padding:10px 13px;font-size:14px;line-height:1.5;margin-top:6px}}
- .bubble .lbl{{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-bottom:4px}}
- .bubble.in{{background:#eff6ff;border-left:3px solid #3b82f6}}
- .bubble.out{{background:#f0fdf4;border-left:3px solid #16a34a}}
- .empty{{color:var(--muted);text-align:center;padding:30px 10px;font-size:14px}}
- .stats-grid{{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:14px}}
- @media (max-width:640px){{.stats-grid{{grid-template-columns:repeat(2,1fr)}}}}
- .stat{{background:#f8fafc;border:1px solid var(--line);border-radius:10px;padding:12px 14px;text-align:center}}
- .stat-v{{font-size:24px;font-weight:800;line-height:1.1}}
- .stat-l{{font-size:11px;color:var(--muted);margin-top:4px;text-transform:uppercase;letter-spacing:.4px}}
- .intent-table{{width:100%;border-collapse:collapse;margin-top:8px;font-size:13px}}
- .intent-table th{{text-align:left;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;padding:8px 6px;border-bottom:1px solid var(--line)}}
- .intent-table td{{padding:8px 6px;border-bottom:1px solid #f1f5f9}}
+ .btn-save{{background:#4f46e5;color:#fff}}
+ input[type=email],input[type=number]{{padding:9px 12px;border:1px solid #e5e7eb;border-radius:8px;font-size:13px;font-family:inherit;background:#fff}}
+ input[type=email]{{min-width:220px}}
+ input[type=number]{{width:80px}}
+ .fields{{display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap}}
+ .field label{{display:block;font-size:11px;color:#6b7280;margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em;font-weight:500}}
+
+ details summary{{cursor:pointer;font-size:12px;color:#6b7280;padding:8px 0;list-style:none}}
+ details summary::-webkit-details-marker{{display:none}}
+ details summary:before{{content:"▸ ";margin-right:4px}}
+ details[open] summary:before{{content:"▾ "}}
 </style></head><body>
-<div class="top">
-  <h1>📬 ManyReach Reply Bot</h1>
-  <div class="sub">Pilotage en temps réel · dernier passage : {html.escape(last_run_fr)}</div>
-</div>
 <div class="wrap">
 
+  <div class="header">
+    <h1><span class="dot"></span>ManyReach Bot · {status_txt}</h1>
+    <div class="status">Dernier passage : {html.escape(last_run_fr)} · {last_run_freshness}</div>
+  </div>
+
+  {stats_html}
+
+  <div class="card alerts">
+    <h2>🔔 Alertes à traiter <span class="badge">{len(alerts)}</span></h2>
+    {alerts_html}
+  </div>
+
+  {"<div class='card errors'><h2>❌ Erreurs récentes <span class='badge'>" + str(len(error_list)) + "</span></h2>" + errors_html + "</div>" if error_list else ""}
+
   <div class="card">
-    <div class="statusline">
-      <span class="dot"></span><span class="stxt">{status_txt}</span>
-      <form method="POST" action="/{keyparam}" style="margin-left:auto;display:flex;gap:8px"
-            onsubmit="var b=this.querySelector('button'); b.disabled=true; b.innerHTML='⏳ Lancement (jusqu\\'à 35s)...'; b.style.opacity=.7; return true;">
+    <h2>✓ Envois automatiques récents <span class="badge">{len(sent_list)}</span></h2>
+    {sent_html}
+  </div>
+
+  <div class="card">
+    <h2>⚡ Actions</h2>
+    <div class="actions">
+      <form method="POST" action="/{keyparam}"
+            onsubmit="var b=this.querySelector('button'); b.disabled=true; b.innerHTML='⏳ En cours...'; return true;">
         <input type="hidden" name="action" value="run_now">
-        <button class="btn-run" type="submit" title="Force un passage du bot maintenant (purge le backlog si le cron externe est en rade)">▶ Lancer maintenant</button>
+        <button class="btn-primary" type="submit">▶ Lancer maintenant</button>
       </form>
-      <form method="POST" action="/{keyparam}" style="display:flex;gap:6px"
-            onsubmit="var b=this.querySelector('button'); b.disabled=true; b.innerHTML='⏳...'; b.style.opacity=.7; return true;">
+      <form method="POST" action="/{keyparam}" class="actions"
+            onsubmit="var b=this.querySelector('button'); b.disabled=true; b.innerHTML='⏳...'; return true;">
         <input type="hidden" name="action" value="run_email">
-        <input type="email" name="only_email" placeholder="forcer 1 prospect…" required style="padding:9px 11px;border:1px solid #cbd5e1;border-radius:9px;font-size:13px;min-width:200px">
-        <button class="btn-run" type="submit" title="Force le traitement IMMÉDIAT de ce prospect uniquement (bypass cache + idempotence)">▶ Pour cet email</button>
+        <input type="email" name="only_email" placeholder="email@prospect.com" required>
+        <button class="btn-primary" type="submit">▶ Forcer ce prospect</button>
       </form>
-      <form method="POST" action="/{keyparam}">
+      <form method="POST" action="/{keyparam}" style="margin-left:auto">
         <input type="hidden" name="action" value="toggle">
         <input type="hidden" name="enabled" value="{toggle_val}">
         <button class="btn-toggle" type="submit">{toggle_label}</button>
@@ -285,26 +378,20 @@ def _render() -> str:
     </div>
   </div>
 
-  <div class="card">
-    <h3>Réglages rapides</h3>
-    <form method="POST" action="/{keyparam}">
-      <input type="hidden" name="action" value="save_settings">
-      <div class="fields">
-        <div class="field"><label>Début envoi (h)</label><input type="number" name="hour_start" value="{hours[0]}" min="0" max="23"></div>
-        <div class="field"><label>Fin envoi (h)</label><input type="number" name="hour_end" value="{hours[1]}" min="0" max="23"></div>
-        <div class="field"><label>Délai mini avant réponse (min)</label><input type="number" name="min_age" value="{min_age}" min="0" max="240"></div>
-        <input class="btn-save" type="submit" value="Enregistrer">
-      </div>
-    </form>
-    <div class="hint">Les réglages complets (voix, règles RDV, cadence) sont dans le code — éditables ici dans une prochaine version.</div>
-  </div>
-
-  {stats_html}
-
-  <div class="card">
-    <h3>Conversations traitées ({shown}) — de la plus récente à la plus ancienne</h3>
-    {feed}
-  </div>
+  <details>
+    <summary>Réglages avancés (horaires d'envoi, délai)</summary>
+    <div class="card">
+      <form method="POST" action="/{keyparam}">
+        <input type="hidden" name="action" value="save_settings">
+        <div class="fields">
+          <div class="field"><label>Début envoi (h)</label><input type="number" name="hour_start" value="{hours[0]}" min="0" max="23"></div>
+          <div class="field"><label>Fin envoi (h)</label><input type="number" name="hour_end" value="{hours[1]}" min="0" max="23"></div>
+          <div class="field"><label>Délai mini (min)</label><input type="number" name="min_age" value="{min_age}" min="0" max="240"></div>
+          <input class="btn-save" type="submit" value="Enregistrer">
+        </div>
+      </form>
+    </div>
+  </details>
 
 </div>
 </body></html>"""
