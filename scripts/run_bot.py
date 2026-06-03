@@ -704,6 +704,48 @@ def main() -> int:
                     except Exception as e:
                         print(f"  !! get_prospect_thread failed: {e}")
 
+                # CAP ANTI-PING-PONG : si le bot a déjà répondu N fois sur ce thread
+                # (en réponse à des replies du prospect), on se TAIT sur le nouveau
+                # reply. Empêche le ping-pong type pharmacie-bonnatrait (7 replies du
+                # prospect "mauvaise personne" → 7 réponses du bot, inutile).
+                # Compte les Sent/SentManual qui suivent un Reply dans l'historique
+                # avant le reply actuel.
+                PROSPECT_REPLY_CAP = int(os.environ.get("PROSPECT_REPLY_CAP", "2"))
+                if (
+                    not args.only_email
+                    and not args.reprocess
+                    and thread
+                    and len(thread) >= 3  # au moins 1 cold + 1 reply + 1 réponse bot
+                ):
+                    ordered = sorted(thread, key=lambda m: m.created_at)
+                    bot_replies_so_far = 0
+                    seen_first_reply = False
+                    for _m in ordered:
+                        if _m.created_at >= reply.created_at:
+                            break
+                        if _m.type == "Reply":
+                            seen_first_reply = True
+                        elif _m.type in ("Sent", "SentManual") and seen_first_reply:
+                            bot_replies_so_far += 1
+                    if bot_replies_so_far >= PROSPECT_REPLY_CAP:
+                        print(f"  >> CAP ATTEINT ({bot_replies_so_far} réponses bot déjà sur ce thread) — silent")
+                        log_entry["intent"] = "ping_pong_cap"
+                        log_entry["actions"] = [f"silent (cap {PROSPECT_REPLY_CAP} réponses atteint)"]
+                        logf.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
+                        if kvstore and kvstore.kv_available():
+                            kvstore.log_action({
+                                "at": now_utc.isoformat(),
+                                "from": reply.from_email,
+                                "subject": reply.subject,
+                                "intent": "ack_only",
+                                "status": f"silencieux (cap {PROSPECT_REPLY_CAP} réponses atteint sur ce thread)",
+                                "reply": _trim_quoted_history(_strip_html(reply.body))[:500],
+                                "response": "(pas de réponse — anti ping-pong)",
+                            })
+                        _mark_done(reply.message_id)
+                        skipped_count += 1
+                        continue
+
                 # IDEMPOTENCE : si une réponse (Sent/SentManual) existe déjà APRÈS ce
                 # reply, c'est que le thread a déjà été traité — par le bot OU par Rudy
                 # à la main. On ne retraite pas (zéro doublon + respect du travail manuel).
