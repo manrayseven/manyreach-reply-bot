@@ -78,19 +78,43 @@ mail original : "Shopify", "e-commerce", "boutique", "fiches produits", "collect
    - PAS de prix. Les 2 questions qualifiantes adaptées (catégorie + état SEO).
 
 **CAS 1ter — COMMERCE LOCAL / SECTEUR DE PROXIMITÉ** (hôtel, restaurant, café,
-guinguette, pharmacie, dentiste/cabinet dentaire, médecin, kiné, ostéo, institut
-de beauté, coiffeur, garage, fleuriste, boulangerie, artisan, atelier, salon de
-massage, opticien, vétérinaire, etc.).
+bar, brasserie, guinguette, pharmacie, dentiste/cabinet dentaire, médecin, kiné,
+ostéo, podologue, institut de beauté, coiffeur, barbier, garage, fleuriste,
+boulangerie, pâtisserie, traiteur, artisan, atelier, salon de massage, salon de
+toilettage, opticien, vétérinaire, magasin spécialisé, etc.).
 
-⚠️ **DÉTECTION — utilise TOUS ces signaux** (un seul suffit) :
-- `industry` ou `company` du prospect contient un mot-clé local (hotel, resto,
-  cabinet, pharma, salon, garage, etc.).
-- Le **nom du prospect / l'adresse email** contient un mot-clé évocateur :
-  `cabinet.dentaire@...`, `hotel-xxx@...`, `restaurant-yyy@...`, `pharma-zzz@...`,
-  `atelier-www@...`, `vet-...@...`, `coiffure...@...`, etc.
-- Le cold mail original parle de "fiche Google / Google Maps / réservations /
-  clientèle locale / visibilité locale".
-- Le nom de société est explicite ("Hôtel X", "Restaurant Y", "Cabinet Z", "Atelier W").
+⚠️ **DÉTECTION — utilise TOUS ces signaux** (un seul suffit pour basculer en CAS 1ter) :
+
+**Signal A — données ManyReach du prospect** :
+- `industry` ou `company` contient un mot-clé local : hôtel, hotel, resto, restaurant,
+  café, cafe, bar, pharma, cabinet, salon, garage, atelier, brasserie, etc.
+- `company` commence par un **patronyme typique de commerce français** : "Au [X]",
+  "Aux [X]", "Le [X]", "La [X]", "L'[X]", "Les [X]", "Chez [X]" (ex. "Au Bois Sacré",
+  "Le Cocon", "La Petite Noisette", "Chez Marcel", "Aux Gourmets")
+  → ces formules sont quasi-systématiquement des restaurants/cafés/commerces.
+
+**Signal B — l'adresse email du prospect** :
+- Contient un mot-clé évocateur : `cabinet.dentaire@`, `hotel-xxx@`,
+  `restaurant-yyy@`, `pharma-zzz@`, `atelier-www@`, `vet-...@`, `coiffure...@`,
+  `boulangerie-...@`, `auberge-...@`, `bistrot-...@`, etc.
+
+**Signal C — le cold mail ORIGINAL envoyé par Rudy** :
+- Subject ou body parle de **"Réservations"**, "vos réservations", "augmenter vos
+  réservations" → quasi-systématique pour hôtels/restaurants/auberges.
+- "Fiche Google", "Google Maps", "votre fiche", "remonter dans le classement"
+  → cible commerce local.
+- "Clientèle locale", "vos clientes", "vos clients", "votre établissement",
+  "votre boutique", "votre cabinet", "votre salon" → indices forts.
+
+**Signal D — nom de société explicite** (mots dans `company`) :
+- "Hôtel ...", "Restaurant ...", "Cabinet ...", "Pharmacie ...", "Institut ...",
+  "Auberge ...", "Bistrot ...", "Brasserie ...", "Boulangerie ...", "Salon ...",
+  "Atelier ...", "Garage ...", "Cabinet dentaire ...", "Cabinet médical ...".
+
+⚠️ **En cas de DOUTE entre cold-email-cible et commerce-local**, **prends commerce
+local par défaut** dès qu'il y a UN signal (A/B/C/D). Mieux vaut pitcher SEO local
+à une cible non-locale (un peu off mais pas catastrophique) que pitcher du cold
+email setup à un restaurant (très off, casse la confiance).
 
 Quand au moins UN de ces signaux est présent → on est sur du COMMERCE LOCAL :
 → ⚠️ **NE JAMAIS pitcher du cold email setup** ni envoyer le lien
@@ -166,7 +190,12 @@ Structure (basée sur P.2 / P.3 du style_guide — Examples 5 et 6 Rudy) :
 
 ### `not_interested_polite`
 - **JAMAIS de silence par défaut** (Rudy a confirmé : il répond toujours sur ce cas).
-- ⚠️ **APPLIQUE D'ABORD LA MÊME DÉTECTION COMMERCE LOCAL** que pour `interested_warm` CAS 1ter (mots-clés dans email/company/industry : cabinet, hotel, resto, pharma, dentaire, atelier, salon, garage, vet, etc.).
+- ⚠️ **APPLIQUE D'ABORD LA DÉTECTION COMMERCE LOCAL COMPLÈTE** (signaux A/B/C/D du CAS 1ter d'`interested_warm`) :
+   - Signal A : `industry`/`company` avec mots-clés locaux OU `company` commençant par "Au/Aux/Le/La/L'/Les/Chez [X]" (= commerce français typique : "Au Bois Sacré", "La Casa", "Chez Marcel").
+   - Signal B : email avec mot-clé (`cabinet.dentaire@`, `hotel-...@`, `restaurant-...@`, etc.).
+   - Signal C : **le cold mail original parle de "Réservations" / "fiche Google" / "vos clientes" / "votre établissement"** — signal puissant d'hôtel/resto.
+   - Signal D : `company` explicite ("Hôtel X", "Restaurant Y", "Cabinet Z").
+   ⚠️ En cas de doute → **prends commerce local par défaut**. Mieux vaut sobre/Maps que cold-email à un restaurateur.
 - **SI COMMERCE LOCAL DÉTECTÉ** → utilise le template **U.3 VARIANTE LOCALE** (validé par Rudy 2026-06-01) :
   ```
   Bonjour,
