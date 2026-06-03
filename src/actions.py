@@ -44,21 +44,30 @@ INTENT_PROSPECT_UPDATE: dict[str, tuple[str | None, bool | None, list[str]]] = {
 # 100% AUTONOME (validé par Rudy 2026-05-21) : le bot envoie TOUS les intents
 # "réponse". Garde-fous conservés : confidence >= min_autosend_confidence (sinon
 # review), et interested_warm n'auto-send que si des créneaux Calendar sont dispo.
+# NOUVEAU CADRE (validé par Rudy 2026-06-03) :
+#  - AUTOSEND : le bot répond automatiquement (refus polis + objections à travailler).
+#  - ALERT_ONLY : le bot ENVOIE UNE ALERTE EMAIL à contact@webmarketing-conseil.fr,
+#    PAS de réponse auto. Rudy gère lui-même (RDV, leads chauds, "plus tard").
+#  - ALWAYS_SILENT : action silencieuse (blacklist/tag) sans email.
 AUTOSEND_ELIGIBLE = frozenset({
     "not_interested_polite",
     "objection_already_have_solution",
     "wrong_person_redirect",
-    "objection_timing",
-    "objection_price",
+    "objection_price",  # objection à travailler / convaincre
+})
+
+# Intents qui DÉCLENCHENT UNE ALERTE EMAIL à Rudy (pas de réponse auto).
+# Rudy traite manuellement : leads chauds, RDV, demandes d'info, et "plus tard"
+# (= recontact futur qu'il veut piloter lui-même).
+ALERT_ONLY = frozenset({
+    "interested_warm",
     "interested_lukewarm",
     "ask_more_info",
-    "interested_warm",     # + condition créneaux Calendar (voir has_calendar_slots)
-    "meeting_confirmed",   # envoie "c'est noté" + crée l'event si date explicite
+    "meeting_confirmed",
+    "objection_timing",
 })
 
 # Intents that NEVER send a reply (silent action only)
-# ack_only = le prospect a juste dit "merci" après notre réponse → on se tait,
-# sinon on entre dans une boucle infinie de "merci → c'est noté → merci → ...".
 ALWAYS_SILENT = frozenset({"unsubscribe", "hostile", "bounce_or_auto", "ack_only"})
 
 

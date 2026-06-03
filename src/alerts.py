@@ -64,6 +64,55 @@ def _send_via_resend(subject: str, body_text: str) -> bool:
         return False
 
 
+def send_lead_alert(
+    *,
+    intent: str,
+    prospect_email: str,
+    prospect_name: str | None,
+    company: str | None,
+    reply_full: str,
+    campaign_id: int | None,
+    dry_run: bool = True,
+    phone: str | None = None,
+) -> str:
+    """Alerte générique pour les replies qui DEMANDENT L'ATTENTION DE RUDY (leads
+    chauds, RDV, demandes d'info, "plus tard"). Le bot ne répond pas — Rudy gère.
+
+    Le mail contient : intent classifié + adresse + nom + société + tél + extrait
+    du reply complet → Rudy a tout pour traiter en 30 sec.
+    """
+    name = prospect_name or prospect_email
+    intent_label = {
+        "interested_warm": "🔥 LEAD CHAUD",
+        "interested_lukewarm": "🟡 Lead tiède",
+        "ask_more_info": "❓ Demande d'infos",
+        "meeting_confirmed": "📅 PROPOSE/VALIDE UN RDV",
+        "objection_timing": "⏰ À recontacter plus tard",
+    }.get(intent, f"⚠️ {intent}")
+    subject = f"{intent_label} — {name}" + (f" ({company})" if company else "")
+    body = (
+        f"Un prospect attend ton attention (le bot ne lui a PAS répondu).\n\n"
+        f"Type     : {intent_label} ({intent})\n"
+        f"Prospect : {name} <{prospect_email}>\n"
+        f"Société  : {company or '(inconnue)'}\n"
+        f"Téléphone: {phone or '(non communiqué)'}\n"
+        f"Campagne : {campaign_id or '(inconnue)'}\n\n"
+        f"Reply complet du prospect :\n"
+        f"---\n{reply_full}\n---\n\n"
+        f"→ À toi de répondre / caler le RDV / décider quand le relancer."
+    )
+    local_path = _write_local_alert(subject, body)
+    local_note = f" (trace : {local_path.name})" if local_path else ""
+    if dry_run:
+        return f"[DRY-RUN] Alerte lead (non envoyée){local_note}"
+    if _send_via_resend(subject, body):
+        return f"[EXEC] Alerte envoyée à {ALERT_EMAIL} ({intent})"
+    return (
+        f"[EXEC] Alerte NON envoyée par email (RESEND_API_KEY manquant){local_note} "
+        f"— crée un compte resend.com et ajoute la clé"
+    )
+
+
 def send_meeting_alert(
     *,
     prospect_email: str,

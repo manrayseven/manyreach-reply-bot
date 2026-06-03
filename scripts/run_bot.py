@@ -871,6 +871,64 @@ def main() -> int:
                     processed_count += 1
                     continue
 
+                # === RACCOURCI 1bis : ALERT_ONLY — leads chauds, RDV, plus tard ===
+                # Le bot NE répond PAS. Envoie une alerte email à Rudy avec toutes
+                # les infos pour qu'il gère manuellement (RDV, lead chaud, "plus
+                # tard"). Met juste à jour le statut côté ManyReach + log KV.
+                from src.actions import ALERT_ONLY  # local import to avoid cycles
+                if classification.intent in ALERT_ONLY:
+                    print(f"  >> ALERT_ONLY ({classification.intent}) — alerte Rudy, pas de réponse auto")
+                    # Mise à jour du statut prospect (sans envoyer de mail)
+                    alert_plan = plan_actions(
+                        reply=reply,
+                        prospect=prospect,
+                        classification=classification,
+                        draft=None,
+                        min_autosend_confidence=min_conf,
+                        has_calendar_slots=False,
+                    )
+                    # On exécute uniquement update_prospect + add_tag (pas de send)
+                    alert_plan.actions = [a for a in alert_plan.actions if a.kind in ("update_prospect", "add_tag")]
+                    if alert_plan.actions:
+                        try:
+                            execute_plan(alert_plan, reply, mr, dry_run=dry_run, tag_cache=tag_cache)
+                        except Exception as _e:  # noqa: BLE001
+                            print(f"  !! status update fail: {_e}")
+                    # Envoi de l'alerte email
+                    from src.alerts import send_lead_alert
+                    alert_line = send_lead_alert(
+                        intent=classification.intent,
+                        prospect_email=reply.from_email,
+                        prospect_name=(classification.prospect_name or (prospect.first_name if prospect else None)),
+                        company=(prospect.company if prospect else None),
+                        reply_full=_trim_quoted_history(_strip_html(reply.body), 2000),
+                        campaign_id=reply.campaign_id,
+                        dry_run=dry_run,
+                        phone=classification.contact_phone,
+                    )
+                    print(f"    {alert_line}")
+                    # Log KV pour visibilité dans le dashboard
+                    log_entry["intent"] = classification.intent
+                    log_entry["confidence"] = classification.confidence
+                    log_entry["key_phrase"] = classification.key_phrase
+                    log_entry["actions"] = [alert_line]
+                    log_entry["dry_run"] = dry_run
+                    logf.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
+                    if kvstore and kvstore.kv_available():
+                        kvstore.log_action({
+                            "at": now_utc.isoformat(),
+                            "from": reply.from_email,
+                            "subject": reply.subject,
+                            "intent": classification.intent,
+                            "status": f"🔔 ALERTE Rudy — {classification.intent} (pas de réponse auto)",
+                            "reply": _trim_quoted_history(_strip_html(reply.body))[:700],
+                            "response": "(aucune — alerte email envoyée à contact@webmarketing-conseil.fr)",
+                        })
+                    if not dry_run:
+                        _mark_done(reply.message_id)
+                    processed_count += 1
+                    continue
+
                 # === RACCOURCI 2 : intent qui enverrait un mail, mais hors fenêtre ===
                 # Plutôt que de brûler Sonnet à drafter à chaque run de cron (toutes les
                 # 15 min !) pour un message qui ne partira que ce matin, on log UNE FOIS
