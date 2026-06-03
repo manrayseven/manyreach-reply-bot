@@ -718,7 +718,11 @@ def main() -> int:
                     and len(thread) >= 3  # au moins 1 cold + 1 reply + 1 réponse bot
                 ):
                     ordered = sorted(thread, key=lambda m: m.created_at)
-                    bot_replies_so_far = 0
+                    # IMPORTANT : ManyReach renvoie chaque envoi du bot 2 FOIS dans
+                    # le thread (une entrée "Sent" + une entrée "SentManual" avec le
+                    # MÊME msgId). On dédoublonne par msgId pour ne compter chaque
+                    # réponse du bot qu'UNE fois (sinon le cap=2 saute après 1 envoi).
+                    bot_msg_ids: set[str] = set()
                     seen_first_reply = False
                     for _m in ordered:
                         if _m.created_at >= reply.created_at:
@@ -726,7 +730,8 @@ def main() -> int:
                         if _m.type == "Reply":
                             seen_first_reply = True
                         elif _m.type in ("Sent", "SentManual") and seen_first_reply:
-                            bot_replies_so_far += 1
+                            bot_msg_ids.add(_m.message_id)
+                    bot_replies_so_far = len(bot_msg_ids)
                     if bot_replies_so_far >= PROSPECT_REPLY_CAP:
                         print(f"  >> CAP ATTEINT ({bot_replies_so_far} réponses bot déjà sur ce thread) — silent")
                         log_entry["intent"] = "ping_pong_cap"
