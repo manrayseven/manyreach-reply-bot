@@ -922,14 +922,18 @@ def main() -> int:
                     log_entry["dry_run"] = dry_run
                     logf.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
                     if kvstore and kvstore.kv_available():
+                        # On expose le résultat REEL de Resend (✅ ou ❌ + detail)
+                        # dans le status, pour voir directement dans le dashboard
+                        # si l'email part vraiment ou échoue.
+                        _resend_status = "🔔 ALERTE — " + (alert_line if alert_line else "?")
                         kvstore.log_action({
                             "at": now_utc.isoformat(),
                             "from": reply.from_email,
                             "subject": reply.subject,
                             "intent": classification.intent,
-                            "status": f"🔔 ALERTE Rudy — {classification.intent} (pas de réponse auto)",
+                            "status": _resend_status[:250],
                             "reply": _trim_quoted_history(_strip_html(reply.body))[:700],
-                            "response": "(aucune — alerte email envoyée à contact@webmarketing-conseil.fr)",
+                            "response": alert_line,
                         })
                     if not dry_run:
                         _mark_done(reply.message_id)

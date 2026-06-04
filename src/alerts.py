@@ -34,15 +34,12 @@ def _write_local_alert(subject: str, body: str) -> Path | None:
         return None
 
 
-def _send_via_resend(subject: str, body_text: str) -> bool:
-    """Send the alert via Resend. Returns True on success."""
+def _send_via_resend(subject: str, body_text: str) -> tuple[bool, str]:
+    """Send the alert via Resend. Returns (success, detail). detail contient
+    le code HTTP + extrait du body (utile pour diagnostiquer côté dashboard)."""
     api_key = os.environ.get("RESEND_API_KEY")
     if not api_key:
-        return False
-    # Par défaut on utilise l'expéditeur "onboarding@resend.dev" fourni par Resend :
-    # il fonctionne SANS vérifier de domaine (mode test → envoie vers l'email du
-    # compte Resend). Pour un envoi propre depuis @webmarketing-conseil.fr, vérifie
-    # le domaine sur resend.com puis définis RESEND_FROM en variable d'env.
+        return False, "RESEND_API_KEY manquant"
     from_addr = os.environ.get("RESEND_FROM", "onboarding@resend.dev")
     try:
         import httpx
@@ -58,10 +55,11 @@ def _send_via_resend(subject: str, body_text: str) -> bool:
             },
             timeout=15.0,
         )
-        return resp.status_code < 300
-    except Exception as e:  # pragma: no cover
-        print(f"  !! Resend alert failed: {e}")
-        return False
+        if resp.status_code < 300:
+            return True, f"HTTP {resp.status_code}"
+        return False, f"HTTP {resp.status_code} : {resp.text[:200]}"
+    except Exception as e:
+        return False, f"Exception : {str(e)[:200]}"
 
 
 def send_lead_alert(
@@ -105,12 +103,10 @@ def send_lead_alert(
     local_note = f" (trace : {local_path.name})" if local_path else ""
     if dry_run:
         return f"[DRY-RUN] Alerte lead (non envoyée){local_note}"
-    if _send_via_resend(subject, body):
-        return f"[EXEC] Alerte envoyée à {ALERT_EMAIL} ({intent})"
-    return (
-        f"[EXEC] Alerte NON envoyée par email (RESEND_API_KEY manquant){local_note} "
-        f"— crée un compte resend.com et ajoute la clé"
-    )
+    ok, detail = _send_via_resend(subject, body)
+    if ok:
+        return f"✅ Alerte envoyée à {ALERT_EMAIL} ({intent}) — {detail}"
+    return f"❌ Alerte NON envoyée — {detail}{local_note}"
 
 
 def send_meeting_alert(
@@ -156,10 +152,7 @@ def send_meeting_alert(
 
     if dry_run:
         return f"[DRY-RUN] Alerte RDV (non envoyée){local_note}"
-
-    if _send_via_resend(subject, body):
-        return f"[EXEC] Alerte RDV envoyée par email à {ALERT_EMAIL}"
-    return (
-        f"[EXEC] Alerte RDV NON envoyée par email (RESEND_API_KEY manquant){local_note} "
-        f"— crée un compte resend.com et ajoute la clé pour activer l'email"
-    )
+    ok, detail = _send_via_resend(subject, body)
+    if ok:
+        return f"✅ Alerte RDV envoyée à {ALERT_EMAIL} — {detail}"
+    return f"❌ Alerte RDV NON envoyée — {detail}{local_note}"
