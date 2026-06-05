@@ -344,14 +344,17 @@ def _render() -> str:
  .alert-explain{{font-size:12px;color:#78350f;background:#fef3c7;border-left:3px solid #f59e0b;padding:10px 12px;border-radius:6px;margin-bottom:14px;line-height:1.55}}
  .alert-explain b{{color:#451a03}}
 
- /* ACTIONS GRID — propre et lisible */
- .action-grid{{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}}
- @media (max-width:640px){{.action-grid{{grid-template-columns:1fr}}}}
- .action-cell{{display:flex;gap:8px;align-items:stretch}}
- .action-cell form{{display:flex;gap:6px;align-items:stretch;flex:1;margin:0}}
- .action-cell button{{flex:1;white-space:nowrap}}
+ /* ACTIONS GRID — chaque cellule = bouton + description claire */
+ .action-grid{{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}}
+ @media (max-width:700px){{.action-grid{{grid-template-columns:1fr}}}}
+ .action-cell{{background:#fafafa;padding:12px 14px;border-radius:10px;border:1px solid #e5e7eb;display:flex;flex-direction:column;gap:8px}}
+ .action-cell form{{display:flex;gap:6px;align-items:stretch;margin:0}}
+ .action-cell button{{flex:0 0 auto;white-space:nowrap}}
  .action-cell input[type=email]{{flex:1;min-width:0}}
- .action-toggle-row{{display:flex;justify-content:flex-end;padding-top:10px;border-top:1px solid #f3f4f6}}
+ .action-cell .action-help{{font-size:11.5px;color:#6b7280;line-height:1.45}}
+ .action-cell .action-help b{{color:#374151}}
+ .action-toggle-row{{display:flex;justify-content:flex-end;padding-top:12px;border-top:1px solid #f3f4f6}}
+ .action-toggle-row .toggle-help{{font-size:11.5px;color:#6b7280;margin-right:auto;align-self:center}}
 
  /* SENT FEED */
  .sent-row{{display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid #f3f4f6;font-size:13px}}
@@ -408,6 +411,7 @@ def _render() -> str:
           <input type="hidden" name="action" value="run_now">
           <button class="btn-primary" type="submit">▶ Lancer maintenant</button>
         </form>
+        <div class="action-help">Force le bot à <b>scanner les réponses</b> tout de suite, sans attendre le cron auto (qui tourne toutes les 5 min). Utile si tu veux le résultat <b>immédiatement</b>.</div>
       </div>
       <div class="action-cell">
         <form method="POST" action="/{keyparam}"
@@ -416,6 +420,7 @@ def _render() -> str:
           <input type="email" name="only_email" placeholder="email@prospect.com" required>
           <button class="btn-primary" type="submit">▶ Forcer</button>
         </form>
+        <div class="action-help">Re-traite manuellement <b>UN prospect précis</b> (saisis son email). Utile si une réponse t'a échappé ou si tu veux re-essayer après un fix.</div>
       </div>
       <div class="action-cell">
         <form method="POST" action="/{keyparam}"
@@ -423,6 +428,7 @@ def _render() -> str:
           <input type="hidden" name="action" value="test_resend">
           <button class="btn-primary" type="submit" style="background:#4f46e5">✉️ Tester Resend</button>
         </form>
+        <div class="action-help">Envoie un <b>mail de test</b> via Resend pour vérifier que la config est OK. Le résultat (HTTP 200 = OK) s'affiche dans la bannière verte/rouge ci-dessus.</div>
       </div>
       <div class="action-cell">
         <form method="POST" action="/{keyparam}"
@@ -430,9 +436,11 @@ def _render() -> str:
           <input type="hidden" name="action" value="retry_failed_alerts">
           <button class="btn-primary" type="submit" style="background:#0891b2">📨 Renvoyer alertes en échec</button>
         </form>
+        <div class="action-help">Rattrape par mail <b>les alertes du passé</b> qui n'avaient pas été livrées (ex : sandbox Resend bloquant). À utiliser une fois après le fix d'une config Resend.</div>
       </div>
     </div>
     <div class="action-toggle-row">
+      <div class="toggle-help">Stop / start du bot. En pause, il ne traite plus aucune réponse jusqu'à réactivation.</div>
       <form method="POST" action="/{keyparam}">
         <input type="hidden" name="action" value="toggle">
         <input type="hidden" name="enabled" value="{toggle_val}">
