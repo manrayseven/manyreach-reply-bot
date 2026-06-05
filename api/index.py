@@ -157,11 +157,33 @@ def _render() -> str:
             alerts.append(a)
         elif "envoyé" in status:
             sent_list.append(a)
+        elif intent in ("test_resend", "run_now"):
+            # diagnostics manuels → ne pas polluer les compteurs
+            pass
         elif intent != "bounce_or_auto":
             silent_list.append(a)
 
     keyq = os.environ.get("DASHBOARD_KEY")
     keyparam = f"?key={keyq}" if keyq else ""
+
+    # Dernier test Resend (s'il y en a un) → bannière dans la zone Actions
+    last_test = None
+    for a in actions_full:
+        if a.get("intent") == "test_resend":
+            last_test = a
+            break
+    test_banner = ""
+    if last_test:
+        when = _time_fr(last_test.get("at", ""))
+        st = str(last_test.get("status", ""))
+        ok = "✅" in st
+        bg = "#dcfce7" if ok else "#fee2e2"
+        color = "#15803d" if ok else "#991b1b"
+        test_banner = (
+            f'<div style="margin-bottom:12px;padding:10px 14px;border-radius:8px;'
+            f'background:{bg};color:{color};font-size:13px;font-weight:600">'
+            f'Dernier test Resend ({when}) : {html.escape(st)}</div>'
+        )
 
     # Couleur statut bot
     status_color = "#16a34a" if enabled else "#dc2626"
@@ -199,12 +221,25 @@ def _render() -> str:
         when = _time_fr(a.get("at", ""))
         frm = html.escape(str(a.get("from", "")))
         reply_txt = html.escape(str(a.get("reply", "")))[:300]
+        # Statut de livraison Resend (le bot l'a écrit dans status/response avec
+        # un préfixe ✅/❌ + détail HTTP). On l'affiche en pastille pour que
+        # Rudy voie d'un coup d'oeil quelles alertes ont vraiment été envoyées.
+        status_raw = str(a.get("status", "")) + " " + str(a.get("response", ""))
+        if "✅" in status_raw or "HTTP 200" in status_raw:
+            mail_badge = '<span class="mail-ok">✉️ envoyé</span>'
+        elif "❌" in status_raw or "HTTP" in status_raw or "Exception" in status_raw or "manquant" in status_raw:
+            # extrait du détail pour debug visible
+            short = html.escape(status_raw.replace("🔔 ALERTE — ", "").strip())[:140]
+            mail_badge = f'<span class="mail-ko" title="{short}">✉️ NON envoyé</span>'
+        else:
+            mail_badge = '<span class="mail-unknown">✉️ ?</span>'
         return f"""
         <div class="alert-row">
           <div class="alert-head">
             <span class="alert-icon">{intent_emoji}</span>
             <span class="alert-intent">{html.escape(intent_label)}</span>
             <a class="alert-email" href="mailto:{frm}">{frm}</a>
+            {mail_badge}
             <span class="alert-when">{when}</span>
           </div>
           <div class="alert-msg">{reply_txt}</div>
@@ -298,6 +333,9 @@ def _render() -> str:
  .alert-email{{font-weight:600;color:#1a1d29;font-size:13px}}
  .alert-when{{color:#6b7280;font-size:12px;margin-left:auto}}
  .alert-msg{{color:#374151;font-size:13px;line-height:1.5;padding-left:28px}}
+ .mail-ok{{font-size:11px;font-weight:700;color:#15803d;background:#dcfce7;padding:3px 8px;border-radius:6px}}
+ .mail-ko{{font-size:11px;font-weight:700;color:#991b1b;background:#fee2e2;padding:3px 8px;border-radius:6px;cursor:help}}
+ .mail-unknown{{font-size:11px;font-weight:700;color:#6b7280;background:#e5e7eb;padding:3px 8px;border-radius:6px}}
 
  /* SENT FEED */
  .sent-row{{display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid #f3f4f6;font-size:13px}}
@@ -358,6 +396,7 @@ def _render() -> str:
 
   <div class="card">
     <h2>⚡ Actions</h2>
+    {test_banner}
     <div class="actions">
       <form method="POST" action="/{keyparam}"
             onsubmit="var b=this.querySelector('button'); b.disabled=true; b.innerHTML='⏳ En cours...'; return true;">
@@ -369,6 +408,11 @@ def _render() -> str:
         <input type="hidden" name="action" value="run_email">
         <input type="email" name="only_email" placeholder="email@prospect.com" required>
         <button class="btn-primary" type="submit">▶ Forcer ce prospect</button>
+      </form>
+      <form method="POST" action="/{keyparam}"
+            onsubmit="var b=this.querySelector('button'); b.disabled=true; b.innerHTML='⏳...'; return true;">
+        <input type="hidden" name="action" value="test_resend">
+        <button class="btn-primary" type="submit" style="background:#4f46e5">✉️ Tester Resend</button>
       </form>
       <form method="POST" action="/{keyparam}" style="margin-left:auto">
         <input type="hidden" name="action" value="toggle">
@@ -474,6 +518,43 @@ class handler(BaseHTTPRequestHandler):
                     "status": log_status,
                     "reply": "",
                     "response": "",
+                })
+        elif action == "test_resend":
+            # Test direct : appelle _send_via_resend avec un payload minimal et
+            # logue le résultat (HTTP code + body extrait) pour qu'on voie tout
+            # de suite si Resend est mal configuré (clé invalide, from non
+            # vérifié, sandbox bloquant, etc.).
+            from datetime import datetime as _dt, timezone as _tz
+            try:
+                from src.alerts import _send_via_resend, ALERT_EMAIL
+                from_addr = os.environ.get("RESEND_FROM", "onboarding@resend.dev")
+                ok, detail = _send_via_resend(
+                    subject=f"[TEST] Bot ManyReach — ping Resend {_dt.now(_tz.utc).strftime('%H:%M')}",
+                    body_text=(
+                        "Si tu reçois cet email, l'API Resend fonctionne et la "
+                        "config est OK.\n\n"
+                        f"FROM utilisé : {from_addr}\n"
+                        f"TO  utilisé : {ALERT_EMAIL}\n\n"
+                        "Si tu vois CETTE alerte dans le dashboard avec ✉️ envoyé "
+                        "mais que tu ne reçois RIEN dans ta boite, le mail est "
+                        "probablement bloqué par le sandbox Resend (free tier : "
+                        "from=onboarding@resend.dev ne peut envoyer qu'à l'email "
+                        "du compte Resend lui-même). Soit tu vérifies un domaine, "
+                        "soit tu mets l'email du compte Resend dans NOTIFY_EMAIL."
+                    ),
+                )
+                log_status = f"{'✅' if ok else '❌'} TEST Resend — {detail}"
+            except Exception as e:  # noqa: BLE001
+                log_status = f"❌ TEST Resend — Exception : {str(e)[:200]}"
+            if kvstore.kv_available():
+                kvstore.log_action({
+                    "at": _dt.now(_tz.utc).isoformat(),
+                    "from": "(test resend)",
+                    "subject": "✉️ Test Resend",
+                    "intent": "test_resend",
+                    "status": log_status,
+                    "reply": "",
+                    "response": log_status,
                 })
         elif action == "save_settings":
             ov = kvstore.get_settings_overrides()
