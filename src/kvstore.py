@@ -185,6 +185,35 @@ def force_mark_orphan(sender_email: str) -> None:
     _cmd("SET", key, "1", "EX", str(ORPHAN_TTL))
 
 
+DISMISSED_ALERTS_KEY = "bot:dismissed_alerts"
+
+
+def dismiss_alert(alert_id: str) -> None:
+    """Marque une alerte comme 'traitée' (Rudy a déjà géré). Affecte juste
+    l'affichage du dashboard, l'entrée reste dans le log historique.
+    alert_id = '{at_iso}|{email}' pour identifier uniquement."""
+    if not kv_available() or not alert_id:
+        return
+    _cmd("SADD", DISMISSED_ALERTS_KEY, alert_id)
+
+
+def get_dismissed_alerts() -> set[str]:
+    """Renvoie l'ensemble des alert_id déjà 'traitées' par Rudy."""
+    if not kv_available():
+        return set()
+    res = _cmd("SMEMBERS", DISMISSED_ALERTS_KEY)
+    if isinstance(res, list):
+        return {str(x) for x in res}
+    return set()
+
+
+def restore_alert(alert_id: str) -> None:
+    """Annule un dismiss (au cas où Rudy clique par erreur)."""
+    if not kv_available() or not alert_id:
+        return
+    _cmd("SREM", DISMISSED_ALERTS_KEY, alert_id)
+
+
 PROCESSED_TTL = 14 * 24 * 3600  # 14 jours — remplace /tmp processed_ids (éphémère sur Vercel)
 
 

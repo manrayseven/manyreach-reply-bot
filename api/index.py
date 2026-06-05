@@ -148,13 +148,16 @@ def _render() -> str:
     sent_list = []     # envois auto du bot
     error_list = []    # ❌ erreurs
     silent_list = []   # silencieux + ack + autre
+    dismissed = kvstore.get_dismissed_alerts()  # alertes que Rudy a déjà traitées
     for a in actions:
         intent = a.get("intent", "")
         status = a.get("status", "")
+        alert_id = f"{a.get('at', '')}|{(a.get('from') or '').lower()}"
         if intent == "error" or "ERREUR" in status:
             error_list.append(a)
         elif intent in ALERT_INTENTS or "ALERTE" in status:
-            alerts.append(a)
+            if alert_id not in dismissed:
+                alerts.append(a)
         elif "envoyé" in status:
             sent_list.append(a)
         elif intent in ("test_resend", "run_now", "retry_alerts"):
@@ -221,6 +224,7 @@ def _render() -> str:
         when = _time_fr(a.get("at", ""))
         frm = html.escape(str(a.get("from", "")))
         reply_txt = html.escape(str(a.get("reply", "")))[:300]
+        alert_id = html.escape(f"{a.get('at', '')}|{(a.get('from') or '').lower()}")
         # Statut de livraison Resend (le bot l'a écrit dans status/response avec
         # un préfixe ✅/❌ + détail HTTP). On l'affiche en pastille pour que
         # Rudy voie d'un coup d'oeil quelles alertes ont vraiment été envoyées.
@@ -241,6 +245,11 @@ def _render() -> str:
             <a class="alert-email" href="mailto:{frm}">{frm}</a>
             {mail_badge}
             <span class="alert-when">{when}</span>
+            <form method="POST" action="/{keyparam}" style="display:inline" onsubmit="this.querySelector('button').disabled=true;return true;">
+              <input type="hidden" name="action" value="dismiss_alert">
+              <input type="hidden" name="alert_id" value="{alert_id}">
+              <button type="submit" class="alert-dismiss" title="Marquer comme traité (cache cette alerte)">✕</button>
+            </form>
           </div>
           <div class="alert-msg">{reply_txt}</div>
         </div>"""
@@ -336,6 +345,10 @@ def _render() -> str:
  .mail-ok{{font-size:11px;font-weight:700;color:#15803d;background:#dcfce7;padding:3px 8px;border-radius:6px}}
  .mail-ko{{font-size:11px;font-weight:700;color:#991b1b;background:#fee2e2;padding:3px 8px;border-radius:6px;cursor:help}}
  .mail-unknown{{font-size:11px;font-weight:700;color:#6b7280;background:#e5e7eb;padding:3px 8px;border-radius:6px}}
+ .alert-dismiss{{background:transparent;border:1px solid #d4a93f;color:#92400e;width:24px;height:24px;border-radius:50%;padding:0;font-size:13px;font-weight:700;line-height:1;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;transition:all .12s}}
+ .alert-dismiss:hover{{background:#dc2626;color:#fff;border-color:#dc2626;transform:scale(1.08)}}
+ .alert-explain{{font-size:12px;color:#78350f;background:#fef3c7;border-left:3px solid #f59e0b;padding:10px 12px;border-radius:6px;margin-bottom:14px;line-height:1.55}}
+ .alert-explain b{{color:#451a03}}
 
  /* SENT FEED */
  .sent-row{{display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid #f3f4f6;font-size:13px}}
@@ -382,18 +395,6 @@ def _render() -> str:
 
   {stats_html}
 
-  <div class="card alerts">
-    <h2>🔔 Alertes à traiter <span class="badge">{len(alerts)}</span></h2>
-    {alerts_html}
-  </div>
-
-  {"<div class='card errors'><h2>❌ Erreurs récentes <span class='badge'>" + str(len(error_list)) + "</span></h2>" + errors_html + "</div>" if error_list else ""}
-
-  <div class="card">
-    <h2>✓ Envois automatiques récents <span class="badge">{len(sent_list)}</span></h2>
-    {sent_html}
-  </div>
-
   <div class="card">
     <h2>⚡ Actions</h2>
     {test_banner}
@@ -425,6 +426,23 @@ def _render() -> str:
         <button class="btn-toggle" type="submit">{toggle_label}</button>
       </form>
     </div>
+  </div>
+
+  <div class="card alerts">
+    <h2>🔔 Alertes à traiter <span class="badge">{len(alerts)}</span></h2>
+    <div class="alert-explain">
+      <b>Ce sont les réponses de prospects que le bot NE traite PAS automatiquement</b> — il te les remonte pour que tu décides.<br>
+      🔥 <b>Intéressé chaud</b> · 🟡 <b>tiède</b> · ❓ <b>demande d'infos</b> · 📅 <b>propose un RDV</b> · ⏰ <b>"plus tard"</b> · ↪️ <b>mauvaise personne</b> (te donne un autre contact).<br>
+      Tu reçois un email pour chacune sur ton adresse Resend, et tu peux cliquer <b>✕</b> pour cacher une ligne une fois traitée.
+    </div>
+    {alerts_html}
+  </div>
+
+  {"<div class='card errors'><h2>❌ Erreurs récentes <span class='badge'>" + str(len(error_list)) + "</span></h2>" + errors_html + "</div>" if error_list else ""}
+
+  <div class="card">
+    <h2>✓ Envois automatiques récents <span class="badge">{len(sent_list)}</span></h2>
+    {sent_html}
   </div>
 
   <details>
@@ -468,6 +486,10 @@ class handler(BaseHTTPRequestHandler):
         action = form.get("action")
         if action == "toggle":
             kvstore.set_enabled(form.get("enabled") == "1")
+        elif action == "dismiss_alert":
+            alert_id = (form.get("alert_id") or "").strip()
+            if alert_id:
+                kvstore.dismiss_alert(alert_id)
         elif action == "run_now" or action == "run_email":
             # Lancement manuel synchrone du bot. Si action=run_email + champ
             # only_email présent, on force le traitement de CE prospect précis
