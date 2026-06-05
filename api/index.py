@@ -225,13 +225,19 @@ def _render() -> str:
         frm = html.escape(str(a.get("from", "")))
         reply_txt = html.escape(str(a.get("reply", "")))[:300]
         alert_id = html.escape(f"{a.get('at', '')}|{(a.get('from') or '').lower()}")
-        # Lien direct vers la fiche ManyReach. Avec prospect_id → URL canonique.
-        # Sans (anciennes alertes loggées avant ce fix) → URL de recherche.
-        pid = a.get("prospect_id")
-        if pid:
-            mr_url = f"https://app.manyreach.com/prospects/{pid}"
-        else:
-            mr_url = "https://app.manyreach.com/prospects?search=" + urllib.parse.quote(str(a.get("from", "")))
+        # Lien direct vers l'Unibox ManyReach filtré sur cette conversation.
+        # ManyReach n'expose pas l'id interne 'recid' via leur API v2, donc
+        # on utilise le paramètre 'search=' de l'inbox UI avec l'email — ça
+        # filtre l'inbox sur ce seul prospect (équivalent à taper l'email
+        # dans la barre de recherche en haut).
+        # MANYREACH_ORG_ID = ID du compte (préfixé 'o=' dans l'URL). Override
+        # via env var si Rudy change de compte.
+        mr_org = os.environ.get("MANYREACH_ORG_ID", "7288")
+        mr_email = urllib.parse.quote(str(a.get("from", "")))
+        mr_url = (
+            f"https://app.manyreach.com/e/inbox?leadstatus=important&type=campaign"
+            f"&activestatus=1&pagesize=25&currentpage=1&o={mr_org}&search={mr_email}"
+        )
         return f"""
         <div class="alert-row">
           <div class="alert-head">
