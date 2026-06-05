@@ -265,14 +265,27 @@ def main() -> int:
         return local.weekday() in days and hours[0] <= local.hour < hours[1]
 
     def reply_old_enough(reply, when: datetime) -> bool:
-        """Don't reply instantly — a human lets a message age a bit."""
+        """Don't reply instantly — a human lets a message age a bit.
+
+        CLOCK SKEW NOTE : l'API ManyReach renvoie parfois des timestamps en
+        avance de plusieurs heures par rapport au vrai UTC (constaté +6/+7h).
+        Si (when - reply.created_at) est NÉGATIF, c'est ce cas ; le reply
+        est en réalité déjà ancien côté monde réel. On le considère donc
+        comme suffisamment vieux pour être traité — sinon TOUS les replies
+        récents seraient bloqués indéfiniment ('trop récent' à chaque cron),
+        ce qui paralyse le bot.
+        """
         min_age = int(send_cfg.get("min_reply_age_minutes", 0))
         jitter = int(send_cfg.get("max_reply_age_jitter_minutes", 0))
         if min_age <= 0 and jitter <= 0:
             return True
+        delta = (when - reply.created_at).total_seconds()
+        if delta < 0:
+            # Clock skew côté MR → on bypass le check d'âge minimum.
+            return True
         # Deterministic per-message jitter so the threshold is stable across runs
         extra = (abs(hash(reply.message_id)) % (jitter + 1)) if jitter > 0 else 0
-        return (when - reply.created_at) >= timedelta(minutes=min_age + extra)
+        return delta >= (min_age + extra) * 60
 
     # --- Google Calendar (optional) ---
     cal_cfg = settings.get("calendar", {}) or {}
