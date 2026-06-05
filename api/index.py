@@ -157,7 +157,7 @@ def _render() -> str:
             alerts.append(a)
         elif "envoyé" in status:
             sent_list.append(a)
-        elif intent in ("test_resend", "run_now"):
+        elif intent in ("test_resend", "run_now", "retry_alerts"):
             # diagnostics manuels → ne pas polluer les compteurs
             pass
         elif intent != "bounce_or_auto":
@@ -166,23 +166,23 @@ def _render() -> str:
     keyq = os.environ.get("DASHBOARD_KEY")
     keyparam = f"?key={keyq}" if keyq else ""
 
-    # Dernier test Resend (s'il y en a un) → bannière dans la zone Actions
-    last_test = None
+    # Dernier diagnostic (test Resend OU retry alertes) → bannière dans la zone Actions
+    last_diag = None
     for a in actions_full:
-        if a.get("intent") == "test_resend":
-            last_test = a
+        if a.get("intent") in ("test_resend", "retry_alerts"):
+            last_diag = a
             break
     test_banner = ""
-    if last_test:
-        when = _time_fr(last_test.get("at", ""))
-        st = str(last_test.get("status", ""))
-        ok = "✅" in st
+    if last_diag:
+        when = _time_fr(last_diag.get("at", ""))
+        st = str(last_diag.get("status", ""))
+        ok = "✅" in st or " OK" in st and " KO" in st and "0 OK" not in st
         bg = "#dcfce7" if ok else "#fee2e2"
         color = "#15803d" if ok else "#991b1b"
         test_banner = (
             f'<div style="margin-bottom:12px;padding:10px 14px;border-radius:8px;'
             f'background:{bg};color:{color};font-size:13px;font-weight:600">'
-            f'Dernier test Resend ({when}) : {html.escape(st)}</div>'
+            f'Dernier diagnostic ({when}) : {html.escape(st)}</div>'
         )
 
     # Couleur statut bot
@@ -414,6 +414,11 @@ def _render() -> str:
         <input type="hidden" name="action" value="test_resend">
         <button class="btn-primary" type="submit" style="background:#4f46e5">✉️ Tester Resend</button>
       </form>
+      <form method="POST" action="/{keyparam}"
+            onsubmit="var b=this.querySelector('button'); b.disabled=true; b.innerHTML='⏳ Renvoi...'; return true;">
+        <input type="hidden" name="action" value="retry_failed_alerts">
+        <button class="btn-primary" type="submit" style="background:#0891b2">📨 Renvoyer alertes en échec</button>
+      </form>
       <form method="POST" action="/{keyparam}" style="margin-left:auto">
         <input type="hidden" name="action" value="toggle">
         <input type="hidden" name="enabled" value="{toggle_val}">
@@ -518,6 +523,90 @@ class handler(BaseHTTPRequestHandler):
                     "status": log_status,
                     "reply": "",
                     "response": "",
+                })
+        elif action == "retry_failed_alerts":
+            # Renvoie via Resend toutes les alertes dont la livraison a échoué
+            # (typiquement HTTP 403 sandbox tant que NOTIFY_EMAIL n'était pas
+            # l'email du compte Resend). Une fois NOTIFY_EMAIL fixé, ce bouton
+            # rattrape les leads coincés. Dédup par email pour ne pas spammer.
+            from datetime import datetime as _dt, timezone as _tz
+            try:
+                from src.alerts import _send_via_resend
+                actions_all = kvstore.recent_actions(200)
+                alert_intents = {
+                    "interested_warm", "interested_lukewarm", "ask_more_info",
+                    "meeting_confirmed", "objection_timing", "wrong_person_redirect",
+                }
+                intent_label_map = {
+                    "interested_warm": "🔥 LEAD CHAUD",
+                    "interested_lukewarm": "🟡 Lead tiède",
+                    "ask_more_info": "❓ Demande d'infos",
+                    "meeting_confirmed": "📅 RDV proposé",
+                    "objection_timing": "⏰ À recontacter plus tard",
+                    "wrong_person_redirect": "↪️ Mauvaise personne",
+                }
+                already_resent: set = set()
+                ok_count = 0
+                ko_count = 0
+                first_detail = ""
+                for a in actions_all:
+                    intent = a.get("intent", "")
+                    if intent not in alert_intents:
+                        continue
+                    status_field = str(a.get("status", "")) + " " + str(a.get("response", ""))
+                    failed = (
+                        "❌" in status_field
+                        or "NON envoyé" in status_field
+                        or "HTTP 4" in status_field
+                        or "HTTP 5" in status_field
+                        or "Exception" in status_field
+                        or "manquant" in status_field
+                    )
+                    if not failed:
+                        continue
+                    email = (a.get("from") or "").lower().strip()
+                    if not email or email in already_resent:
+                        continue
+                    already_resent.add(email)
+                    intent_label = intent_label_map.get(intent, f"⚠️ {intent}")
+                    subject = f"[Renvoi] {intent_label} — {email}"
+                    body = (
+                        f"Alerte précédemment NON envoyée (Resend sandbox bloquait) "
+                        f"— rattrapage maintenant.\n\n"
+                        f"Type     : {intent_label} ({intent})\n"
+                        f"Prospect : {email}\n"
+                        f"Reçu le  : {a.get('at', '?')}\n"
+                        f"Sujet    : {a.get('subject', '')}\n\n"
+                        f"Extrait reply :\n---\n{a.get('reply', '')}\n---\n\n"
+                        f"→ À toi de répondre."
+                    )
+                    ok, detail = _send_via_resend(subject, body)
+                    if not first_detail:
+                        first_detail = detail
+                    if ok:
+                        ok_count += 1
+                    else:
+                        ko_count += 1
+                    # cap dur pour rester dans le budget 60s Vercel
+                    if (ok_count + ko_count) >= 25:
+                        break
+                log_status = (
+                    f"📨 Renvoi alertes : {ok_count} OK / {ko_count} KO"
+                    + (f" — 1er retour : {first_detail}" if first_detail else "")
+                )
+                if (ok_count + ko_count) == 0:
+                    log_status = "📨 Renvoi alertes : aucune alerte en échec trouvée"
+            except Exception as e:  # noqa: BLE001
+                log_status = f"❌ Renvoi alertes — Exception : {str(e)[:200]}"
+            if kvstore.kv_available():
+                kvstore.log_action({
+                    "at": _dt.now(_tz.utc).isoformat(),
+                    "from": "(retry alertes)",
+                    "subject": "📨 Renvoi alertes en échec",
+                    "intent": "retry_alerts",
+                    "status": log_status,
+                    "reply": "",
+                    "response": log_status,
                 })
         elif action == "test_resend":
             # Test direct : appelle _send_via_resend avec un payload minimal et
