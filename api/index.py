@@ -225,25 +225,20 @@ def _render() -> str:
         frm = html.escape(str(a.get("from", "")))
         reply_txt = html.escape(str(a.get("reply", "")))[:300]
         alert_id = html.escape(f"{a.get('at', '')}|{(a.get('from') or '').lower()}")
-        # Statut de livraison Resend (le bot l'a écrit dans status/response avec
-        # un préfixe ✅/❌ + détail HTTP). On l'affiche en pastille pour que
-        # Rudy voie d'un coup d'oeil quelles alertes ont vraiment été envoyées.
-        status_raw = str(a.get("status", "")) + " " + str(a.get("response", ""))
-        if "✅" in status_raw or "HTTP 200" in status_raw:
-            mail_badge = '<span class="mail-ok">✉️ envoyé</span>'
-        elif "❌" in status_raw or "HTTP" in status_raw or "Exception" in status_raw or "manquant" in status_raw:
-            # extrait du détail pour debug visible
-            short = html.escape(status_raw.replace("🔔 ALERTE — ", "").strip())[:140]
-            mail_badge = f'<span class="mail-ko" title="{short}">✉️ NON envoyé</span>'
+        # Lien direct vers la fiche ManyReach. Avec prospect_id → URL canonique.
+        # Sans (anciennes alertes loggées avant ce fix) → URL de recherche.
+        pid = a.get("prospect_id")
+        if pid:
+            mr_url = f"https://app.manyreach.com/prospects/{pid}"
         else:
-            mail_badge = '<span class="mail-unknown">✉️ ?</span>'
+            mr_url = "https://app.manyreach.com/prospects?search=" + urllib.parse.quote(str(a.get("from", "")))
         return f"""
         <div class="alert-row">
           <div class="alert-head">
             <span class="alert-icon">{intent_emoji}</span>
             <span class="alert-intent">{html.escape(intent_label)}</span>
             <a class="alert-email" href="mailto:{frm}">{frm}</a>
-            {mail_badge}
+            <a class="alert-mr" href="{mr_url}" target="_blank" rel="noopener" title="Ouvrir la fiche ManyReach pour répondre">↗ ManyReach</a>
             <span class="alert-when">{when}</span>
             <form method="POST" action="/{keyparam}" style="display:inline" onsubmit="this.querySelector('button').disabled=true;return true;">
               <input type="hidden" name="action" value="dismiss_alert">
@@ -342,13 +337,21 @@ def _render() -> str:
  .alert-email{{font-weight:600;color:#1a1d29;font-size:13px}}
  .alert-when{{color:#6b7280;font-size:12px;margin-left:auto}}
  .alert-msg{{color:#374151;font-size:13px;line-height:1.5;padding-left:28px}}
- .mail-ok{{font-size:11px;font-weight:700;color:#15803d;background:#dcfce7;padding:3px 8px;border-radius:6px}}
- .mail-ko{{font-size:11px;font-weight:700;color:#991b1b;background:#fee2e2;padding:3px 8px;border-radius:6px;cursor:help}}
- .mail-unknown{{font-size:11px;font-weight:700;color:#6b7280;background:#e5e7eb;padding:3px 8px;border-radius:6px}}
+ .alert-mr{{font-size:11px;font-weight:700;color:#4f46e5;background:#eef2ff;padding:3px 8px;border-radius:6px;text-decoration:none;border:1px solid #c7d2fe;transition:all .12s}}
+ .alert-mr:hover{{background:#4f46e5;color:#fff;text-decoration:none;border-color:#4f46e5}}
  .alert-dismiss{{background:transparent;border:1px solid #d4a93f;color:#92400e;width:24px;height:24px;border-radius:50%;padding:0;font-size:13px;font-weight:700;line-height:1;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;transition:all .12s}}
  .alert-dismiss:hover{{background:#dc2626;color:#fff;border-color:#dc2626;transform:scale(1.08)}}
  .alert-explain{{font-size:12px;color:#78350f;background:#fef3c7;border-left:3px solid #f59e0b;padding:10px 12px;border-radius:6px;margin-bottom:14px;line-height:1.55}}
  .alert-explain b{{color:#451a03}}
+
+ /* ACTIONS GRID — propre et lisible */
+ .action-grid{{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}}
+ @media (max-width:640px){{.action-grid{{grid-template-columns:1fr}}}}
+ .action-cell{{display:flex;gap:8px;align-items:stretch}}
+ .action-cell form{{display:flex;gap:6px;align-items:stretch;flex:1;margin:0}}
+ .action-cell button{{flex:1;white-space:nowrap}}
+ .action-cell input[type=email]{{flex:1;min-width:0}}
+ .action-toggle-row{{display:flex;justify-content:flex-end;padding-top:10px;border-top:1px solid #f3f4f6}}
 
  /* SENT FEED */
  .sent-row{{display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid #f3f4f6;font-size:13px}}
@@ -398,29 +401,39 @@ def _render() -> str:
   <div class="card">
     <h2>⚡ Actions</h2>
     {test_banner}
-    <div class="actions">
-      <form method="POST" action="/{keyparam}"
-            onsubmit="var b=this.querySelector('button'); b.disabled=true; b.innerHTML='⏳ En cours...'; return true;">
-        <input type="hidden" name="action" value="run_now">
-        <button class="btn-primary" type="submit">▶ Lancer maintenant</button>
-      </form>
-      <form method="POST" action="/{keyparam}" class="actions"
-            onsubmit="var b=this.querySelector('button'); b.disabled=true; b.innerHTML='⏳...'; return true;">
-        <input type="hidden" name="action" value="run_email">
-        <input type="email" name="only_email" placeholder="email@prospect.com" required>
-        <button class="btn-primary" type="submit">▶ Forcer ce prospect</button>
-      </form>
-      <form method="POST" action="/{keyparam}"
-            onsubmit="var b=this.querySelector('button'); b.disabled=true; b.innerHTML='⏳...'; return true;">
-        <input type="hidden" name="action" value="test_resend">
-        <button class="btn-primary" type="submit" style="background:#4f46e5">✉️ Tester Resend</button>
-      </form>
-      <form method="POST" action="/{keyparam}"
-            onsubmit="var b=this.querySelector('button'); b.disabled=true; b.innerHTML='⏳ Renvoi...'; return true;">
-        <input type="hidden" name="action" value="retry_failed_alerts">
-        <button class="btn-primary" type="submit" style="background:#0891b2">📨 Renvoyer alertes en échec</button>
-      </form>
-      <form method="POST" action="/{keyparam}" style="margin-left:auto">
+    <div class="action-grid">
+      <div class="action-cell">
+        <form method="POST" action="/{keyparam}"
+              onsubmit="var b=this.querySelector('button'); b.disabled=true; b.innerHTML='⏳ En cours...'; return true;">
+          <input type="hidden" name="action" value="run_now">
+          <button class="btn-primary" type="submit">▶ Lancer maintenant</button>
+        </form>
+      </div>
+      <div class="action-cell">
+        <form method="POST" action="/{keyparam}"
+              onsubmit="var b=this.querySelector('button'); b.disabled=true; b.innerHTML='⏳...'; return true;">
+          <input type="hidden" name="action" value="run_email">
+          <input type="email" name="only_email" placeholder="email@prospect.com" required>
+          <button class="btn-primary" type="submit">▶ Forcer</button>
+        </form>
+      </div>
+      <div class="action-cell">
+        <form method="POST" action="/{keyparam}"
+              onsubmit="var b=this.querySelector('button'); b.disabled=true; b.innerHTML='⏳...'; return true;">
+          <input type="hidden" name="action" value="test_resend">
+          <button class="btn-primary" type="submit" style="background:#4f46e5">✉️ Tester Resend</button>
+        </form>
+      </div>
+      <div class="action-cell">
+        <form method="POST" action="/{keyparam}"
+              onsubmit="var b=this.querySelector('button'); b.disabled=true; b.innerHTML='⏳ Renvoi...'; return true;">
+          <input type="hidden" name="action" value="retry_failed_alerts">
+          <button class="btn-primary" type="submit" style="background:#0891b2">📨 Renvoyer alertes en échec</button>
+        </form>
+      </div>
+    </div>
+    <div class="action-toggle-row">
+      <form method="POST" action="/{keyparam}">
         <input type="hidden" name="action" value="toggle">
         <input type="hidden" name="enabled" value="{toggle_val}">
         <button class="btn-toggle" type="submit">{toggle_label}</button>
@@ -431,9 +444,9 @@ def _render() -> str:
   <div class="card alerts">
     <h2>🔔 Alertes à traiter <span class="badge">{len(alerts)}</span></h2>
     <div class="alert-explain">
-      <b>Ce sont les réponses de prospects que le bot NE traite PAS automatiquement</b> — il te les remonte pour que tu décides.<br>
+      <b>Ce sont les réponses de prospects que le bot NE traite PAS automatiquement</b> — il te les remonte ici pour que tu décides.<br>
       🔥 <b>Intéressé chaud</b> · 🟡 <b>tiède</b> · ❓ <b>demande d'infos</b> · 📅 <b>propose un RDV</b> · ⏰ <b>"plus tard"</b> · ↪️ <b>mauvaise personne</b> (te donne un autre contact).<br>
-      Tu reçois un email pour chacune sur ton adresse Resend, et tu peux cliquer <b>✕</b> pour cacher une ligne une fois traitée.
+      Clique <b>↗ ManyReach</b> pour ouvrir la fiche du prospect et répondre. Clique <b>✕</b> pour cacher une ligne une fois traitée.
     </div>
     {alerts_html}
   </div>

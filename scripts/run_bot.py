@@ -901,18 +901,10 @@ def main() -> int:
                             execute_plan(alert_plan, reply, mr, dry_run=dry_run, tag_cache=tag_cache)
                         except Exception as _e:  # noqa: BLE001
                             print(f"  !! status update fail: {_e}")
-                    # Envoi de l'alerte email
-                    from src.alerts import send_lead_alert
-                    alert_line = send_lead_alert(
-                        intent=classification.intent,
-                        prospect_email=reply.from_email,
-                        prospect_name=(classification.prospect_name or (prospect.first_name if prospect else None)),
-                        company=(prospect.company if prospect else None),
-                        reply_full=_trim_quoted_history(_strip_html(reply.body), 2000),
-                        campaign_id=reply.campaign_id,
-                        dry_run=dry_run,
-                        phone=classification.contact_phone,
-                    )
+                    # PAS d'envoi de mail Resend automatique — Rudy gère tout
+                    # depuis le dashboard. On garde l'enregistrement KV (avec
+                    # prospect_id pour le lien ManyReach) + une trace locale.
+                    alert_line = f"🔔 ALERTE détectée — visible dashboard ({classification.intent})"
                     print(f"    {alert_line}")
                     # Log KV pour visibilité dans le dashboard
                     log_entry["intent"] = classification.intent
@@ -922,18 +914,17 @@ def main() -> int:
                     log_entry["dry_run"] = dry_run
                     logf.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
                     if kvstore and kvstore.kv_available():
-                        # On expose le résultat REEL de Resend (✅ ou ❌ + detail)
-                        # dans le status, pour voir directement dans le dashboard
-                        # si l'email part vraiment ou échoue.
-                        _resend_status = "🔔 ALERTE — " + (alert_line if alert_line else "?")
                         kvstore.log_action({
                             "at": now_utc.isoformat(),
                             "from": reply.from_email,
                             "subject": reply.subject,
                             "intent": classification.intent,
-                            "status": _resend_status[:250],
+                            "status": "🔔 ALERTE — à traiter dashboard",
                             "reply": _trim_quoted_history(_strip_html(reply.body))[:700],
                             "response": alert_line,
+                            # prospect_id → permet au dashboard de générer un lien
+                            # direct vers la fiche ManyReach pour répondre.
+                            "prospect_id": (prospect.prospect_id if prospect else None),
                         })
                     if not dry_run:
                         _mark_done(reply.message_id)
