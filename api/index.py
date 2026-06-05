@@ -210,17 +210,18 @@ def _render() -> str:
         reply_txt = html.escape(str(a.get("reply", "")))[:300]
         alert_id = html.escape(f"{a.get('at', '')}|{(a.get('from') or '').lower()}")
         # Lien direct vers l'Unibox ManyReach filtré sur cette conversation.
-        # ManyReach n'expose pas l'id interne 'recid' via leur API v2, donc
-        # on utilise le paramètre 'search=' de l'inbox UI avec l'email — ça
-        # filtre l'inbox sur ce seul prospect (équivalent à taper l'email
-        # dans la barre de recherche en haut).
-        # MANYREACH_ORG_ID = ID du compte (préfixé 'o=' dans l'URL). Override
-        # via env var si Rudy change de compte.
+        # Structure confirmée par Rudy : le paramètre 'search' utilise le
+        # préfixe 'from:' pour filtrer par expéditeur (équivalent à taper
+        # 'from:email@x.com' dans la barre de recherche de l'inbox).
+        # leadstatus= reste vide pour ne PAS restreindre aux "important".
+        # MANYREACH_ORG_ID = ID du compte, override via env var si besoin.
         mr_org = os.environ.get("MANYREACH_ORG_ID", "7288")
         mr_email = urllib.parse.quote(str(a.get("from", "")))
         mr_url = (
-            f"https://app.manyreach.com/e/inbox?leadstatus=important&type=campaign"
-            f"&activestatus=1&pagesize=25&currentpage=1&o={mr_org}&search={mr_email}"
+            f"https://app.manyreach.com/e/inbox"
+            f"?sender=-1&status=&leadstatus=&autostatus=&list=-1"
+            f"&search=from:{mr_email}"
+            f"&campaign=&type=campaign&activestatus=1&pagesize=25&currentpage=1&o={mr_org}"
         )
         return f"""
         <div class="alert-row">
