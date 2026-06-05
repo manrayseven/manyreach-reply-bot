@@ -155,7 +155,7 @@ class ManyReachClient:
         since: datetime | None = None,
         page_size: int = 100,
         confirmed_statuses: tuple[str, ...] | None = None,
-        max_per_status: int = 100,
+        max_per_status: int = 300,
         email_from: str | None = None,
     ) -> Iterable[Message]:
         """Yield reply Messages, most-recent first.

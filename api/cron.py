@@ -41,12 +41,16 @@ class handler(BaseHTTPRequestHandler):
             # autonome. La file FIFO garantit que rien ne starve (le plus vieux
             # non-répondu passe toujours en premier). --since-days 1 = moins de
             # data à lister (plus rapide). Au-delà : bouton "Pour cet email".
-            limit = os.environ.get("CRON_LIMIT", "6")
+            # Quota augmenté : 6 → 20 pour résorber un backlog rapidement.
+            # since-days 1 → 2 pour couvrir hier + avant-hier (replies anciens
+            # pas encore traités). Les replies vraiment vieux passent quand
+            # même via le bouton "Forcer" du dashboard.
+            limit = os.environ.get("CRON_LIMIT", "20")
             sys.argv = [
                 "run_bot",
                 "--no-dry-run",
                 "--limit", limit,
-                "--since-days", "1",
+                "--since-days", "2",
             ]
             code = run_bot.main()
             result["exit_code"] = code

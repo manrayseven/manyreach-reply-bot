@@ -160,7 +160,7 @@ def _render() -> str:
                 alerts.append(a)
         elif "envoyé" in status:
             sent_list.append(a)
-        elif intent in ("test_resend", "run_now", "retry_alerts"):
+        elif intent in ("test_resend", "run_now", "retry_alerts", "diagnose"):
             # diagnostics manuels → ne pas polluer les compteurs
             pass
         elif intent != "bounce_or_auto":
@@ -169,8 +169,19 @@ def _render() -> str:
     keyq = os.environ.get("DASHBOARD_KEY")
     keyparam = f"?key={keyq}" if keyq else ""
 
-    # (boutons Tester Resend / Renvoyer alertes en échec retirés — le bot
-    # n'envoie plus de mail automatique, plus rien à diagnostiquer côté UI)
+    # Dernier diagnostic prospect → bannière dans la zone Actions
+    last_diag = None
+    for a in actions_full:
+        if a.get("intent") == "diagnose":
+            last_diag = a
+            break
+    diag_banner = ""
+    if last_diag:
+        when = _time_fr(last_diag.get("at", ""))
+        st = str(last_diag.get("response") or last_diag.get("status", ""))
+        diag_banner = (
+            f'<div class="diag-banner">📋 {html.escape(when)} — {html.escape(st)}</div>'
+        )
 
     # Couleur statut bot
     status_color = "#16a34a" if enabled else "#dc2626"
@@ -336,8 +347,10 @@ def _render() -> str:
  .alert-explain b{{color:#451a03}}
 
  /* ACTIONS GRID — chaque cellule = bouton + description claire */
- .action-grid{{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}}
- @media (max-width:700px){{.action-grid{{grid-template-columns:1fr}}}}
+ .action-grid{{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:12px}}
+ @media (max-width:900px){{.action-grid{{grid-template-columns:1fr 1fr}}}}
+ @media (max-width:600px){{.action-grid{{grid-template-columns:1fr}}}}
+ .diag-banner{{margin-bottom:12px;padding:12px 14px;border-radius:8px;background:#eef2ff;color:#312e81;font-size:12.5px;font-weight:500;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;line-height:1.55;word-break:break-word;border:1px solid #c7d2fe}}
  .action-cell{{background:#fafafa;padding:12px 14px;border-radius:10px;border:1px solid #e5e7eb;display:flex;flex-direction:column;gap:8px}}
  .action-cell form{{display:flex;gap:6px;align-items:stretch;margin:0}}
  .action-cell button{{flex:0 0 auto;white-space:nowrap}}
@@ -394,6 +407,7 @@ def _render() -> str:
 
   <div class="card">
     <h2>⚡ Actions</h2>
+    {diag_banner}
     <div class="action-grid">
       <div class="action-cell">
         <form method="POST" action="/{keyparam}"
@@ -411,6 +425,15 @@ def _render() -> str:
           <button class="btn-primary" type="submit">▶ Forcer</button>
         </form>
         <div class="action-help">Re-traite manuellement <b>UN prospect précis</b> (saisis son email). Utile si une réponse t'a échappé ou si tu veux re-essayer après un fix.</div>
+      </div>
+      <div class="action-cell">
+        <form method="POST" action="/{keyparam}"
+              onsubmit="var b=this.querySelector('button'); b.disabled=true; b.innerHTML='⏳ Diag...'; return true;">
+          <input type="hidden" name="action" value="diagnose_prospect">
+          <input type="email" name="only_email" placeholder="email@prospect.com" required>
+          <button class="btn-primary" type="submit" style="background:#6366f1">📋 Diagnostic</button>
+        </form>
+        <div class="action-help">Affiche en clair pourquoi le bot ignore un prospect (statut, idempotence, déjà traité…). Aucun envoi.</div>
       </div>
     </div>
     <div class="action-toggle-row">
@@ -540,6 +563,64 @@ class handler(BaseHTTPRequestHandler):
                     "status": log_status,
                     "reply": "",
                     "response": "",
+                })
+        elif action == "diagnose_prospect":
+            # Visibilité sur l'état exact d'un prospect : statut MR, thread,
+            # idempotence, KV processed → permet à Rudy de comprendre lui-même
+            # pourquoi le bot ignore un email (au lieu de me demander à chaque
+            # fois).
+            from datetime import datetime as _dt, timezone as _tz
+            diag_email = (form.get("only_email") or "").strip().lower()
+            diag_result = ""
+            if diag_email:
+                try:
+                    from src.manyreach import ManyReachClient
+                    with ManyReachClient() as mr:
+                        prospect = mr.find_prospect_by_email(diag_email)
+                        if not prospect:
+                            diag_result = f"❌ {diag_email} introuvable dans ManyReach (pas de prospect avec cet email)"
+                        else:
+                            thread = mr.get_prospect_thread(prospect.prospect_id)
+                            replies = sorted([m for m in thread if m.type == "Reply"], key=lambda m: m.created_at)
+                            sents = sorted([m for m in thread if m.type in ("Sent", "SentManual")], key=lambda m: m.created_at)
+                            last_reply = replies[-1] if replies else None
+                            last_sent = sents[-1] if sents else None
+                            sent_after_reply = bool(last_reply and last_sent and last_sent.created_at > last_reply.created_at)
+                            kv_processed = False
+                            if last_reply and kvstore.kv_available():
+                                kv_processed = kvstore.is_kv_processed(last_reply.message_id)
+                            allowed_statuses = ("Interested", "MaybeLater", "Neutral", "NotInterested", "CollegueReplied")
+                            reasons = []
+                            if prospect.sending_status not in allowed_statuses:
+                                reasons.append(f"⛔ statut={prospect.sending_status} hors liste traitée par le bot")
+                            if sent_after_reply:
+                                reasons.append(f"⛔ Sent après Reply (idempotence — bot considère déjà répondu)")
+                            if kv_processed:
+                                reasons.append(f"⛔ KV processed (déjà traité dans un run précédent)")
+                            if not reasons:
+                                reasons.append("✅ Devrait être traité au prochain cron (5 min)")
+                            diag_result = (
+                                f"{diag_email} (id={prospect.prospect_id}) | "
+                                f"statut={prospect.sending_status} sendingActive={prospect.sending_active} | "
+                                f"Reply: {last_reply.created_at.isoformat() if last_reply else 'aucun'} | "
+                                f"Sent: {last_sent.created_at.isoformat() if last_sent else 'aucun'} | "
+                                f"SentAfterReply={'OUI' if sent_after_reply else 'non'} | "
+                                f"KVprocessed={'OUI' if kv_processed else 'non'} | "
+                                f"→ {' / '.join(reasons)}"
+                            )
+                except Exception as e:  # noqa: BLE001
+                    diag_result = f"❌ Erreur diagnostic : {str(e)[:200]}"
+            else:
+                diag_result = "❌ email vide"
+            if kvstore.kv_available():
+                kvstore.log_action({
+                    "at": _dt.now(_tz.utc).isoformat(),
+                    "from": "(diagnostic)",
+                    "subject": f"📋 Diag {diag_email}",
+                    "intent": "diagnose",
+                    "status": diag_result[:400],
+                    "reply": "",
+                    "response": diag_result,
                 })
         elif action == "retry_failed_alerts":
             # Renvoie via Resend toutes les alertes dont la livraison a échoué
