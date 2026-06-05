@@ -457,10 +457,70 @@ BOUNCE_SUBJECT_PATTERNS = (
 )
 
 
+BOUNCE_BODY_PATTERNS = (
+    # FR — congés / absence / société fermée / personne partie
+    "je suis en congé",
+    "suis en congés",
+    "suis en conge",
+    "actuellement en congé",
+    "actuellement absent",
+    "je suis absent",
+    "actuellement en vacances",
+    "en arrêt maladie",
+    "en arrêt de travail",
+    "pour raisons de santé",
+    "raisons médicales",
+    "raisons de santé",
+    "ne fait plus partie",
+    "ne fait plus parti",
+    "n'est plus dans nos effectifs",
+    "n'est plus dans la société",
+    "a quitté ses fonctions",
+    "a quitté l'entreprise",
+    "a quitté la société",
+    "a quitté l'agence",
+    "cesse son activité",
+    "cessation d'activité",
+    "fermeture définitive",
+    "fermeture de l'entreprise",
+    "n'est désormais plus utilisée",
+    "n'est plus utilisée",
+    "n'est plus active",
+    "veuillez noter la nouvelle adresse",
+    "veuillez noter le changement",
+    "ma nouvelle adresse",
+    "ma boite mail change",
+    # EN
+    "i am out of the office",
+    "i am out of office",
+    "currently out of the office",
+    "currently out of office",
+    "i'm on leave",
+    "i am on leave",
+    "i'm on vacation",
+    "on annual leave",
+    "no longer with",
+    "is no longer employed",
+    "has left the company",
+    # DE
+    "ich bin abwesend",
+    "bin im urlaub",
+    "in ferien",
+    "aus gesundheitlichen gründen abwesend",
+    "krankheitsbedingt abwesend",
+    "nicht mehr bei",
+)
+
+
 def is_bounce_or_auto(msg: Message) -> bool:
-    """Heuristic: identifies bounces, mailer-daemon, OOO, etc. before classification."""
+    """Heuristic: identifies bounces, mailer-daemon, OOO, congés, société fermée,
+    personne partie, changement d'adresse — bref tout reply qu'il n'y a aucune
+    raison de remonter à Rudy. On regarde sender + subject + BODY (les out-of-
+    office français/allemand ont souvent un subject neutre, le signal est dans
+    le corps)."""
     sender = (msg.from_email or "").lower()
     subject = (msg.subject or "").lower()
+    body = (msg.body or "").lower()
     for pat in BOUNCE_FROM_PATTERNS:
         if pat in sender:
             return True
@@ -469,6 +529,12 @@ def is_bounce_or_auto(msg: Message) -> bool:
             return True
     if "mail-out" in sender or "mailout" in sender:
         return True
+    # Body check : on regarde les 800 premiers chars (= avant les signatures /
+    # quotes), suffisant pour les patterns OOO / changement d'adresse.
+    body_head = body[:800]
+    for pat in BOUNCE_BODY_PATTERNS:
+        if pat in body_head:
+            return True
     return False
 
 

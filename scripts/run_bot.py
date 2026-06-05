@@ -888,15 +888,12 @@ def main() -> int:
                 # Le bot NE répond PAS. Envoie une alerte email à Rudy avec toutes
                 # les infos pour qu'il gère manuellement (RDV, lead chaud, "plus
                 # tard"). Met juste à jour le statut côté ManyReach + log KV.
+                # NOTE : wrong_person_redirect (changement d'adresse / personne
+                # partie / autoreply congés) est désormais dans ALWAYS_SILENT —
+                # plus d'alerte ni de réponse auto. Rudy ne veut pas être dérangé
+                # par ces cas (validé 2026-06-05).
                 from src.actions import ALERT_ONLY  # local import to avoid cycles
-                # wrong_person_redirect AVEC un contact identifié (email ou nom) →
-                # c'est un lead transmis, Rudy gère manuellement. Sans contact
-                # identifié → on répond poliment "merci, qui dois-je contacter ?".
-                _is_useful_redirect = (
-                    classification.intent == "wrong_person_redirect"
-                    and (classification.redirected_email or classification.redirected_to)
-                )
-                if classification.intent in ALERT_ONLY or _is_useful_redirect:
+                if classification.intent in ALERT_ONLY:
                     print(f"  >> ALERT_ONLY ({classification.intent}) — alerte Rudy, pas de réponse auto")
                     # Mise à jour du statut prospect (sans envoyer de mail)
                     alert_plan = plan_actions(

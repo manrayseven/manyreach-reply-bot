@@ -155,6 +155,11 @@ def _render() -> str:
         alert_id = f"{a.get('at', '')}|{(a.get('from') or '').lower()}"
         if intent == "error" or "ERREUR" in status:
             error_list.append(a)
+        elif intent == "wrong_person_redirect":
+            # Plus jamais d'alerte pour ces cas (changement d'adresse / personne
+            # partie / autoreply congés) → on les cache rétroactivement aussi
+            # pour les entries loggés avant le changement.
+            silent_list.append(a)
         elif intent in ALERT_INTENTS or "ALERTE" in status:
             if alert_id not in dismissed:
                 alerts.append(a)

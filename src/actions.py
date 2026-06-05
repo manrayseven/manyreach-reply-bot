@@ -52,7 +52,6 @@ INTENT_PROSPECT_UPDATE: dict[str, tuple[str | None, bool | None, list[str]]] = {
 AUTOSEND_ELIGIBLE = frozenset({
     "not_interested_polite",
     "objection_already_have_solution",
-    "wrong_person_redirect",
     "objection_price",  # objection à travailler / convaincre
 })
 
@@ -67,8 +66,11 @@ ALERT_ONLY = frozenset({
     "objection_timing",
 })
 
-# Intents that NEVER send a reply (silent action only)
-ALWAYS_SILENT = frozenset({"unsubscribe", "hostile", "bounce_or_auto", "ack_only"})
+# Intents that NEVER send a reply (silent action only).
+# wrong_person_redirect (qq'un qui a quitté la boîte / changement d'adresse /
+# autoreply de congés) : Rudy ne veut PAS d'alerte ni de réponse polie automatique.
+# Le bot tag, passe en NotInterested côté MR, et c'est fini.
+ALWAYS_SILENT = frozenset({"unsubscribe", "hostile", "bounce_or_auto", "ack_only", "wrong_person_redirect"})
 
 
 ActionKind = Literal[
