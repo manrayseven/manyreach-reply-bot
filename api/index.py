@@ -210,10 +210,10 @@ def _render() -> str:
         reply_txt = html.escape(str(a.get("reply", "")))[:300]
         alert_id = html.escape(f"{a.get('at', '')}|{(a.get('from') or '').lower()}")
         # Lien direct vers l'Unibox ManyReach filtré sur cette conversation.
-        # Structure confirmée par Rudy : le paramètre 'search' utilise le
-        # préfixe 'from:' pour filtrer par expéditeur (équivalent à taper
-        # 'from:email@x.com' dans la barre de recherche de l'inbox).
-        # leadstatus= reste vide pour ne PAS restreindre aux "important".
+        # IMPORTANT : on laisse activestatus= VIDE (au lieu de '1') pour que
+        # les prospects passés en NotInterested (cas typique des "↪️ Mauvaise
+        # personne" où le bot a déjà mis à jour le statut) restent visibles.
+        # search=from:{email} reproduit ce que Rudy tape dans la barre d'inbox.
         # MANYREACH_ORG_ID = ID du compte, override via env var si besoin.
         mr_org = os.environ.get("MANYREACH_ORG_ID", "7288")
         mr_email = urllib.parse.quote(str(a.get("from", "")))
@@ -221,7 +221,7 @@ def _render() -> str:
             f"https://app.manyreach.com/e/inbox"
             f"?sender=-1&status=&leadstatus=&autostatus=&list=-1"
             f"&search=from:{mr_email}"
-            f"&campaign=&type=campaign&activestatus=1&pagesize=25&currentpage=1&o={mr_org}"
+            f"&campaign=&type=campaign&activestatus=&pagesize=25&currentpage=1&o={mr_org}"
         )
         return f"""
         <div class="alert-row">
