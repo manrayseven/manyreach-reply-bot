@@ -169,24 +169,8 @@ def _render() -> str:
     keyq = os.environ.get("DASHBOARD_KEY")
     keyparam = f"?key={keyq}" if keyq else ""
 
-    # Dernier diagnostic (test Resend OU retry alertes) → bannière dans la zone Actions
-    last_diag = None
-    for a in actions_full:
-        if a.get("intent") in ("test_resend", "retry_alerts"):
-            last_diag = a
-            break
-    test_banner = ""
-    if last_diag:
-        when = _time_fr(last_diag.get("at", ""))
-        st = str(last_diag.get("status", ""))
-        ok = "✅" in st or " OK" in st and " KO" in st and "0 OK" not in st
-        bg = "#dcfce7" if ok else "#fee2e2"
-        color = "#15803d" if ok else "#991b1b"
-        test_banner = (
-            f'<div style="margin-bottom:12px;padding:10px 14px;border-radius:8px;'
-            f'background:{bg};color:{color};font-size:13px;font-weight:600">'
-            f'Dernier diagnostic ({when}) : {html.escape(st)}</div>'
-        )
+    # (boutons Tester Resend / Renvoyer alertes en échec retirés — le bot
+    # n'envoie plus de mail automatique, plus rien à diagnostiquer côté UI)
 
     # Couleur statut bot
     status_color = "#16a34a" if enabled else "#dc2626"
@@ -409,7 +393,6 @@ def _render() -> str:
 
   <div class="card">
     <h2>⚡ Actions</h2>
-    {test_banner}
     <div class="action-grid">
       <div class="action-cell">
         <form method="POST" action="/{keyparam}"
@@ -427,22 +410,6 @@ def _render() -> str:
           <button class="btn-primary" type="submit">▶ Forcer</button>
         </form>
         <div class="action-help">Re-traite manuellement <b>UN prospect précis</b> (saisis son email). Utile si une réponse t'a échappé ou si tu veux re-essayer après un fix.</div>
-      </div>
-      <div class="action-cell">
-        <form method="POST" action="/{keyparam}"
-              onsubmit="var b=this.querySelector('button'); b.disabled=true; b.innerHTML='⏳...'; return true;">
-          <input type="hidden" name="action" value="test_resend">
-          <button class="btn-primary" type="submit" style="background:#4f46e5">✉️ Tester Resend</button>
-        </form>
-        <div class="action-help">Envoie un <b>mail de test</b> via Resend pour vérifier que la config est OK. Le résultat (HTTP 200 = OK) s'affiche dans la bannière verte/rouge ci-dessus.</div>
-      </div>
-      <div class="action-cell">
-        <form method="POST" action="/{keyparam}"
-              onsubmit="var b=this.querySelector('button'); b.disabled=true; b.innerHTML='⏳ Renvoi...'; return true;">
-          <input type="hidden" name="action" value="retry_failed_alerts">
-          <button class="btn-primary" type="submit" style="background:#0891b2">📨 Renvoyer alertes en échec</button>
-        </form>
-        <div class="action-help">Rattrape par mail <b>les alertes du passé</b> qui n'avaient pas été livrées (ex : sandbox Resend bloquant). À utiliser une fois après le fix d'une config Resend.</div>
       </div>
     </div>
     <div class="action-toggle-row">
