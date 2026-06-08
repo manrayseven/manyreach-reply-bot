@@ -468,6 +468,11 @@ def _render() -> str:
     {sent_html}
   </div>
 
+  <div style="text-align:right;font-size:11px;color:#94a3b8;margin-bottom:8px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">
+    Version : {html.escape((os.environ.get("VERCEL_GIT_COMMIT_SHA","local") or "local")[:7])}
+    · branche {html.escape(os.environ.get("VERCEL_GIT_COMMIT_REF","-"))}
+  </div>
+
   <details>
     <summary>Réglages avancés (horaires d'envoi, délai)</summary>
     <div class="card">
@@ -768,5 +773,10 @@ class handler(BaseHTTPRequestHandler):
     def _send(self, status: int, content: str, html_: bool = False):
         self.send_response(status)
         self.send_header("Content-Type", "text/html; charset=utf-8" if html_ else "text/plain; charset=utf-8")
+        # Pas de cache navigateur sur le dashboard : on veut toujours la dernière
+        # version (commit récent / fix / nouveau log) sans qu'un Ctrl+R suffise pas.
+        self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+        self.send_header("Pragma", "no-cache")
+        self.send_header("Expires", "0")
         self.end_headers()
         self.wfile.write(content.encode("utf-8"))

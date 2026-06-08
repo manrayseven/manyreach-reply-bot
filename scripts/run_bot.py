@@ -681,26 +681,34 @@ def main() -> int:
                     processed_count += 1
                     continue
 
-                # ORPHAN REPLY (pas de prospect dans la base ManyReach) : la thread
-                # idempotence ne marche pas (besoin d'un prospect_id), donc le bot
-                # re-renvoyait à chaque run (vu pour sekou : 7 envois en 30 min).
-                # Sentinel KV "orphan_sent:{message_id}" : SET NX 30 jours → un
-                # envoi maxi par orphan.
+                # ORPHAN REPLY (pas de prospect dans la base ManyReach) : skip
+                # systématique. Rudy ne peut rien faire de ces alertes (le lien
+                # Unibox ne trouvera pas le prospect → aucune fiche à ouvrir).
+                # On marque traité et on sort, sans classifier ni alerter.
                 if (
                     prospect is None
                     and not args.only_email
                     and not args.reprocess
-                    and kvstore is not None
-                    and kvstore.kv_available()
                 ):
-                    already_orphan = kvstore.mark_orphan_sent(reply.from_email)
-                    if already_orphan:
-                        print(f"  >> Orphan sender {reply.from_email} déjà traité — skip définitif")
-                        if not dry_run:
-                            _mark_done(reply.message_id)
-                        processed_count += 1
-                        continue
-                    print(f"  >> Orphan sender {reply.from_email} — 1er traitement, marqué pour ne pas re-renvoyer")
+                    print(f"  >> Orphan sender {reply.from_email} (pas de prospect MR) — skip silencieux")
+                    if kvstore is not None and kvstore.kv_available():
+                        try:
+                            kvstore.mark_orphan_sent(reply.from_email)
+                        except Exception:  # noqa: BLE001
+                            pass
+                        kvstore.log_action({
+                            "at": now_utc.isoformat(),
+                            "from": reply.from_email,
+                            "subject": reply.subject,
+                            "intent": "orphan_no_prospect",
+                            "status": "silencieux (pas de prospect MR)",
+                            "reply": _trim_quoted_history(_strip_html(reply.body))[:300],
+                            "response": "",
+                        })
+                    if not dry_run:
+                        _mark_done(reply.message_id)
+                    processed_count += 1
+                    continue
 
                 previous_sent_text = ""
                 if prospect is not None:
