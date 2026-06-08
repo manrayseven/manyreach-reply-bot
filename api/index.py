@@ -154,7 +154,21 @@ def _render() -> str:
         status = a.get("status", "")
         alert_id = f"{a.get('at', '')}|{(a.get('from') or '').lower()}"
         if intent == "error" or "ERREUR" in status:
-            error_list.append(a)
+            # AUTO-RÉSOLUTION : si une autre entrée plus récente concerne le
+            # même email (envoi auto, alerte, silent), c'est que le bot a retry
+            # avec succès au cron suivant → on cache l'erreur. Sinon Rudy doit
+            # la voir (ou la dismiss manuellement avec ✕).
+            err_email = (a.get("from") or "").lower().strip()
+            err_at = a.get("at", "")
+            resolved = err_email and any(
+                (o.get("from") or "").lower().strip() == err_email
+                and o.get("at", "") > err_at
+                and o.get("intent") != "error"
+                and "ERREUR" not in str(o.get("status", ""))
+                for o in actions
+            )
+            if not resolved and alert_id not in dismissed:
+                error_list.append(a)
         elif intent == "wrong_person_redirect":
             # Plus jamais d'alerte pour ces cas (changement d'adresse / personne
             # partie / autoreply congés) → on les cache rétroactivement aussi
@@ -273,8 +287,17 @@ def _render() -> str:
         when = _time_fr(a.get("at", ""))
         frm = html.escape(str(a.get("from", "")))
         status = html.escape(str(a.get("status", "")))[:200]
+        err_alert_id = html.escape(f"{a.get('at', '')}|{(a.get('from') or '').lower()}")
         return f"""<div class="error-row">
-          <div class="error-head"><span class="error-when">{when}</span><span class="error-email">{frm}</span></div>
+          <div class="error-head">
+            <span class="error-when">{when}</span>
+            <span class="error-email">{frm}</span>
+            <form method="POST" action="/{keyparam}" style="display:inline;margin-left:auto" onsubmit="this.querySelector('button').disabled=true;return true;">
+              <input type="hidden" name="action" value="dismiss_alert">
+              <input type="hidden" name="alert_id" value="{err_alert_id}">
+              <button type="submit" class="alert-dismiss" title="Cacher cette erreur">✕</button>
+            </form>
+          </div>
           <div class="error-msg">{status}</div>
         </div>"""
 
