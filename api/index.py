@@ -230,14 +230,16 @@ def _render() -> str:
         # les prospects passés en NotInterested (cas typique des "↪️ Mauvaise
         # personne" où le bot a déjà mis à jour le statut) restent visibles.
         # search=from:{email} reproduit ce que Rudy tape dans la barre d'inbox.
-        # MANYREACH_ORG_ID = ID du compte, override via env var si besoin.
+        # Si on a aussi un campaign_id (cas du reply lié à une campagne mais
+        # prospect non retrouvé directement), on l'ajoute pour narrower la vue.
         mr_org = os.environ.get("MANYREACH_ORG_ID", "7288")
         mr_email = urllib.parse.quote(str(a.get("from", "")))
+        mr_camp = a.get("campaign_id") or a.get("campaignId") or ""
         mr_url = (
             f"https://app.manyreach.com/e/inbox"
             f"?sender=-1&status=&leadstatus=&autostatus=&list=-1"
             f"&search=from:{mr_email}"
-            f"&campaign=&type=campaign&activestatus=&pagesize=25&currentpage=1&o={mr_org}"
+            f"&campaign={mr_camp}&type=campaign&activestatus=&pagesize=25&currentpage=1&o={mr_org}"
         )
         return f"""
         <div class="alert-row">

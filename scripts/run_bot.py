@@ -585,6 +585,30 @@ def main() -> int:
 
             now_utc = datetime.now(timezone.utc)
 
+            # SKIP : reply sans campaignId = pas lié à une campagne MR, donc ce
+            # n'est PAS une réponse à un de nos cold mails. ManyReach archive
+            # aussi les spams envoyés à ses adresses (variantes scrapées de
+            # rudy.viard@...) et les indexe comme "Reply" → faux positifs.
+            # Vérifié sur michael.brandl@vl.english-german-translations.com :
+            # 5 "replies" sans campaignId, vers des adresses qui ne sont PAS
+            # celles de Rudy → spam externe pur.
+            if not reply.campaign_id and not args.only_email:
+                print(f"  >> Reply sans campaignId ({reply.from_email}) — skip (spam externe)")
+                if kvstore is not None and kvstore.kv_available():
+                    kvstore.log_action({
+                        "at": now_utc.isoformat(),
+                        "from": reply.from_email,
+                        "subject": reply.subject,
+                        "intent": "spam_no_campaign",
+                        "status": "silencieux (spam externe, pas de campagne)",
+                        "reply": _trim_quoted_history(_strip_html(reply.body))[:300],
+                        "response": "",
+                    })
+                if not dry_run:
+                    _mark_done(reply.message_id)
+                skipped_count += 1
+                continue
+
             # PROTECTION BACKLOG : ignorer les replies antérieurs à la mise en route
             if backlog_cutoff and reply.created_at < backlog_cutoff and not args.only_email:
                 print("  >> Antérieur à la date de mise en route — ignoré (backlog)")
@@ -940,9 +964,12 @@ def main() -> int:
                             "status": "🔔 ALERTE — à traiter dashboard",
                             "reply": _trim_quoted_history(_strip_html(reply.body))[:700],
                             "response": alert_line,
-                            # prospect_id → permet au dashboard de générer un lien
-                            # direct vers la fiche ManyReach pour répondre.
+                            # prospect_id + campaign_id → permettent au dashboard
+                            # de générer un lien Unibox précis (campagne + email)
+                            # même si le prospect MR n'est pas retrouvé par email
+                            # direct (cas reply depuis une adresse différente).
                             "prospect_id": (prospect.prospect_id if prospect else None),
+                            "campaign_id": reply.campaign_id,
                         })
                     if not dry_run:
                         _mark_done(reply.message_id)
