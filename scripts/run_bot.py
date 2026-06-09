@@ -829,6 +829,36 @@ def main() -> int:
                     f"conf={classification.confidence:.2f}  "
                     f"lang={classification.language}"
                 )
+
+                # GARDE-FOU POST-CLASSIFIER : acquiescement court → interested_warm.
+                # Cas vu sur jean@seiche-impression.fr : Claude avait classé "OUI
+                # Merci, Jean." en AUTOSEND → bot a envoyé une réponse neutre à
+                # un lead chaud qui avait dit OUI pour recevoir la plaquette.
+                # Heuristique : si reply court (< 150 chars hors signature) ET
+                # commence par un acquiescement explicite, on force interested_warm
+                # (= alerte Rudy, pas de réponse auto qui pourrait être maladroite).
+                _clean_body = _trim_quoted_history(_strip_html(reply.body)).strip()
+                # On enlève les signatures basiques pour évaluer la longueur réelle
+                _body_first_line = _clean_body.split("\n")[0].strip()
+                _body_short = _clean_body[:200].lower()
+                _affirmatives = (
+                    "oui", "yes", "ok", "okay", "d'accord", "daccord",
+                    "volontiers", "avec plaisir", "bien sûr", "bien sur",
+                    "carrément", "carrement", "absolument",
+                )
+                _starts_affirmative = any(
+                    _body_short.lstrip(" \t.!?-•*>\"'").startswith(a)
+                    or _body_first_line.lower().strip(" .!?-:") == a
+                    for a in _affirmatives
+                )
+                if (
+                    _starts_affirmative
+                    and len(_clean_body) < 250
+                    and classification.intent not in ("interested_warm", "meeting_confirmed", "ask_more_info")
+                ):
+                    print(f"  ⚠️ Override classifier ({classification.intent} → interested_warm) : reply court avec acquiescement explicite")
+                    classification.intent = "interested_warm"
+                    classification.confidence = max(classification.confidence, 0.85)
                 print(f"    key_phrase: {_short(classification.key_phrase, 120)}")
                 if classification.redirected_to:
                     print(f"    redirected_to: {classification.redirected_to}")
