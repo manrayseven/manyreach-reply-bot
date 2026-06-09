@@ -135,8 +135,29 @@ def _render() -> str:
     enabled = kvstore.is_enabled()
     last_run = kvstore.get_last_run()
     last_run_fr = _time_fr(last_run) if last_run else "jamais"
-    actions = kvstore.recent_actions(80)
-    actions_full = kvstore.recent_actions(200)
+    actions_raw = kvstore.recent_actions(80)
+    actions_full_raw = kvstore.recent_actions(200)
+
+    # FILTRE ANTI-CONTAMINATION : ce dashboard est dédié au bot ManyReach
+    # uniquement. Si Rudy a un autre projet (LinkedIn / Prospect Perso) qui
+    # partage le même Vercel KV, ses entrées peuvent atterrir dans le même
+    # action_log → pollue cette vue. On exclut tout ce qui parle de LinkedIn /
+    # cookies / autres signaux du LinkedIn bot. Filtre AVANT _compute_stats
+    # pour que les KPIs ne soient pas non plus pollués.
+    def _is_foreign_entry(a: dict) -> bool:
+        blob = (
+            str(a.get("status", ""))
+            + " " + str(a.get("subject", ""))
+            + " " + str(a.get("response", ""))
+            + " " + str(a.get("intent", ""))
+        ).lower()
+        for token in ("linkedin", "cookies linkedin", "cookie linkedin", "cookies manquants", "prospect_perso", "prospect-perso"):
+            if token in blob:
+                return True
+        return False
+
+    actions = [a for a in actions_raw if not _is_foreign_entry(a)]
+    actions_full = [a for a in actions_full_raw if not _is_foreign_entry(a)]
     stats = _compute_stats(actions_full)
     ov = kvstore.get_settings_overrides()
     sending = ov.get("sending", {})
