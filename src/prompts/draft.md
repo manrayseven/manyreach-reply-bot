@@ -152,6 +152,8 @@ Quand au moins UN de ces signaux est présent → on est sur du COMMERCE LOCAL :
 4. 2 créneaux + lien
 
 ### `objection_price`
+⚠️ **AVANT TOUT : applique la DÉTECTION COMMERCE LOCAL** (signaux A/B/C/D de `interested_warm` CAS 1ter). Si commerce local détecté → pivot SEO local (fiche Google Maps via partenaire), PAS de lien `/emails-froid`, PAS de language B2B "audit / refonte canal". Pour un garage / restaurant / cabinet qui objecte sur le prix, on reste sur du conseil ponctuel autour de la fiche Google.
+
 1. Acknowledge SANS minimiser ("c'est une question légitime", pas "ne vous inquiétez pas")
 2. Reframe — adapte selon l'offre pitchée dans le cold mail :
    - Si cold email setup → "20 min pour valider que le ROI est là vu votre TAM"
@@ -167,10 +169,23 @@ Quand au moins UN de ces signaux est présent → on est sur du COMMERCE LOCAL :
 4. Reste léger, pas de push
 
 ### `objection_already_have_solution`
-1. Acknowledge — "c'est logique"
-2. Reframe ponctuel : "la plupart des [type de client] font appel à nous ponctuellement sur des angles précis (exemples), pas pour remplacer l'équipe"
-3. Propose de rester en backup, PAS de call
-4. Pas de créneaux
+- ⚠️ **APPLIQUE D'ABORD LA DÉTECTION COMMERCE LOCAL** (signaux A/B/C/D du CAS 1ter d'`interested_warm`) :
+   - Signal A : `industry`/`company` avec mot-clé local (hôtel, resto, garage, cabinet, salon, atelier, pharmacie, boulangerie…) ou patronyme français ("Au/Aux/Le/La/L'/Les/Chez [X]").
+   - Signal B : email à mot-clé (`cabinet.dentaire@`, `hotel-…@`, `garage-…@`, etc.).
+   - Signal C : **cold mail original parle de "Fiche Google" / "Google Maps" / "Réservations" / "votre établissement"** — signal puissant.
+   - Signal D : `company` explicite ("Hôtel X", "Cabinet Y", "Garage Z", "Restaurant…").
+   ⚠️ En cas de doute → **prends commerce local par défaut** (vu : garage Car-Diffusion + cold mail "Fiche Google" → était traité en B2B générique, c'était mauvais).
+- **SI COMMERCE LOCAL DÉTECTÉ** → réponse pivotée SEO local :
+  - Acknowledge sobrement ("c'est noté, beaucoup de [type établissement] ont déjà un prestataire en place").
+  - PIVOT honnête : "je travaille avec un partenaire spécialisé sur les fiches Google Maps / SEO local — si jamais vous voulez un 2ème regard ponctuel sur la fiche (catégories, photos, posts, avis), je peux vous le présenter".
+  - **PAS de lien `/emails-froid`** (cold email = hors sujet pour un commerce local).
+  - **PAS de "garde-moi en backup pour audit/refonte de canal"** (langage B2B agency, off-topic).
+  - PAS de créneaux. Reste courte (5-8 lignes).
+- **SINON (cible B2B classique)** — structure standard :
+   1. Acknowledge — "c'est logique"
+   2. Reframe ponctuel : "la plupart des [type de client] font appel à nous ponctuellement sur des angles précis (exemples), pas pour remplacer l'équipe"
+   3. Propose de rester en backup, PAS de call
+   4. Pas de créneaux
 
 ### `wrong_person_redirect`
 1. Merci pour la redirection
