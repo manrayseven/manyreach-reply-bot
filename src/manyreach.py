@@ -499,6 +499,23 @@ BOUNCE_BODY_PATTERNS = (
     "i am on leave",
     "i'm on vacation",
     "on annual leave",
+    # OOO / voyage : autoreply d'absence individuelle (≠ fermeture saisonnière
+    # d'une entreprise qui, elle, doit rester en objection_timing). Cas vu le
+    # 15/06 : Antoine Langbeen "I am currently travelling... back in the office
+    # Thursday June 18th" → ne doit PAS remonter en alerte, c'est un auto-reply.
+    "currently travelling",
+    "currently traveling",
+    "i am travelling",
+    "i am traveling",
+    "uneven access to my email",
+    "uneven access to email",
+    "limited access to my email",
+    "limited access to email",
+    "allow for some delay in my response",
+    "please allow for some delay",
+    "i will be back in the office",
+    "back in the office fully",
+    "back in the office on",
     "no longer with",
     "is no longer employed",
     "has left the company",
