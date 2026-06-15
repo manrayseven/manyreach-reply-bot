@@ -29,6 +29,7 @@ import sys
 import textwrap
 import time
 import traceback
+from dataclasses import replace as _dc_replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -843,8 +844,13 @@ def main() -> int:
                     and classification.intent not in ("interested_warm", "meeting_confirmed", "ask_more_info")
                 ):
                     print(f"  ⚠️ Override classifier ({classification.intent} → interested_warm) : reply court avec acquiescement explicite")
-                    classification.intent = "interested_warm"
-                    classification.confidence = max(classification.confidence, 0.85)
+                    # Classification est un dataclass FROZEN → pas de mutation in-place
+                    # ('cannot assign to field intent'). On recrée l'instance.
+                    classification = _dc_replace(
+                        classification,
+                        intent="interested_warm",
+                        confidence=max(classification.confidence, 0.85),
+                    )
 
                 # GARDE-FOU ÉLARGI (2026-06-15) — BIAIS VERS L'ALERTE.
                 # Le coût d'une fausse alerte (Rudy relit un truc auto-gérable) est
@@ -902,8 +908,12 @@ def main() -> int:
                     and classification.intent in AUTOSEND_ELIGIBLE
                 ):
                     print(f"  ⚠️ Override classifier ({classification.intent} → {_forced}) : signal d'opportunité détecté → ALERTE (biais sécurité)")
-                    classification.intent = _forced
-                    classification.confidence = max(classification.confidence, 0.80)
+                    # dataclass FROZEN → recrée l'instance (pas de mutation in-place)
+                    classification = _dc_replace(
+                        classification,
+                        intent=_forced,
+                        confidence=max(classification.confidence, 0.80),
+                    )
                 print(f"    key_phrase: {_short(classification.key_phrase, 120)}")
                 if classification.redirected_to:
                     print(f"    redirected_to: {classification.redirected_to}")
