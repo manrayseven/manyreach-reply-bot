@@ -224,8 +224,9 @@ def _render() -> str:
         )
 
     # Couleur statut bot
-    status_color = "#16a34a" if enabled else "#dc2626"
+    status_color = "#2e7d52" if enabled else "#d4493f"
     status_txt = "EN MARCHE" if enabled else "EN PAUSE"
+    status_pill_cls = "on" if enabled else "off"
     toggle_label = "Mettre en pause" if enabled else "Réactiver le bot"
     toggle_val = "0" if enabled else "1"
 
@@ -247,15 +248,7 @@ def _render() -> str:
 
     def _alert_row(a: dict) -> str:
         intent = a.get("intent", "")
-        intent_emoji = {
-            "interested_warm": "🔥",
-            "interested_lukewarm": "🟡",
-            "ask_more_info": "❓",
-            "meeting_confirmed": "📅",
-            "objection_timing": "⏰",
-            "wrong_person_redirect": "↪️",
-        }.get(intent, "🔔")
-        intent_label = _INTENT_FR.get(intent, (intent, "#64748b"))[0]
+        intent_label, intent_color = _INTENT_FR.get(intent, (intent, "#8a8579"))
         when = _time_fr(a.get("at", ""))
         frm = html.escape(str(a.get("from", "")))
         reply_txt = html.escape(str(a.get("reply", "")))[:300]
@@ -279,8 +272,7 @@ def _render() -> str:
         return f"""
         <div class="alert-row">
           <div class="alert-head">
-            <span class="alert-icon">{intent_emoji}</span>
-            <span class="alert-intent">{html.escape(intent_label)}</span>
+            <span class="alert-intent" style="color:{intent_color};background:{intent_color}1a;border:1px solid {intent_color}33">{html.escape(intent_label)}</span>
             <a class="alert-email" href="mailto:{frm}">{frm}</a>
             <a class="alert-mr" href="{mr_url}" target="_blank" rel="noopener" title="Ouvrir la fiche ManyReach pour répondre">↗ ManyReach</a>
             <span class="alert-when">{when}</span>
@@ -300,7 +292,7 @@ def _render() -> str:
         frm = html.escape(str(a.get("from", "")))
         return f"""<div class="sent-row">
           <span class="sent-when">{when}</span>
-          <span class="sent-pill" style="background:{intent_color}22;color:{intent_color}">{html.escape(intent_label)}</span>
+          <span class="sent-pill" style="color:{intent_color};border:1px solid {intent_color}40">{html.escape(intent_label)}</span>
           <span class="sent-email">{frm}</span>
         </div>"""
 
@@ -337,10 +329,10 @@ def _render() -> str:
     # Bloc stats compact
     stats_html = f"""
     <div class="kpi-grid">
-      <div class="kpi"><div class="kpi-v">{len(alerts)}</div><div class="kpi-l">🔔 À traiter</div></div>
-      <div class="kpi"><div class="kpi-v">{len(sent_list)}</div><div class="kpi-l">✓ Envoyés auto</div></div>
-      <div class="kpi"><div class="kpi-v">{stats['silent_count']}</div><div class="kpi-l">🔇 Silencieux</div></div>
-      <div class="kpi"><div class="kpi-v">{len(error_list)}</div><div class="kpi-l">❌ Erreurs</div></div>
+      <div class="kpi"><div class="kpi-v">{len(alerts)}</div><div class="kpi-l"><span class="kdot" style="background:#c98a2b"></span>À traiter</div></div>
+      <div class="kpi"><div class="kpi-v">{len(sent_list)}</div><div class="kpi-l"><span class="kdot" style="background:#2e7d52"></span>Envoyés auto</div></div>
+      <div class="kpi"><div class="kpi-v">{stats['silent_count']}</div><div class="kpi-l"><span class="kdot" style="background:#cfcabd"></span>Silencieux</div></div>
+      <div class="kpi"><div class="kpi-v">{len(error_list)}</div><div class="kpi-l"><span class="kdot" style="background:#d4493f"></span>Erreurs</div></div>
     </div>"""
 
     return f"""<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8">
@@ -348,101 +340,107 @@ def _render() -> str:
 <title>ManyReach Bot</title>
 <style>
  *{{box-sizing:border-box;margin:0;padding:0}}
- body{{font-family:-apple-system,'Inter','Segoe UI',Roboto,sans-serif;background:#f5f6fa;color:#1a1d29;font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}}
- a{{color:#4f46e5;text-decoration:none}}
+ body{{font-family:-apple-system,'Inter','Segoe UI',Roboto,sans-serif;background:#f7f4ee;color:#2b2823;font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}}
+ a{{color:#3b6fd4;text-decoration:none}}
  a:hover{{text-decoration:underline}}
- .wrap{{max-width:960px;margin:0 auto;padding:24px 20px 60px}}
+ .wrap{{max-width:960px;margin:0 auto;padding:30px 20px 70px}}
 
  /* HEADER */
- .header{{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:12px}}
- .header h1{{font-size:18px;font-weight:700;letter-spacing:-.01em}}
- .header h1 .dot{{display:inline-block;width:8px;height:8px;border-radius:50%;background:{status_color};margin-right:8px;vertical-align:middle;box-shadow:0 0 0 3px {status_color}22}}
- .header .status{{font-size:13px;color:#6b7280}}
- .fresh-ok{{color:#15803d;font-weight:600}}
- .fresh-warn{{color:#b45309;font-weight:600}}
- .fresh-ko{{color:#b91c1c;font-weight:600}}
+ .header{{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:12px}}
+ .header h1{{font-size:19px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:center;gap:10px}}
+ .header h1 .dot{{display:inline-block;width:9px;height:9px;border-radius:50%;background:{status_color};vertical-align:middle;box-shadow:0 0 0 3px {status_color}26}}
+ .status-pill{{font-size:10.5px;font-weight:700;letter-spacing:.06em;padding:4px 10px;border-radius:20px}}
+ .status-pill.on{{color:#2e7d52;background:#e6f0e9;border:1px solid #c2ddcc}}
+ .status-pill.off{{color:#d4493f;background:#fbeae8;border:1px solid #f0cbc6}}
+ .header .status{{font-size:12.5px;color:#8c8678;text-align:right;line-height:1.7}}
+ .fresh-ok{{color:#2e7d52;font-weight:600}}
+ .fresh-warn{{color:#b07a2b;font-weight:600}}
+ .fresh-ko{{color:#c0392b;font-weight:600}}
 
  /* CARDS */
- .card{{background:#fff;border-radius:12px;padding:20px;margin-bottom:20px;box-shadow:0 1px 3px rgba(0,0,0,.04),0 0 0 1px rgba(0,0,0,.04)}}
- .card h2{{font-size:13px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:#6b7280;margin-bottom:14px;display:flex;align-items:center;gap:8px}}
- .card h2 .badge{{background:#1a1d29;color:#fff;font-size:11px;padding:2px 8px;border-radius:10px;font-weight:700;letter-spacing:0}}
- .card.alerts{{background:#fffbeb;border:1px solid #fde68a}}
- .card.alerts h2{{color:#92400e}}
- .card.alerts h2 .badge{{background:#f59e0b}}
- .card.errors{{background:#fef2f2;border:1px solid #fecaca}}
- .card.errors h2{{color:#991b1b}}
- .card.errors h2 .badge{{background:#dc2626}}
+ .card{{background:#fff;border-radius:14px;padding:22px;margin-bottom:18px;border:1px solid #ebe6dc;box-shadow:0 1px 2px rgba(60,50,30,.03)}}
+ .card h2{{font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#8c8678;margin-bottom:16px;display:flex;align-items:center;gap:9px}}
+ .card h2 .badge{{background:#2b2823;color:#fff;font-size:11px;min-width:20px;height:20px;padding:0 6px;border-radius:20px;font-weight:700;letter-spacing:0;display:inline-flex;align-items:center;justify-content:center}}
+ .card.alerts{{background:#fdf6e9;border:1px solid #f0e2c2}}
+ .card.alerts h2{{color:#a07520}}
+ .card.alerts h2 .badge{{background:#c98a2b}}
+ .card.errors{{background:#fcefed;border:1px solid #f2cdc8}}
+ .card.errors h2{{color:#b03a30}}
+ .card.errors h2 .badge{{background:#d4493f}}
 
  /* KPI GRID */
- .kpi-grid{{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px}}
+ .kpi-grid{{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:18px}}
  @media (max-width:640px){{.kpi-grid{{grid-template-columns:repeat(2,1fr)}}}}
- .kpi{{background:#fff;border-radius:10px;padding:16px;box-shadow:0 1px 2px rgba(0,0,0,.04),0 0 0 1px rgba(0,0,0,.04);text-align:center}}
- .kpi-v{{font-size:28px;font-weight:800;color:#1a1d29;line-height:1}}
- .kpi-l{{font-size:11px;color:#6b7280;margin-top:6px;font-weight:500;letter-spacing:.02em;text-transform:uppercase}}
+ .kpi{{background:#fff;border-radius:14px;padding:22px 18px;border:1px solid #ebe6dc;box-shadow:0 1px 2px rgba(60,50,30,.03);text-align:center}}
+ .kpi-v{{font-family:Georgia,'Times New Roman',serif;font-size:40px;font-weight:600;color:#b3742f;line-height:1;letter-spacing:-.01em}}
+ .kpi-l{{font-size:10.5px;color:#8c8678;margin-top:12px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;display:flex;align-items:center;justify-content:center;gap:6px}}
+ .kdot{{display:inline-block;width:6px;height:6px;border-radius:50%}}
 
  /* ALERTS */
- .alert-row{{padding:14px 0;border-bottom:1px solid #fde68a}}
- .alert-row:last-child{{border-bottom:0;padding-bottom:0}}
- .alert-row:first-child{{padding-top:0}}
- .alert-head{{display:flex;align-items:center;gap:10px;margin-bottom:6px;flex-wrap:wrap}}
- .alert-icon{{font-size:18px}}
- .alert-intent{{font-size:11px;font-weight:700;color:#92400e;text-transform:uppercase;letter-spacing:.05em;background:#fef3c7;padding:3px 8px;border-radius:6px}}
- .alert-email{{font-weight:600;color:#1a1d29;font-size:13px}}
- .alert-when{{color:#6b7280;font-size:12px;margin-left:auto}}
- .alert-msg{{color:#374151;font-size:13px;line-height:1.5;padding-left:28px}}
- .alert-mr{{font-size:11px;font-weight:700;color:#4f46e5;background:#eef2ff;padding:3px 8px;border-radius:6px;text-decoration:none;border:1px solid #c7d2fe;transition:all .12s}}
- .alert-mr:hover{{background:#4f46e5;color:#fff;text-decoration:none;border-color:#4f46e5}}
- .alert-dismiss{{background:transparent;border:1px solid #d4a93f;color:#92400e;width:24px;height:24px;border-radius:50%;padding:0;font-size:13px;font-weight:700;line-height:1;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;transition:all .12s}}
- .alert-dismiss:hover{{background:#dc2626;color:#fff;border-color:#dc2626;transform:scale(1.08)}}
- .alert-explain{{font-size:12px;color:#78350f;background:#fef3c7;border-left:3px solid #f59e0b;padding:10px 12px;border-radius:6px;margin-bottom:14px;line-height:1.55}}
- .alert-explain b{{color:#451a03}}
+ .alert-row{{background:#fff;border:1px solid #efe7d3;border-radius:11px;padding:14px 16px;margin-top:12px}}
+ .alert-head{{display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap}}
+ .alert-intent{{font-size:11px;font-weight:700;padding:3px 9px;border-radius:6px;white-space:nowrap}}
+ .alert-email{{font-weight:700;color:#2b2823;font-size:13px}}
+ .alert-when{{color:#a39c8c;font-size:12px;margin-left:auto;font-variant-numeric:tabular-nums;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}}
+ .alert-msg{{color:#5c574c;font-size:13px;line-height:1.55}}
+ .alert-mr{{font-size:11px;font-weight:700;color:#3b6fd4;background:#edf2fc;padding:3px 9px;border-radius:6px;text-decoration:none;border:1px solid #cfdcf6;transition:all .12s}}
+ .alert-mr:hover{{background:#3b6fd4;color:#fff;text-decoration:none;border-color:#3b6fd4}}
+ .alert-dismiss{{background:transparent;border:1px solid #d8c79a;color:#a07520;width:24px;height:24px;border-radius:50%;padding:0;font-size:13px;font-weight:700;line-height:1;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;transition:all .12s}}
+ .alert-dismiss:hover{{background:#d4493f;color:#fff;border-color:#d4493f;transform:scale(1.08)}}
+ .alert-explain{{font-size:12.5px;color:#6e5a2a;background:#faefd6;border:1px solid #f0e2c2;padding:12px 14px;border-radius:9px;margin-bottom:4px;line-height:1.7}}
+ .alert-explain b{{color:#4a3c14}}
+ .legdot{{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:3px;vertical-align:middle}}
 
  /* ACTIONS GRID — chaque cellule = bouton + description claire */
- .action-grid{{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:12px}}
+ .action-grid{{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:4px}}
  @media (max-width:900px){{.action-grid{{grid-template-columns:1fr 1fr}}}}
  @media (max-width:600px){{.action-grid{{grid-template-columns:1fr}}}}
- .diag-banner{{margin-bottom:12px;padding:12px 14px;border-radius:8px;background:#eef2ff;color:#312e81;font-size:12.5px;font-weight:500;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;line-height:1.55;word-break:break-word;border:1px solid #c7d2fe}}
- .action-cell{{background:#fafafa;padding:12px 14px;border-radius:10px;border:1px solid #e5e7eb;display:flex;flex-direction:column;gap:8px}}
- .action-cell form{{display:flex;gap:6px;align-items:stretch;margin:0}}
+ .diag-banner{{margin-bottom:14px;padding:12px 14px;border-radius:9px;background:#edf2fc;color:#2c4a82;font-size:12.5px;font-weight:500;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;line-height:1.55;word-break:break-word;border:1px solid #cfdcf6}}
+ .action-cell{{padding:16px;border-radius:12px;border:1px solid #ebe6dc;background:#fcfbf8;display:flex;flex-direction:column;gap:10px}}
+ .action-cell form{{display:flex;gap:7px;align-items:stretch;margin:0}}
  .action-cell button{{flex:0 0 auto;white-space:nowrap}}
  .action-cell input[type=email]{{flex:1;min-width:0}}
- .action-cell .action-help{{font-size:11.5px;color:#6b7280;line-height:1.45}}
- .action-cell .action-help b{{color:#374151}}
- .action-toggle-row{{display:flex;justify-content:flex-end;padding-top:12px;border-top:1px solid #f3f4f6}}
- .action-toggle-row .toggle-help{{font-size:11.5px;color:#6b7280;margin-right:auto;align-self:center}}
+ .action-cell .action-help{{font-size:12px;color:#8c8678;line-height:1.5}}
+ .action-cell .action-help b{{color:#5c574c;font-weight:600}}
+ .action-toggle-row{{display:flex;justify-content:flex-end;align-items:center;padding-top:16px;margin-top:16px;border-top:1px solid #efe9dd}}
+ .action-toggle-row .toggle-help{{font-size:12px;color:#8c8678;margin-right:auto}}
 
  /* SENT FEED */
- .sent-row{{display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid #f3f4f6;font-size:13px}}
+ .sent-row{{display:flex;align-items:center;gap:14px;padding:11px 0;border-bottom:1px solid #f1ece1;font-size:13px}}
  .sent-row:last-child{{border-bottom:0}}
- .sent-when{{color:#9ca3af;font-size:11px;font-variant-numeric:tabular-nums;min-width:90px}}
- .sent-pill{{font-size:11px;font-weight:600;padding:2px 8px;border-radius:6px;white-space:nowrap}}
- .sent-email{{color:#374151;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
+ .sent-when{{color:#a39c8c;font-size:11.5px;font-variant-numeric:tabular-nums;min-width:90px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}}
+ .sent-pill{{font-size:11px;font-weight:600;padding:3px 11px;border-radius:20px;white-space:nowrap;background:#fff}}
+ .sent-email{{color:#5c574c;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
 
  /* ERRORS */
- .error-row{{padding:10px 0;border-bottom:1px solid #fecaca}}
+ .error-row{{padding:11px 0;border-bottom:1px solid #f2cdc8}}
  .error-row:last-child{{border-bottom:0}}
- .error-head{{display:flex;gap:10px;font-size:12px;margin-bottom:4px}}
- .error-when{{color:#7f1d1d;font-variant-numeric:tabular-nums}}
- .error-email{{color:#991b1b;font-weight:600}}
- .error-msg{{font-size:12px;color:#7f1d1d;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:#fff;padding:6px 10px;border-radius:6px}}
+ .error-head{{display:flex;gap:10px;font-size:12px;margin-bottom:5px}}
+ .error-when{{color:#a14a40;font-variant-numeric:tabular-nums;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}}
+ .error-email{{color:#b03a30;font-weight:700}}
+ .error-msg{{font-size:12px;color:#8a3a32;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:#fff;padding:7px 11px;border-radius:8px;border:1px solid #f2cdc8}}
 
- .empty-section{{color:#9ca3af;text-align:center;padding:20px;font-style:italic;font-size:13px}}
+ .empty-section{{color:#a39c8c;text-align:center;padding:20px;font-style:italic;font-size:13px}}
 
- /* ACTIONS BAR */
- .actions{{display:flex;flex-wrap:wrap;gap:8px;align-items:center}}
- button,input[type=submit]{{cursor:pointer;border:0;border-radius:8px;padding:9px 16px;font-size:13px;font-weight:600;font-family:inherit;transition:opacity .15s}}
- button:hover{{opacity:.85}}
+ /* BUTTONS & INPUTS */
+ button,input[type=submit]{{cursor:pointer;border:0;border-radius:9px;padding:10px 16px;font-size:13px;font-weight:600;font-family:inherit;transition:all .15s}}
+ button:hover{{opacity:.88}}
  button:disabled{{opacity:.5;cursor:wait}}
- .btn-primary{{background:#1a1d29;color:#fff}}
- .btn-toggle{{background:{status_color};color:#fff}}
- .btn-save{{background:#4f46e5;color:#fff}}
- input[type=email],input[type=number]{{padding:9px 12px;border:1px solid #e5e7eb;border-radius:8px;font-size:13px;font-family:inherit;background:#fff}}
- input[type=email]{{min-width:220px}}
+ .btn-primary{{background:#26231e;color:#fff}}
+ .btn-outline{{background:#fff;color:#3b6fd4;border:1px solid #cfdcf6}}
+ .btn-outline:hover{{background:#edf2fc;opacity:1}}
+ .btn-toggle{{background:#e6f0e9;color:#2e7d52;border:1px solid #c2ddcc}}
+ .btn-toggle:hover{{background:#d8e9de;opacity:1}}
+ .btn-save{{background:#26231e;color:#fff}}
+ input[type=email],input[type=number]{{padding:10px 12px;border:1px solid #e0d9cb;border-radius:9px;font-size:13px;font-family:inherit;background:#fff;color:#2b2823}}
+ input[type=email]::placeholder{{color:#b8b1a2}}
+ input[type=email]{{min-width:180px}}
  input[type=number]{{width:80px}}
  .fields{{display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap}}
- .field label{{display:block;font-size:11px;color:#6b7280;margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em;font-weight:500}}
+ .field label{{display:block;font-size:11px;color:#8c8678;margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em;font-weight:600}}
 
- details summary{{cursor:pointer;font-size:12px;color:#6b7280;padding:8px 0;list-style:none}}
+ details summary{{cursor:pointer;font-size:13px;color:#8c8678;padding:8px 0;list-style:none;font-weight:600}}
+ details summary .hint{{color:#b8b1a2;font-weight:400;margin-left:6px}}
  details summary::-webkit-details-marker{{display:none}}
  details summary:before{{content:"▸ ";margin-right:4px}}
  details[open] summary:before{{content:"▾ "}}
@@ -450,8 +448,8 @@ def _render() -> str:
 <div class="wrap">
 
   <div class="header">
-    <h1><span class="dot"></span>ManyReach Bot · {status_txt}</h1>
-    <div class="status">Dernier passage : {html.escape(last_run_fr)} · {last_run_freshness}</div>
+    <h1><span class="dot"></span>ManyReach Bot <span class="status-pill {status_pill_cls}">{status_txt}</span></h1>
+    <div class="status">Dernier passage : {html.escape(last_run_fr)}<br>{last_run_freshness}</div>
   </div>
 
   {stats_html}
@@ -473,7 +471,7 @@ def _render() -> str:
               onsubmit="var b=this.querySelector('button'); b.disabled=true; b.innerHTML='⏳...'; return true;">
           <input type="hidden" name="action" value="run_email">
           <input type="email" name="only_email" placeholder="email@prospect.com" required>
-          <button class="btn-primary" type="submit">▶ Forcer</button>
+          <button class="btn-primary" type="submit">Forcer</button>
         </form>
         <div class="action-help">Re-traite manuellement <b>UN prospect précis</b> (saisis son email). Utile si une réponse t'a échappé ou si tu veux re-essayer après un fix.</div>
       </div>
@@ -482,7 +480,7 @@ def _render() -> str:
               onsubmit="var b=this.querySelector('button'); b.disabled=true; b.innerHTML='⏳ Diag...'; return true;">
           <input type="hidden" name="action" value="diagnose_prospect">
           <input type="email" name="only_email" placeholder="email@prospect.com" required>
-          <button class="btn-primary" type="submit" style="background:#6366f1">📋 Diagnostic</button>
+          <button class="btn-outline" type="submit">Diagnostic</button>
         </form>
         <div class="action-help">Affiche en clair pourquoi le bot ignore un prospect (statut, idempotence, déjà traité…). Aucun envoi.</div>
       </div>
@@ -500,9 +498,14 @@ def _render() -> str:
   <div class="card alerts">
     <h2>🔔 Alertes à traiter <span class="badge">{len(alerts)}</span></h2>
     <div class="alert-explain">
-      <b>Ce sont les réponses de prospects que le bot NE traite PAS automatiquement</b> — il te les remonte ici pour que tu décides.<br>
-      🔥 <b>Intéressé chaud</b> · 🟡 <b>tiède</b> · ❓ <b>demande d'infos</b> · 📅 <b>propose un RDV</b> · ⏰ <b>"plus tard"</b> · ↪️ <b>mauvaise personne</b> (te donne un autre contact).<br>
-      Clique <b>↗ ManyReach</b> pour ouvrir la fiche du prospect et répondre. Clique <b>✕</b> pour cacher une ligne une fois traitée.
+      <b>Réponses de prospects que le bot ne traite pas automatiquement</b> — il te les remonte ici pour que tu décides.<br>
+      <span class="legdot" style="background:#16a34a"></span><b>Intéressé chaud</b> ·
+      <span class="legdot" style="background:#65a30d"></span><b>Tiède</b> ·
+      <span class="legdot" style="background:#0891b2"></span><b>Demande d'infos</b> ·
+      <span class="legdot" style="background:#15803d"></span><b>Propose un RDV</b> ·
+      <span class="legdot" style="background:#d97706"></span><b>« Plus tard »</b> ·
+      <span class="legdot" style="background:#7c3aed"></span><b>Mauvaise personne</b><br>
+      Clique <b>↗ ManyReach</b> pour ouvrir la fiche du prospect et répondre · <b>✕</b> pour cacher une ligne une fois traitée.
     </div>
     {alerts_html}
   </div>
@@ -510,7 +513,7 @@ def _render() -> str:
   {"<div class='card errors'><h2>❌ Erreurs récentes <span class='badge'>" + str(len(error_list)) + "</span></h2>" + errors_html + "</div>" if error_list else ""}
 
   <div class="card">
-    <h2>✓ Envois automatiques récents <span class="badge">{len(sent_list)}</span></h2>
+    <h2>✈ Envois automatiques récents <span class="badge">{len(sent_list)}</span></h2>
     {sent_html}
   </div>
 
@@ -520,7 +523,7 @@ def _render() -> str:
   </div>
 
   <details>
-    <summary>Réglages avancés (horaires d'envoi, délai)</summary>
+    <summary>Réglages avancés<span class="hint">horaires d'envoi, délai</span></summary>
     <div class="card">
       <form method="POST" action="/{keyparam}">
         <input type="hidden" name="action" value="save_settings">
