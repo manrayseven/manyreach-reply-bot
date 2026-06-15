@@ -585,29 +585,14 @@ def main() -> int:
 
             now_utc = datetime.now(timezone.utc)
 
-            # SKIP : reply sans campaignId = pas lié à une campagne MR, donc ce
-            # n'est PAS une réponse à un de nos cold mails. ManyReach archive
-            # aussi les spams envoyés à ses adresses (variantes scrapées de
-            # rudy.viard@...) et les indexe comme "Reply" → faux positifs.
-            # Vérifié sur michael.brandl@vl.english-german-translations.com :
-            # 5 "replies" sans campaignId, vers des adresses qui ne sont PAS
-            # celles de Rudy → spam externe pur.
-            if not reply.campaign_id and not args.only_email:
-                print(f"  >> Reply sans campaignId ({reply.from_email}) — skip (spam externe)")
-                if kvstore is not None and kvstore.kv_available():
-                    kvstore.log_action({
-                        "at": now_utc.isoformat(),
-                        "from": reply.from_email,
-                        "subject": reply.subject,
-                        "intent": "spam_no_campaign",
-                        "status": "silencieux (spam externe, pas de campagne)",
-                        "reply": _trim_quoted_history(_strip_html(reply.body))[:300],
-                        "response": "",
-                    })
-                if not dry_run:
-                    _mark_done(reply.message_id)
-                skipped_count += 1
-                continue
+            # NOTE : l'ancien filtre "reply sans campaignId → spam" a été RETIRÉ
+            # (2026-06-15). Il était DANGEREUX : si le listing ManyReach renvoie
+            # un campaignId vide pour un reply LÉGITIME (ça arrive), le reply
+            # était tué ET marqué traité définitivement → négatifs jamais
+            # répondus, alertes jamais remontées. Le spam externe pur (ex.
+            # michael.brandl, scrapé sur des variantes du nom de Rudy) est de
+            # toute façon attrapé plus bas par le check ORPHAN (prospect
+            # introuvable dans ManyReach) → skip silencieux sans risque.
 
             # PROTECTION BACKLOG : ignorer les replies antérieurs à la mise en route
             if backlog_cutoff and reply.created_at < backlog_cutoff and not args.only_email:
@@ -841,6 +826,7 @@ def main() -> int:
                 # On enlève les signatures basiques pour évaluer la longueur réelle
                 _body_first_line = _clean_body.split("\n")[0].strip()
                 _body_short = _clean_body[:200].lower()
+                _body_full_low = _clean_body.lower()
                 _affirmatives = (
                     "oui", "yes", "ok", "okay", "d'accord", "daccord",
                     "volontiers", "avec plaisir", "bien sûr", "bien sur",
@@ -859,6 +845,65 @@ def main() -> int:
                     print(f"  ⚠️ Override classifier ({classification.intent} → interested_warm) : reply court avec acquiescement explicite")
                     classification.intent = "interested_warm"
                     classification.confidence = max(classification.confidence, 0.85)
+
+                # GARDE-FOU ÉLARGI (2026-06-15) — BIAIS VERS L'ALERTE.
+                # Le coût d'une fausse alerte (Rudy relit un truc auto-gérable) est
+                # FAIBLE. Le coût d'un faux auto-send (le bot répond maladroitement
+                # à une opportunité chaude) est ÉLEVÉ et silencieux. Donc dès qu'un
+                # reply contient un signal clair d'intérêt / RDV / demande d'info /
+                # "plus tard", on FORCE l'intent ALERT_ONLY correspondant, même si
+                # le classifier avait dit AUTOSEND. Cas vus le 15/06 : biorniz
+                # ("j'aimerais des précisions"), atelier.bosc ("on peut s'appeler,
+                # vos dispos ?"), stephanie ("recontactez-moi dans 6 mois") →
+                # auto-répondus au lieu d'alertés.
+                _meeting_signals = (
+                    "quelles sont vos disponibilit", "vos disponibilit",
+                    "on peut s'appeler", "on peut se voir", "on peut échanger",
+                    "peut-on s'appeler", "peut on s'appeler", "rappelez-moi",
+                    "rappelez moi", "me rappeler", "un créneau", "un creneau",
+                    "caler un", "fixer un rendez", "prendre rendez", "un rdv",
+                    "passer un appel", "un call", "par téléphone", "par telephone",
+                    "mon numéro", "mon numero", "joignable au", "disponible mardi",
+                    "disponible lundi", "disponible mercredi", "disponible jeudi",
+                    "disponible vendredi",
+                )
+                _info_signals = (
+                    "j'aimerais des précisions", "j'aimerais des precisions",
+                    "des précisions", "des precisions", "pouvez-vous m'en dire",
+                    "pouvez vous m'en dire", "en savoir plus", "plus d'informations",
+                    "plus d'infos", "plus de détails", "plus de details",
+                    "envoyez-moi", "envoyez moi", "votre plaquette", "une plaquette",
+                    "vos tarifs", "votre tarif", "combien", "votre offre",
+                    "comment ça marche", "comment ca marche",
+                )
+                _timing_signals = (
+                    "recontactez-moi", "recontactez moi", "recontacter",
+                    "revenez vers moi", "revenir vers moi", "dans 3 mois",
+                    "dans 6 mois", "dans quelques mois", "l'année prochaine",
+                    "l'an prochain", "en septembre", "en janvier", "plus tard",
+                    "pas pour l'instant", "pas pour le moment", "ce n'est pas le moment",
+                )
+                _interest_signals = (
+                    "ça m'intéresse", "ca m'intéresse", "cela m'intéresse",
+                    "ça nous intéresse", "ca nous interesse", "je suis intéressé",
+                    "nous sommes intéressé", "ce qui m'intéresse",
+                )
+                _forced = None
+                if any(s in _body_full_low for s in _meeting_signals):
+                    _forced = "meeting_confirmed"
+                elif any(s in _body_full_low for s in _interest_signals):
+                    _forced = "interested_warm"
+                elif any(s in _body_full_low for s in _info_signals):
+                    _forced = "ask_more_info"
+                elif any(s in _body_full_low for s in _timing_signals):
+                    _forced = "objection_timing"
+                if (
+                    _forced
+                    and classification.intent in AUTOSEND_ELIGIBLE
+                ):
+                    print(f"  ⚠️ Override classifier ({classification.intent} → {_forced}) : signal d'opportunité détecté → ALERTE (biais sécurité)")
+                    classification.intent = _forced
+                    classification.confidence = max(classification.confidence, 0.80)
                 print(f"    key_phrase: {_short(classification.key_phrase, 120)}")
                 if classification.redirected_to:
                     print(f"    redirected_to: {classification.redirected_to}")

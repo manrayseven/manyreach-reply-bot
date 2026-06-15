@@ -42,15 +42,20 @@ class handler(BaseHTTPRequestHandler):
             # non-répondu passe toujours en premier). --since-days 1 = moins de
             # data à lister (plus rapide). Au-delà : bouton "Pour cet email".
             # Quota augmenté : 6 → 20 pour résorber un backlog rapidement.
-            # since-days 1 → 2 pour couvrir hier + avant-hier (replies anciens
-            # pas encore traités). Les replies vraiment vieux passent quand
-            # même via le bouton "Forcer" du dashboard.
+            # FENÊTRE : since-days 10 (au lieu de 2). CRITIQUE — avec une fenêtre
+            # de 2j, tout reply de plus de 2 jours n'était JAMAIS listé donc ni
+            # répondu ni alerté (cause des négatifs sans réponse + alertes ratées
+            # vues le 2026-06-15 : replies du 8-12 juin jamais traités). Le
+            # pré-filtre MGET (bot:processed:*) + l'idempotence thread font qu'un
+            # reply déjà géré est sauté instantanément → élargir la fenêtre est
+            # sûr, ça ne re-traite rien, ça rattrape juste les oubliés.
             limit = os.environ.get("CRON_LIMIT", "20")
+            since_days = os.environ.get("CRON_SINCE_DAYS", "10")
             sys.argv = [
                 "run_bot",
                 "--no-dry-run",
                 "--limit", limit,
-                "--since-days", "2",
+                "--since-days", since_days,
             ]
             code = run_bot.main()
             result["exit_code"] = code
