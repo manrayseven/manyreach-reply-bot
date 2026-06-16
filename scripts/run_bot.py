@@ -882,12 +882,17 @@ def main() -> int:
                     "vos tarifs", "votre tarif", "combien", "votre offre",
                     "comment ça marche", "comment ca marche",
                 )
+                # ⚠️ NE garder QUE les vraies demandes de recontact EXPLICITES.
+                # Les soft-no ("plus tard", "pas pour le moment", "pas pour
+                # l'instant", "ce n'est pas le moment") sont désormais des refus
+                # polis → not_interested_polite (réponse auto), PAS des alertes
+                # (feedback Rudy 16/06 : n.david, gpharmaciese, anne.dumas).
                 _timing_signals = (
-                    "recontactez-moi", "recontactez moi", "recontacter",
-                    "revenez vers moi", "revenir vers moi", "dans 3 mois",
-                    "dans 6 mois", "dans quelques mois", "l'année prochaine",
-                    "l'an prochain", "en septembre", "en janvier", "plus tard",
-                    "pas pour l'instant", "pas pour le moment", "ce n'est pas le moment",
+                    "recontactez-moi", "recontactez moi", "recontactez-nous",
+                    "recontactez nous", "recontacter", "revenez vers moi",
+                    "revenir vers moi", "rappelez-moi en", "rappelez-moi dans",
+                    "recontactez-moi en", "recontactez-moi dans",
+                    "représentez-moi", "representez-moi", "à la rentrée",
                 )
                 _interest_signals = (
                     "ça m'intéresse", "ca m'intéresse", "cela m'intéresse",
