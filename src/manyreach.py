@@ -454,6 +454,18 @@ BOUNCE_SUBJECT_PATTERNS = (
     "en vacances",
     "en arrêt",
     "vacation reply",
+    # Congé maternité / parental : absence longue → silencieux, jamais d'alerte.
+    # Souvent le corps est VIDE et l'info n'est QUE dans le sujet (cas
+    # a.mocquet@neoaxess "Congé maternite" 16/06). On couvre accent/sans accent
+    # via le préfixe "matern" / "parental".
+    "congé matern",
+    "conge matern",
+    "congés matern",
+    "conges matern",
+    "congé parental",
+    "conge parental",
+    "maternity leave",
+    "parental leave",
 )
 
 
