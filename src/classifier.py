@@ -101,20 +101,38 @@ def _strip_html(html: str) -> str:
     return cleaned.strip()
 
 
+# En-têtes de citation Gmail/Outlook : "... a écrit :" (FR) / "... wrote:" (EN) /
+# "-----Original Message-----" / ligne "____". Non ambigus (toujours suivis du
+# message cité) → on coupe DÈS leur apparition, même tôt dans le texte.
+# CRUCIAL pour les refus COURTS : "Non, pas intéressé. Bonne journée Le 17 juin
+# ... a écrit : <tout le pitch cité>". Sans ça, le classifier lit le pitch cité
+# et classe à tort meeting_confirmed → faux MeetingBooked + alerte au lieu d'une
+# réponse auto (cas proramonage45, gpharmaciese — 17/06).
+_QUOTE_END_RE = re.compile(
+    r"a\s+écrit\s*:|wrote\s*:|-{2,}\s*Original Message|_{10,}",
+    re.IGNORECASE,
+)
+
+
 def _trim_quoted_history(body: str, max_len: int = 4000) -> str:
-    """Trim the quoted '> ...' history that gmail/outlook clients append."""
-    # Common quote markers in French and English
-    markers = [
-        "On wrote:",
-        "Le ",  # "Le 12 août 2025, ... a écrit :"
-        "De :",
-        "From:",
-        "________________________________",
-        "-----Original Message-----",
-    ]
+    """Trim the quoted history that gmail/outlook clients append."""
     earliest = len(body)
-    for m in markers:
-        idx = body.find(m)
+    m = _QUOTE_END_RE.search(body)
+    if m:
+        cut = m.start()
+        # Remonter au début de l'en-tête ("Le <date> ..."/"On <date> ...") si on
+        # trouve un "Le "/"On " proche AVEC un chiffre (= une date) entre les deux
+        # → on enlève l'en-tête entier (évite que la date "à 11:05" soit lue comme
+        # un horaire de RDV). Sinon on coupe juste avant "a écrit :"/"wrote:".
+        for kw in ("Le ", "On "):
+            h = body.rfind(kw, max(0, cut - 220), cut)
+            if h != -1 and any(ch.isdigit() for ch in body[h:cut]):
+                cut = min(cut, h)
+        earliest = cut
+    # Marqueurs Outlook positionnels (gardés avec le garde-fou >100 car "De :"/
+    # "From:" peuvent apparaître légitimement tôt dans une phrase).
+    for marker in ("De :", "From:"):
+        idx = body.find(marker)
         if idx > 100 and idx < earliest:
             earliest = idx
     body = body[:earliest].strip()
