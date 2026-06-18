@@ -43,7 +43,7 @@ ACTION_LOG_KEY = "bot:action_log"
 ENABLED_KEY = "bot:enabled"
 SETTINGS_KEY = "bot:settings_overrides"
 LAST_RUN_KEY = "bot:last_run"
-MAX_LOG_ENTRIES = 200
+MAX_LOG_ENTRIES = 500
 
 
 def kv_available() -> bool:

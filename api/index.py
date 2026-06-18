@@ -135,8 +135,12 @@ def _render() -> str:
     enabled = kvstore.is_enabled()
     last_run = kvstore.get_last_run()
     last_run_fr = _time_fr(last_run) if last_run else "jamais"
-    actions_raw = kvstore.recent_actions(80)
-    actions_full_raw = kvstore.recent_actions(200)
+    # Une seule lecture du log COMPLET (capé à MAX_LOG_ENTRIES côté KV). On
+    # extrait alertes + envois + erreurs de TOUTE la fenêtre pour qu'une alerte
+    # (lead chaud) ne disparaisse jamais juste à cause du volume — seule l'action
+    # de Rudy (✕) la retire. Avant : alertes limitées aux 80 dernières actions →
+    # un lead pouvait scroller hors vue en < 1 jour (cas jantes-alu-camping-car 16/06).
+    actions_full_raw = kvstore.recent_actions(kvstore.MAX_LOG_ENTRIES)
 
     # FILTRE ANTI-CONTAMINATION : ce dashboard est dédié au bot ManyReach
     # uniquement. Si Rudy a un autre projet (LinkedIn / Prospect Perso) qui
@@ -156,8 +160,8 @@ def _render() -> str:
                 return True
         return False
 
-    actions = [a for a in actions_raw if not _is_foreign_entry(a)]
     actions_full = [a for a in actions_full_raw if not _is_foreign_entry(a)]
+    actions = actions_full  # alertes/envois/erreurs extraits de la fenêtre complète
     stats = _compute_stats(actions_full)
     ov = kvstore.get_settings_overrides()
     sending = ov.get("sending", {})
