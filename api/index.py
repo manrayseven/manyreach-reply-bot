@@ -267,11 +267,17 @@ def _render() -> str:
         mr_org = os.environ.get("MANYREACH_ORG_ID", "7288")
         mr_email = urllib.parse.quote(str(a.get("from", "")))
         mr_camp = a.get("campaign_id") or a.get("campaignId") or ""
+        # ⚠️ Quand le reply n'a PAS de campaign_id (reply rattrapé hors campagne,
+        # ex. garage.lagarde@wanadoo.fr), forcer type=campaign + campaign= (vide)
+        # donne une inbox VIDE → le lien "ne trouve rien" alors que le prospect
+        # existe bel et bien. Dans ce cas on ne scope PAS sur une campagne :
+        # recherche inbox globale par from:. Avec campaign_id → on garde le scope.
+        scope = f"&campaign={mr_camp}&type=campaign" if mr_camp else "&campaign=&type="
         mr_url = (
             f"https://app.manyreach.com/e/inbox"
             f"?sender=-1&status=&leadstatus=&autostatus=&list=-1"
             f"&search=from:{mr_email}"
-            f"&campaign={mr_camp}&type=campaign&activestatus=&pagesize=25&currentpage=1&o={mr_org}"
+            f"{scope}&activestatus=&pagesize=25&currentpage=1&o={mr_org}"
         )
         return f"""
         <div class="alert-row">
