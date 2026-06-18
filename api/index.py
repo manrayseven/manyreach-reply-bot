@@ -279,12 +279,27 @@ def _render() -> str:
             f"&search=from:{mr_email}"
             f"{scope}&activestatus=&pagesize=25&currentpage=1&o={mr_org}"
         )
+        # Reply HORS CAMPAGNE (campaign_id absent) : ManyReach ne l'indexe pas dans
+        # l'inbox campagne → le lien tombe sur une vue vide (cas garage.lagarde).
+        # On bascule alors sur une réponse email directe (fiable) plutôt qu'un lien
+        # ManyReach mort. Avec campaign_id → lien ManyReach normal.
+        if mr_camp:
+            mr_link_html = (
+                f'<a class="alert-mr" href="{mr_url}" target="_blank" rel="noopener" '
+                f'title="Ouvrir la fiche ManyReach pour répondre">↗ ManyReach</a>'
+            )
+        else:
+            mr_link_html = (
+                f'<a class="alert-mr" href="mailto:{frm}" '
+                f'title="Reply reçu hors campagne : non indexé dans l\'inbox ManyReach. '
+                f'Réponds directement par email.">✉ Répondre (hors campagne)</a>'
+            )
         return f"""
         <div class="alert-row">
           <div class="alert-head">
             <span class="alert-intent" style="color:{intent_color};background:{intent_color}1a;border:1px solid {intent_color}33">{html.escape(intent_label)}</span>
             <a class="alert-email" href="mailto:{frm}">{frm}</a>
-            <a class="alert-mr" href="{mr_url}" target="_blank" rel="noopener" title="Ouvrir la fiche ManyReach pour répondre">↗ ManyReach</a>
+            {mr_link_html}
             <span class="alert-when">{when}</span>
             <form method="POST" action="/{keyparam}" style="display:inline" onsubmit="this.querySelector('button').disabled=true;return true;">
               <input type="hidden" name="action" value="dismiss_alert">
