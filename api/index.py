@@ -174,6 +174,32 @@ def _render() -> str:
     error_list = []    # ❌ erreurs
     silent_list = []   # silencieux + ack + autre
     dismissed = kvstore.get_dismissed_alerts()  # alertes que Rudy a déjà traitées
+
+    # AUTO-RÉSOLUTION DES ALERTES : pour chaque email, on note le timestamp de la
+    # dernière entrée "gérée" (réponse envoyée, action silencieuse, ou reclassée en
+    # refus/terminal). Une alerte ANTÉRIEURE à cette résolution est obsolète → on la
+    # cache. Évite que de vieilles alertes (misclassif corrigée ensuite, ou cas déjà
+    # traité auto) restent affichées maintenant qu'on lit TOUT le log (cas
+    # sante-o-centre : alerté par un cron buggé, puis correctement passé NotInterested).
+    _RESOLVED_INTENTS = {
+        "not_interested_polite", "objection_already_have_solution", "objection_price",
+        "unsubscribe", "hostile", "bounce_or_auto", "wrong_person_redirect", "ack_only",
+    }
+    _resolved_at: dict[str, str] = {}
+    for a in actions_full:
+        em = (a.get("from") or "").lower().strip()
+        if not em:
+            continue
+        st = str(a.get("status", "")).lower()
+        is_resolution = (
+            "envoyé" in st or "exécuté" in st or "silencieux" in st
+            or a.get("intent") in _RESOLVED_INTENTS
+        )
+        if is_resolution:
+            at = a.get("at", "")
+            if at > _resolved_at.get(em, ""):
+                _resolved_at[em] = at
+
     for a in actions:
         intent = a.get("intent", "")
         status = a.get("status", "")
@@ -200,7 +226,11 @@ def _render() -> str:
             # pour les entries loggés avant le changement.
             silent_list.append(a)
         elif intent in ALERT_INTENTS or "ALERTE" in status:
-            if alert_id not in dismissed:
+            # Cachée si une entrée PLUS RÉCENTE pour le même email montre que le
+            # cas a été géré depuis (réponse envoyée / silencieux / refus).
+            _em = (a.get("from") or "").lower().strip()
+            superseded = bool(_em and _resolved_at.get(_em, "") > a.get("at", ""))
+            if alert_id not in dismissed and not superseded:
                 alerts.append(a)
         elif "envoyé" in status:
             sent_list.append(a)
