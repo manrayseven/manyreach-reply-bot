@@ -295,13 +295,16 @@ def _render() -> str:
         # Si on a aussi un campaign_id (cas du reply lié à une campagne mais
         # prospect non retrouvé directement), on l'ajoute pour narrower la vue.
         mr_org = os.environ.get("MANYREACH_ORG_ID", "7288")
-        mr_email = urllib.parse.quote(str(a.get("from", "")))
+        reply_from = str(a.get("from", ""))
+        # Email INITIAL du prospect (celui que ManyReach connaît / à qui réécrire).
+        # 'from' = l'adresse qui A RÉPONDU, parfois orpheline (boîte perso, alias
+        # Orange/wanadoo…). On cherche la conversation par l'email initial.
+        prospect_email = str(a.get("prospect_email") or "").strip() or reply_from
+        mr_email = urllib.parse.quote(prospect_email)
+        # Le reply est souvent SANS campaign_id (rattrapé hors campagne). run_bot
+        # stocke alors la campagne du message d'ORIGINE → on scope dessus pour
+        # tomber sur la conversation de départ. Sinon, recherche inbox globale.
         mr_camp = a.get("campaign_id") or a.get("campaignId") or ""
-        # ⚠️ Quand le reply n'a PAS de campaign_id (reply rattrapé hors campagne,
-        # ex. garage.lagarde@wanadoo.fr), forcer type=campaign + campaign= (vide)
-        # donne une inbox VIDE → le lien "ne trouve rien" alors que le prospect
-        # existe bel et bien. Dans ce cas on ne scope PAS sur une campagne :
-        # recherche inbox globale par from:. Avec campaign_id → on garde le scope.
         scope = f"&campaign={mr_camp}&type=campaign" if mr_camp else "&campaign=&type="
         mr_url = (
             f"https://app.manyreach.com/e/inbox"
@@ -309,26 +312,38 @@ def _render() -> str:
             f"&search=from:{mr_email}"
             f"{scope}&activestatus=&pagesize=25&currentpage=1&o={mr_org}"
         )
-        # Reply HORS CAMPAGNE (campaign_id absent) : ManyReach ne l'indexe pas dans
-        # l'inbox campagne → le lien tombe sur une vue vide (cas garage.lagarde).
-        # On bascule alors sur une réponse email directe (fiable) plutôt qu'un lien
-        # ManyReach mort. Avec campaign_id → lien ManyReach normal.
+        # Adresse ORPHELINE : le prospect a répondu depuis une autre adresse que son
+        # email initial → à mettre en COPIE quand Rudy réécrit à l'email initial.
+        orphan = reply_from if reply_from.lower().strip() != prospect_email.lower().strip() else ""
+        _mailto = "mailto:" + urllib.parse.quote(prospect_email)
+        if orphan:
+            _mailto += "?cc=" + urllib.parse.quote(orphan)
         if mr_camp:
             mr_link_html = (
                 f'<a class="alert-mr" href="{mr_url}" target="_blank" rel="noopener" '
-                f'title="Ouvrir la fiche ManyReach pour répondre">↗ ManyReach</a>'
+                f'title="Ouvrir la conversation d\'origine dans ManyReach (campagne {html.escape(str(mr_camp))})">↗ ManyReach</a>'
             )
         else:
+            # Hors campagne ET sans campagne d'origine récupérable → réponse email
+            # directe à l'email initial (en copiant l'orpheline le cas échéant).
             mr_link_html = (
-                f'<a class="alert-mr" href="mailto:{frm}" '
-                f'title="Reply reçu hors campagne : non indexé dans l\'inbox ManyReach. '
-                f'Réponds directement par email.">✉ Répondre (hors campagne)</a>'
+                f'<a class="alert-mr" href="{html.escape(_mailto)}" '
+                f'title="Reply hors campagne : réécris à l\'email initial'
+                f'{(" en copiant " + html.escape(orphan)) if orphan else ""}.">'
+                f'✉ Répondre{" + CC orphelin" if orphan else ""}</a>'
             )
+        frm = html.escape(prospect_email)
+        orphan_chip = (
+            f'<span class="alert-orphan" title="A répondu depuis cette adresse — '
+            f'mets-la en copie de ta réponse">↩ {html.escape(orphan)}</span>'
+            if orphan else ""
+        )
         return f"""
         <div class="alert-row">
           <div class="alert-head">
             <span class="alert-intent" style="color:{intent_color};background:{intent_color}1a;border:1px solid {intent_color}33">{html.escape(intent_label)}</span>
-            <a class="alert-email" href="mailto:{frm}">{frm}</a>
+            <a class="alert-email" href="{html.escape(_mailto)}">{frm}</a>
+            {orphan_chip}
             {mr_link_html}
             <span class="alert-when">{when}</span>
             <form method="POST" action="/{keyparam}" style="display:inline" onsubmit="this.querySelector('button').disabled=true;return true;">
@@ -436,6 +451,7 @@ def _render() -> str:
  .alert-head{{display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap}}
  .alert-intent{{font-size:11px;font-weight:700;padding:3px 9px;border-radius:6px;white-space:nowrap}}
  .alert-email{{font-weight:700;color:#2b2823;font-size:13px}}
+ .alert-orphan{{font-size:11px;font-weight:600;color:#a07520;background:#faefd6;border:1px solid #f0e2c2;padding:2px 7px;border-radius:6px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}}
  .alert-when{{color:#a39c8c;font-size:12px;margin-left:auto;font-variant-numeric:tabular-nums;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}}
  .alert-msg{{color:#5c574c;font-size:13px;line-height:1.55}}
  .alert-mr{{font-size:11px;font-weight:700;color:#3b6fd4;background:#edf2fc;padding:3px 9px;border-radius:6px;text-decoration:none;border:1px solid #cfdcf6;transition:all .12s}}

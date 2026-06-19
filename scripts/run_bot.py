@@ -1046,6 +1046,18 @@ def main() -> int:
                     log_entry["dry_run"] = dry_run
                     logf.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
                     if kvstore and kvstore.kv_available():
+                        # Le reply lui-même n'a souvent PAS de campaign_id (reply
+                        # rattrapé hors campagne). On récupère alors la campagne du
+                        # message D'ORIGINE (le 1er Sent du thread) pour que le lien
+                        # dashboard tombe sur la VRAIE conversation. On stocke aussi
+                        # prospect_email (= l'email initial à qui réécrire) à part de
+                        # 'from' (= l'adresse qui a répondu, parfois orpheline → à CC).
+                        _resolved_camp = reply.campaign_id
+                        if not _resolved_camp and thread:
+                            for _m in sorted(thread, key=lambda x: x.created_at):
+                                if _m.type in ("Sent", "SentManual") and _m.campaign_id:
+                                    _resolved_camp = _m.campaign_id
+                                    break
                         kvstore.log_action({
                             "at": now_utc.isoformat(),
                             "from": reply.from_email,
@@ -1059,7 +1071,8 @@ def main() -> int:
                             # même si le prospect MR n'est pas retrouvé par email
                             # direct (cas reply depuis une adresse différente).
                             "prospect_id": (prospect.prospect_id if prospect else None),
-                            "campaign_id": reply.campaign_id,
+                            "campaign_id": _resolved_camp,
+                            "prospect_email": (prospect.email if prospect else None),
                         })
                     if not dry_run:
                         _mark_done(reply.message_id)
