@@ -300,12 +300,15 @@ def _render() -> str:
                 if data:
                     if str(data.get("status", "")).lower().strip() in _TERMINAL_MR:
                         continue  # prospect déjà terminal → masque l'alerte
-                    # On injecte la campagne d'origine + le mailbox expéditeur pour
-                    # que _alert_row bâtisse un vrai lien ManyReach (pas un mailto).
-                    if data.get("campaign") and not (a.get("campaign_id") or a.get("campaignId")):
-                        a["campaign_id"] = data["campaign"]
+                    # ⚠️ On N'injecte PAS data["campaign"] dans campaign_id : pour un
+                    # reply orphelin, la conversation n'est dans aucune campagne côté
+                    # ManyReach → une URL inbox scopée campagne reste VIDE (confirmé
+                    # par Rudy). On garde la campagne d'origine + le mailbox seulement
+                    # comme INFO (badge), et le lien reste un mailto pour les orphelins.
                     if data.get("prospect_email") and not a.get("prospect_email"):
                         a["prospect_email"] = data["prospect_email"]
+                    if data.get("campaign") and not a.get("origin_campaign_id"):
+                        a["origin_campaign_id"] = data["campaign"]
                     if data.get("sender"):
                         a["_sender_mailbox"] = data["sender"]
                 _kept.append(a)
@@ -378,16 +381,19 @@ def _render() -> str:
         # Orange/wanadoo…). On cherche la conversation par l'email initial.
         prospect_email = str(a.get("prospect_email") or "").strip() or reply_from
         mr_email = urllib.parse.quote(prospect_email)
-        # Le reply est souvent SANS campaign_id (rattrapé hors campagne). run_bot
-        # stocke alors la campagne du message d'ORIGINE → on scope dessus pour
-        # tomber sur la conversation de départ. Sinon, recherche inbox globale.
+        # mr_camp = campagne DU REPLY (présente = classique). Si le reply EST dans
+        # une campagne, le lien inbox scopé campagne ouvre bien la conversation
+        # (validé Rudy). Si le reply est ORPHELIN (campaign_id absent), sa
+        # conversation n'est dans aucune campagne côté ManyReach → toute URL inbox
+        # scopée campagne reste VIDE → on passe au mailto. La campagne d'ORIGINE
+        # (origin_campaign_id) n'est gardée que comme info (badge), pas pour le lien.
         mr_camp = a.get("campaign_id") or a.get("campaignId") or ""
-        scope = f"&campaign={mr_camp}&type=campaign" if mr_camp else "&campaign=&type="
+        origin_camp = str(a.get("origin_campaign_id") or "").strip()
         mr_url = (
             f"https://app.manyreach.com/e/inbox"
             f"?sender=-1&status=&leadstatus=&autostatus=&list=-1"
             f"&search=from:{mr_email}"
-            f"{scope}&activestatus=&pagesize=25&currentpage=1&o={mr_org}"
+            f"&campaign={mr_camp}&type=campaign&activestatus=&pagesize=25&currentpage=1&o={mr_org}"
         )
         # Adresse ORPHELINE : le prospect a répondu depuis une autre adresse que son
         # email initial → à mettre en COPIE quand Rudy réécrit à l'email initial.
@@ -399,22 +405,24 @@ def _render() -> str:
         # prospect) → c'est AVEC LUI que la conversation doit se poursuivre.
         sender_mailbox = str(a.get("_sender_mailbox") or "").strip()
         if mr_camp:
-            _title = (
-                f"Ouvrir la conversation d'origine dans ManyReach (campagne {html.escape(str(mr_camp))})"
-                + (f" — réponds avec le compte {html.escape(sender_mailbox)}" if sender_mailbox else "")
-                + (f", en copiant l'orpheline {html.escape(orphan)}" if orphan else "")
-            )
             mr_link_html = (
                 f'<a class="alert-mr" href="{mr_url}" target="_blank" rel="noopener" '
-                f'title="{_title}">↗ ManyReach</a>'
+                f'title="Ouvrir la conversation dans ManyReach (campagne {html.escape(str(mr_camp))})">↗ ManyReach</a>'
             )
         else:
-            # Hors campagne ET sans campagne d'origine récupérable → réponse email
-            # directe à l'email initial (en copiant l'orpheline le cas échéant).
+            # ORPHELIN : conversation non rattachée à une campagne côté ManyReach →
+            # pas de deep-link inbox possible. On répond par email à l'adresse
+            # initiale (en copiant l'orpheline). Le titre rappelle la campagne
+            # d'origine pour que Rudy puisse la retrouver à la main au besoin.
+            _hint = "Reply hors campagne (non deep-linkable dans l'inbox ManyReach) : réécris à l'email initial"
+            if orphan:
+                _hint += f" en copiant {html.escape(orphan)}"
+            if origin_camp:
+                _hint += f". Campagne d'origine : {html.escape(origin_camp)}"
+            if sender_mailbox:
+                _hint += f" (compte {html.escape(sender_mailbox)})"
             mr_link_html = (
-                f'<a class="alert-mr" href="{html.escape(_mailto)}" '
-                f'title="Reply hors campagne : réécris à l\'email initial'
-                f'{(" en copiant " + html.escape(orphan)) if orphan else ""}.">'
+                f'<a class="alert-mr" href="{html.escape(_mailto)}" title="{_hint}.">'
                 f'✉ Répondre{" + CC orphelin" if orphan else ""}</a>'
             )
         frm = html.escape(prospect_email)

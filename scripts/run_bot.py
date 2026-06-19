@@ -1046,17 +1046,22 @@ def main() -> int:
                     log_entry["dry_run"] = dry_run
                     logf.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
                     if kvstore and kvstore.kv_available():
-                        # Le reply lui-même n'a souvent PAS de campaign_id (reply
-                        # rattrapé hors campagne). On récupère alors la campagne du
-                        # message D'ORIGINE (le 1er Sent du thread) pour que le lien
-                        # dashboard tombe sur la VRAIE conversation. On stocke aussi
-                        # prospect_email (= l'email initial à qui réécrire) à part de
-                        # 'from' (= l'adresse qui a répondu, parfois orpheline → à CC).
-                        _resolved_camp = reply.campaign_id
-                        if not _resolved_camp and thread:
+                        # ⚠️ campaign_id = celui DU REPLY (None si orphelin/hors
+                        # campagne). C'est lui qui décide du lien dashboard :
+                        #   - reply DANS une campagne (classique) → lien ManyReach
+                        #     inbox scopé campagne = MARCHE.
+                        #   - reply orphelin (campaign_id=None) → la conversation
+                        #     n'est dans AUCUNE campagne côté ManyReach, donc une
+                        #     URL inbox scopée campagne reste VIDE (confirmé par
+                        #     Rudy) → on NE met PAS la campagne d'origine ici (sinon
+                        #     lien mort), le dashboard bascule sur mailto.
+                        # On garde la campagne d'origine + prospect_email à part,
+                        # pour info (badge "conversation hors campagne X").
+                        _origin_camp = None
+                        if not reply.campaign_id and thread:
                             for _m in sorted(thread, key=lambda x: x.created_at):
                                 if _m.type in ("Sent", "SentManual") and _m.campaign_id:
-                                    _resolved_camp = _m.campaign_id
+                                    _origin_camp = _m.campaign_id
                                     break
                         kvstore.log_action({
                             "at": now_utc.isoformat(),
@@ -1066,12 +1071,9 @@ def main() -> int:
                             "status": "🔔 ALERTE — à traiter dashboard",
                             "reply": _trim_quoted_history(_strip_html(reply.body))[:700],
                             "response": alert_line,
-                            # prospect_id + campaign_id → permettent au dashboard
-                            # de générer un lien Unibox précis (campagne + email)
-                            # même si le prospect MR n'est pas retrouvé par email
-                            # direct (cas reply depuis une adresse différente).
                             "prospect_id": (prospect.prospect_id if prospect else None),
-                            "campaign_id": _resolved_camp,
+                            "campaign_id": reply.campaign_id,   # None si orphelin → mailto
+                            "origin_campaign_id": _origin_camp,  # info seulement (badge)
                             "prospect_email": (prospect.email if prospect else None),
                         })
                     if not dry_run:
