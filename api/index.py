@@ -8,6 +8,7 @@ POST / (form)     → actions : toggle on/off, sauver des réglages
 """
 from http.server import BaseHTTPRequestHandler
 import html
+import json
 import os
 import sys
 import urllib.parse
@@ -240,13 +241,16 @@ def _render() -> str:
         elif intent != "bounce_or_auto":
             silent_list.append(a)
 
-    # BACKSTOP STATUT MANYREACH : on masque une alerte si le prospect est DÉJÀ en
-    # statut TERMINAL côté ManyReach (NotInterested/Unsub/Hostile/Bounce). Couvre
-    # les cas que l'auto-résolution log-only rate : alerte périmée d'un ancien cron
-    # buggé, OU reply traité À LA MAIN dans ManyReach (aucune trace KV). Le statut
-    # MR est la source de vérité. Mis en cache 30 min → ≤ N appels (alertes
-    # affichées) au 1er render, instantané ensuite. Fail-open : si l'appel échoue,
-    # on garde l'alerte visible (mieux vaut une alerte de trop qu'un lead perdu).
+    # ENRICHISSEMENT LIVE DES ALERTES via ManyReach (mis en cache KV 30 min).
+    # Pour chaque alerte affichée on récupère, depuis la SOURCE DE VÉRITÉ ManyReach :
+    #  - le statut courant du prospect → masque l'alerte s'il est TERMINAL
+    #    (NotInterested/Unsub/Hostile/Bounce) : couvre les alertes périmées et les
+    #    cas traités À LA MAIN (aucune trace KV) — ex. sante-o-centre.
+    #  - la campagne D'ORIGINE + le mailbox expéditeur d'origine (1er Sent du thread)
+    #    quand le reply n'a pas de campaign_id → permet un VRAI lien ManyReach vers
+    #    la conversation de départ (et non un mailto), même pour les alertes créées
+    #    avant qu'on stocke ces infos. Cas auberge-grand-maison/aemn/jeanmarc.houel.
+    # Fail-open : si l'appel échoue, on garde l'alerte et le lien actuel.
     _TERMINAL_MR = {
         "notinterested", "unsub", "unsubscribed", "hostile",
         "bouncehard", "bounce", "donotcontact", "blacklisted",
@@ -260,20 +264,50 @@ def _render() -> str:
                 if not em:
                     _kept.append(a)
                     continue
-                ck = "mrst:" + em
-                st = kvstore.cache_get(ck)
-                if st is None:
+                ck = "mrenrich:" + em
+                data = None
+                _raw = kvstore.cache_get(ck)
+                if _raw:
+                    try:
+                        data = json.loads(_raw)
+                    except (json.JSONDecodeError, TypeError):
+                        data = None
+                if data is None:
+                    data = {}
                     try:
                         if _mr_client is None:
                             from src.manyreach import ManyReachClient
                             _mr_client = ManyReachClient(timeout=8.0)
                         _p = _mr_client.find_prospect_by_email(em)
-                        st = (_p.sending_status if _p else "") or ""
-                        kvstore.cache_set(ck, st, 1800)
+                        if _p:
+                            data["status"] = _p.sending_status or ""
+                            data["prospect_email"] = _p.email or em
+                            # Campagne d'origine + mailbox expéditeur : seulement si
+                            # le reply n'a pas déjà de campagne (évite un get_thread inutile).
+                            if not (a.get("campaign_id") or a.get("campaignId")):
+                                _thr = sorted(
+                                    _mr_client.get_prospect_thread(_p.prospect_id),
+                                    key=lambda m: m.created_at,
+                                )
+                                for _m in _thr:
+                                    if _m.type in ("Sent", "SentManual") and _m.campaign_id:
+                                        data["campaign"] = str(_m.campaign_id)
+                                        data["sender"] = _m.from_email or ""
+                                        break
+                        kvstore.cache_set(ck, json.dumps(data), 1800)
                     except Exception:  # noqa: BLE001
-                        st = ""  # fail-open, ne pas cacher l'échec
-                if str(st).lower().strip() in _TERMINAL_MR:
-                    continue  # prospect déjà refusé/terminal → masque l'alerte
+                        data = None  # fail-open, ne pas cacher l'échec
+                if data:
+                    if str(data.get("status", "")).lower().strip() in _TERMINAL_MR:
+                        continue  # prospect déjà terminal → masque l'alerte
+                    # On injecte la campagne d'origine + le mailbox expéditeur pour
+                    # que _alert_row bâtisse un vrai lien ManyReach (pas un mailto).
+                    if data.get("campaign") and not (a.get("campaign_id") or a.get("campaignId")):
+                        a["campaign_id"] = data["campaign"]
+                    if data.get("prospect_email") and not a.get("prospect_email"):
+                        a["prospect_email"] = data["prospect_email"]
+                    if data.get("sender"):
+                        a["_sender_mailbox"] = data["sender"]
                 _kept.append(a)
         finally:
             if _mr_client is not None:
@@ -361,10 +395,18 @@ def _render() -> str:
         _mailto = "mailto:" + urllib.parse.quote(prospect_email)
         if orphan:
             _mailto += "?cc=" + urllib.parse.quote(orphan)
+        # Mailbox expéditeur d'origine (le compte ManyReach qui a contacté ce
+        # prospect) → c'est AVEC LUI que la conversation doit se poursuivre.
+        sender_mailbox = str(a.get("_sender_mailbox") or "").strip()
         if mr_camp:
+            _title = (
+                f"Ouvrir la conversation d'origine dans ManyReach (campagne {html.escape(str(mr_camp))})"
+                + (f" — réponds avec le compte {html.escape(sender_mailbox)}" if sender_mailbox else "")
+                + (f", en copiant l'orpheline {html.escape(orphan)}" if orphan else "")
+            )
             mr_link_html = (
                 f'<a class="alert-mr" href="{mr_url}" target="_blank" rel="noopener" '
-                f'title="Ouvrir la conversation d\'origine dans ManyReach (campagne {html.escape(str(mr_camp))})">↗ ManyReach</a>'
+                f'title="{_title}">↗ ManyReach</a>'
             )
         else:
             # Hors campagne ET sans campagne d'origine récupérable → réponse email
@@ -381,6 +423,11 @@ def _render() -> str:
             f'mets-la en copie de ta réponse">↩ {html.escape(orphan)}</span>'
             if orphan else ""
         )
+        sender_chip = (
+            f'<span class="alert-sender" title="Compte ManyReach qui a contacté ce prospect '
+            f'— réponds avec celui-ci">via {html.escape(sender_mailbox)}</span>'
+            if sender_mailbox else ""
+        )
         return f"""
         <div class="alert-row">
           <div class="alert-head">
@@ -388,6 +435,7 @@ def _render() -> str:
             <a class="alert-email" href="{html.escape(_mailto)}">{frm}</a>
             {orphan_chip}
             {mr_link_html}
+            {sender_chip}
             <span class="alert-when">{when}</span>
             <form method="POST" action="/{keyparam}" style="display:inline" onsubmit="this.querySelector('button').disabled=true;return true;">
               <input type="hidden" name="action" value="dismiss_alert">
@@ -495,6 +543,7 @@ def _render() -> str:
  .alert-intent{{font-size:11px;font-weight:700;padding:3px 9px;border-radius:6px;white-space:nowrap}}
  .alert-email{{font-weight:700;color:#2b2823;font-size:13px}}
  .alert-orphan{{font-size:11px;font-weight:600;color:#a07520;background:#faefd6;border:1px solid #f0e2c2;padding:2px 7px;border-radius:6px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}}
+ .alert-sender{{font-size:11px;font-weight:500;color:#8c8678;background:#f3f0e9;border:1px solid #e7e1d5;padding:2px 7px;border-radius:6px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}}
  .alert-when{{color:#a39c8c;font-size:12px;margin-left:auto;font-variant-numeric:tabular-nums;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}}
  .alert-msg{{color:#5c574c;font-size:13px;line-height:1.55}}
  .alert-mr{{font-size:11px;font-weight:700;color:#3b6fd4;background:#edf2fc;padding:3px 9px;border-radius:6px;text-decoration:none;border:1px solid #cfdcf6;transition:all .12s}}
