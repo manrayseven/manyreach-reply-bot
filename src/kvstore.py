@@ -97,6 +97,20 @@ def recent_actions(n: int = 50) -> list[dict]:
     return out
 
 
+def cache_get(key: str):
+    """Lecture cache simple (renvoie None si absent/KV indispo)."""
+    if not kv_available():
+        return None
+    return _cmd("GET", key)
+
+
+def cache_set(key: str, value: str, ttl_seconds: int = 1800) -> None:
+    """Écrit une valeur avec TTL (SET key value EX ttl). No-op si KV indispo."""
+    if not kv_available():
+        return
+    _cmd("SET", key, value, "EX", str(int(ttl_seconds)))
+
+
 def get_settings_overrides() -> dict:
     raw = _cmd("GET", SETTINGS_KEY)
     if not raw:

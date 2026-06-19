@@ -240,6 +240,49 @@ def _render() -> str:
         elif intent != "bounce_or_auto":
             silent_list.append(a)
 
+    # BACKSTOP STATUT MANYREACH : on masque une alerte si le prospect est DÉJÀ en
+    # statut TERMINAL côté ManyReach (NotInterested/Unsub/Hostile/Bounce). Couvre
+    # les cas que l'auto-résolution log-only rate : alerte périmée d'un ancien cron
+    # buggé, OU reply traité À LA MAIN dans ManyReach (aucune trace KV). Le statut
+    # MR est la source de vérité. Mis en cache 30 min → ≤ N appels (alertes
+    # affichées) au 1er render, instantané ensuite. Fail-open : si l'appel échoue,
+    # on garde l'alerte visible (mieux vaut une alerte de trop qu'un lead perdu).
+    _TERMINAL_MR = {
+        "notinterested", "unsub", "unsubscribed", "hostile",
+        "bouncehard", "bounce", "donotcontact", "blacklisted",
+    }
+    if alerts:
+        _mr_client = None
+        _kept = []
+        try:
+            for a in alerts:
+                em = (a.get("prospect_email") or a.get("from") or "").lower().strip()
+                if not em:
+                    _kept.append(a)
+                    continue
+                ck = "mrst:" + em
+                st = kvstore.cache_get(ck)
+                if st is None:
+                    try:
+                        if _mr_client is None:
+                            from src.manyreach import ManyReachClient
+                            _mr_client = ManyReachClient(timeout=8.0)
+                        _p = _mr_client.find_prospect_by_email(em)
+                        st = (_p.sending_status if _p else "") or ""
+                        kvstore.cache_set(ck, st, 1800)
+                    except Exception:  # noqa: BLE001
+                        st = ""  # fail-open, ne pas cacher l'échec
+                if str(st).lower().strip() in _TERMINAL_MR:
+                    continue  # prospect déjà refusé/terminal → masque l'alerte
+                _kept.append(a)
+        finally:
+            if _mr_client is not None:
+                try:
+                    _mr_client.close()
+                except Exception:  # noqa: BLE001
+                    pass
+        alerts = _kept
+
     keyq = os.environ.get("DASHBOARD_KEY")
     keyparam = f"?key={keyq}" if keyq else ""
 
