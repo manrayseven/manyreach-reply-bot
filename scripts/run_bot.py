@@ -1075,6 +1075,12 @@ def main() -> int:
                             "campaign_id": reply.campaign_id,   # None si orphelin → mailto
                             "origin_campaign_id": _origin_camp,  # info seulement (badge)
                             "prospect_email": (prospect.email if prospect else None),
+                            # message_id du reply → permet de RÉPONDRE via l'API
+                            # ManyReach depuis le dashboard (même pour les orphelins
+                            # que l'UI ManyReach n'affiche pas). Mailbox d'origine
+                            # pour envoyer depuis le bon compte.
+                            "message_id": reply.message_id,
+                            "sender_mailbox": (original_outreach.from_email if original_outreach else None),
                         })
                     if not dry_run:
                         _mark_done(reply.message_id)

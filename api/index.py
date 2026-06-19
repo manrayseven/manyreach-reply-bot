@@ -282,9 +282,11 @@ def _render() -> str:
                         if _p:
                             data["status"] = _p.sending_status or ""
                             data["prospect_email"] = _p.email or em
-                            # Campagne d'origine + mailbox expéditeur : seulement si
-                            # le reply n'a pas déjà de campagne (évite un get_thread inutile).
-                            if not (a.get("campaign_id") or a.get("campaignId")):
+                            # Campagne d'origine + mailbox expéditeur + message_id du
+                            # dernier reply (pour répondre via l'API) : seulement si le
+                            # reply n'a pas déjà ces infos stockées (évite un get_thread
+                            # inutile pour les alertes récentes).
+                            if not (a.get("campaign_id") or a.get("campaignId")) or not a.get("message_id"):
                                 _thr = sorted(
                                     _mr_client.get_prospect_thread(_p.prospect_id),
                                     key=lambda m: m.created_at,
@@ -293,6 +295,12 @@ def _render() -> str:
                                     if _m.type in ("Sent", "SentManual") and _m.campaign_id:
                                         data["campaign"] = str(_m.campaign_id)
                                         data["sender"] = _m.from_email or ""
+                                        break
+                                # message_id du DERNIER reply du prospect → cible de
+                                # la réponse API (fil correct).
+                                for _m in reversed(_thr):
+                                    if _m.type == "Reply":
+                                        data["reply_msgid"] = _m.message_id
                                         break
                         kvstore.cache_set(ck, json.dumps(data), 1800)
                     except Exception:  # noqa: BLE001
@@ -311,6 +319,8 @@ def _render() -> str:
                         a["origin_campaign_id"] = data["campaign"]
                     if data.get("sender"):
                         a["_sender_mailbox"] = data["sender"]
+                    if data.get("reply_msgid") and not a.get("message_id"):
+                        a["message_id"] = data["reply_msgid"]
                 _kept.append(a)
         finally:
             if _mr_client is not None:
@@ -436,6 +446,27 @@ def _render() -> str:
             f'— réponds avec celui-ci">via {html.escape(sender_mailbox)}</span>'
             if sender_mailbox else ""
         )
+        # RÉPONSE DANS MANYREACH (via API) : disponible dès qu'on a le message_id du
+        # reply. Marche AUSSI pour les orphelins que l'UI ManyReach n'affiche pas.
+        msgid = str(a.get("message_id") or "").strip()
+        reply_box = ""
+        if msgid:
+            ph = "Ta réponse à " + prospect_email + (f" (envoyée via {sender_mailbox})" if sender_mailbox else "")
+            reply_box = f"""
+          <details class="alert-reply">
+            <summary>✍ Répondre dans ManyReach</summary>
+            <form method="POST" action="/{keyparam}" onsubmit="var b=this.querySelector('button');b.disabled=true;b.innerHTML='⏳ Envoi...';return true;">
+              <input type="hidden" name="action" value="reply_manyreach">
+              <input type="hidden" name="message_id" value="{html.escape(msgid)}">
+              <input type="hidden" name="from_email" value="{html.escape(sender_mailbox)}">
+              <input type="hidden" name="alert_id" value="{alert_id}">
+              <textarea name="body" rows="4" placeholder="{html.escape(ph)}" required></textarea>
+              <div class="alert-reply-actions">
+                <span class="alert-reply-hint">Envoyé via l'API ManyReach (fil correct{', compte ' + html.escape(sender_mailbox) if sender_mailbox else ''}).{' Copie l’orpheline ' + html.escape(orphan) + ' manuellement si besoin.' if orphan else ''}</span>
+                <button type="submit" class="btn-primary">Envoyer</button>
+              </div>
+            </form>
+          </details>"""
         return f"""
         <div class="alert-row">
           <div class="alert-head">
@@ -452,6 +483,7 @@ def _render() -> str:
             </form>
           </div>
           <div class="alert-msg">{reply_txt}</div>
+          {reply_box}
         </div>"""
 
     def _sent_row(a: dict) -> str:
@@ -552,6 +584,14 @@ def _render() -> str:
  .alert-email{{font-weight:700;color:#2b2823;font-size:13px}}
  .alert-orphan{{font-size:11px;font-weight:600;color:#a07520;background:#faefd6;border:1px solid #f0e2c2;padding:2px 7px;border-radius:6px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}}
  .alert-sender{{font-size:11px;font-weight:500;color:#8c8678;background:#f3f0e9;border:1px solid #e7e1d5;padding:2px 7px;border-radius:6px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}}
+ .alert-reply{{margin-top:10px}}
+ .alert-reply summary{{font-size:12px;font-weight:600;color:#3b6fd4;cursor:pointer;list-style:none;display:inline-block;padding:2px 0}}
+ .alert-reply summary::-webkit-details-marker{{display:none}}
+ .alert-reply[open] summary{{margin-bottom:8px}}
+ .alert-reply textarea{{width:100%;box-sizing:border-box;border:1px solid #e0d9cb;border-radius:9px;padding:10px 12px;font-size:13px;font-family:inherit;color:#2b2823;background:#fff;resize:vertical;line-height:1.5}}
+ .alert-reply textarea:focus{{outline:none;border-color:#3b6fd4}}
+ .alert-reply-actions{{display:flex;align-items:center;gap:12px;margin-top:8px}}
+ .alert-reply-hint{{font-size:11px;color:#8c8678;margin-right:auto;line-height:1.4}}
  .alert-when{{color:#a39c8c;font-size:12px;margin-left:auto;font-variant-numeric:tabular-nums;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}}
  .alert-msg{{color:#5c574c;font-size:13px;line-height:1.55}}
  .alert-mr{{font-size:11px;font-weight:700;color:#3b6fd4;background:#edf2fc;padding:3px 9px;border-radius:6px;text-decoration:none;border:1px solid #cfdcf6;transition:all .12s}}
@@ -738,6 +778,51 @@ class handler(BaseHTTPRequestHandler):
             alert_id = (form.get("alert_id") or "").strip()
             if alert_id:
                 kvstore.dismiss_alert(alert_id)
+        elif action == "reply_manyreach":
+            # Réponse manuelle de Rudy ENVOYÉE VIA L'API ManyReach (endpoint
+            # /messages/reply). Marche même pour les replies orphelins que l'UI
+            # ManyReach n'affiche pas. Envoi déclenché explicitement par Rudy.
+            from datetime import datetime as _dt, timezone as _tz
+            mid = (form.get("message_id") or "").strip()
+            body_txt = (form.get("body") or "").strip()
+            from_email = (form.get("from_email") or "").strip() or None
+            alert_id = (form.get("alert_id") or "").strip()
+            log_status = ""
+            if not mid or not body_txt:
+                log_status = "❌ Réponse ManyReach : message_id ou texte manquant"
+            else:
+                # texte saisi → HTML (sauts de ligne → <br>), en échappant le HTML.
+                body_html = html.escape(body_txt).replace("\n", "<br>")
+                try:
+                    from src.manyreach import ManyReachClient
+                    with ManyReachClient(timeout=12.0) as _mr:
+                        _mr.send_reply(
+                            message_id=mid,
+                            body_html=body_html,
+                            send_as_reply=True,
+                            from_email=from_email,
+                        )
+                    log_status = f"✉️ Réponse envoyée via ManyReach{(' (compte ' + from_email + ')') if from_email else ''}"
+                    # Une fois répondu → on masque l'alerte.
+                    if alert_id:
+                        try:
+                            kvstore.dismiss_alert(alert_id)
+                        except Exception:  # noqa: BLE001
+                            pass
+                except Exception as e:  # noqa: BLE001
+                    log_status = f"❌ Réponse ManyReach échouée : {str(e)[:200]}"
+            if kvstore.kv_available():
+                # 'from' = l'email du prospect (extrait de l'alert_id "at|email")
+                _pemail = alert_id.split("|", 1)[1] if "|" in alert_id else ""
+                kvstore.log_action({
+                    "at": _dt.now(_tz.utc).isoformat(),
+                    "from": _pemail,
+                    "subject": "✍ Réponse manuelle (dashboard)",
+                    "intent": "manual_reply",
+                    "status": log_status,
+                    "reply": "",
+                    "response": body_txt[:1000],
+                })
         elif action == "run_now" or action == "run_email":
             # Lancement manuel synchrone du bot. Si action=run_email + champ
             # only_email présent, on force le traitement de CE prospect précis
