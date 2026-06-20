@@ -295,10 +295,10 @@ def _render() -> str:
                             data["status"] = _p.sending_status or ""
                             data["prospect_email"] = _p.email or em
                             # Campagne d'origine + mailbox expéditeur + message_id du
-                            # dernier reply (pour répondre via l'API) : seulement si le
-                            # reply n'a pas déjà ces infos stockées (évite un get_thread
-                            # inutile pour les alertes récentes).
-                            if not (a.get("campaign_id") or a.get("campaignId")) or not a.get("message_id"):
+                            # dernier reply (pour répondre via l'API) : UNIQUEMENT pour
+                            # les orphelins (hors campagne). Les classiques n'ont pas
+                            # besoin du champ in-app → on évite le get_thread.
+                            if not (a.get("campaign_id") or a.get("campaignId")):
                                 _thr = sorted(
                                     _mr_client.get_prospect_thread(_p.prospect_id),
                                     key=lambda m: m.created_at,
@@ -428,28 +428,31 @@ def _render() -> str:
         sender_mailbox = str(a.get("_sender_mailbox") or "").strip()
         # message_id du reply → on peut répondre via l'API (champ in-app).
         msgid = str(a.get("message_id") or "").strip()
-        # Bouton PRINCIPAL "✍ Répondre" : OUVRE le champ de réponse in-app (pas un
-        # mailto mort). Le champ envoie via l'API ManyReach. En secondaire :
-        #  - "↗ ManyReach" si le reply est dans une campagne (ouvre l'inbox réel) ;
-        #  - "✉ Email" mailto (utile surtout pour copier l'orpheline en CC, ou si
-        #    pas de message_id pour répondre via l'API).
+        # ORPHELIN (hors campagne) = le reply n'a pas de campaign_id → ManyReach ne
+        # l'affiche nulle part dans l'inbox. C'est le SEUL cas où on propose la
+        # réponse in-app via API. Les CLASSIQUES (reply dans une campagne) gardent
+        # juste le lien "↗ ManyReach" qui ouvre la vraie conversation.
+        hors_campagne = not mr_camp
         _open_box = (
             "var d=this.closest('.alert-row').querySelector('.alert-reply');"
             "if(d){d.open=true;var t=d.querySelector('textarea');if(t)t.focus();}"
             "return false;"
         )
         _btns = []
-        if msgid:
-            _btns.append(
-                f'<a class="alert-mr" href="#" onclick="{_open_box}" '
-                f'title="Écrire une réponse envoyée dans le fil ManyReach">✍ Répondre</a>'
-            )
         if mr_camp:
+            # Classique → lien inbox ManyReach (marche).
             _btns.append(
-                f'<a class="alert-mr alert-mr-sec" href="{mr_url}" target="_blank" rel="noopener" '
+                f'<a class="alert-mr" href="{mr_url}" target="_blank" rel="noopener" '
                 f'title="Ouvrir la conversation dans l\'inbox ManyReach (campagne {html.escape(str(mr_camp))})">↗ ManyReach</a>'
             )
-        if (orphan or not mr_camp or not msgid):
+        elif msgid:
+            # Orphelin → bouton qui OUVRE le champ de réponse in-app (envoi via API).
+            _btns.append(
+                f'<a class="alert-mr" href="#" onclick="{_open_box}" '
+                f'title="Écrire une réponse envoyée dans le fil ManyReach (email orphelin)">✍ Répondre</a>'
+            )
+        if hors_campagne:
+            # Mailto secondaire (surtout pour copier l'orpheline en CC).
             _emhint = "Ouvrir le client mail vers l'email initial"
             if orphan:
                 _emhint += f" (copie {html.escape(orphan)} en CC)"
@@ -469,15 +472,15 @@ def _render() -> str:
             f'— réponds avec celui-ci">via {html.escape(sender_mailbox)}</span>'
             if sender_mailbox else ""
         )
-        # RÉPONSE DANS MANYREACH (via API) : disponible dès qu'on a le message_id du
-        # reply. Marche AUSSI pour les orphelins que l'UI ManyReach n'affiche pas.
-        msgid = str(a.get("message_id") or "").strip()
+        # RÉPONSE DANS MANYREACH (via API) : UNIQUEMENT pour les orphelins (hors
+        # campagne) que l'UI ManyReach n'affiche pas. Les classiques se répondent
+        # via le lien "↗ ManyReach" (vraie conversation).
         reply_box = ""
-        if msgid:
+        if hors_campagne and msgid:
             ph = "Ta réponse à " + prospect_email + (f" (envoyée via {sender_mailbox})" if sender_mailbox else "")
             reply_box = f"""
           <details class="alert-reply">
-            <summary>✍ Répondre dans ManyReach</summary>
+            <summary>✍ Répondre dans ManyReach (email orphelin)</summary>
             <form method="POST" action="/{keyparam}" onsubmit="var b=this.querySelector('button');b.disabled=true;b.innerHTML='⏳ Envoi...';return true;">
               <input type="hidden" name="action" value="reply_manyreach">
               <input type="hidden" name="message_id" value="{html.escape(msgid)}">
