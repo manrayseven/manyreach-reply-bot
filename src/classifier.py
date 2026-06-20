@@ -203,6 +203,11 @@ class Classifier:
         msg = self.client.messages.create(
             model=self.model,
             max_tokens=500,
+            # temperature=0 : classification DÉTERMINISTE. Sans ça (défaut 1.0), un
+            # même reply pouvait être classé différemment d'un run à l'autre sur les
+            # cas-limites → alertes parasites (ex. jlevasseur "nous avons une bonne
+            # agence marketing" tantôt déjà-équipé/auto, tantôt tiède/alerte).
+            temperature=0,
             system=[
                 {
                     "type": "text",
