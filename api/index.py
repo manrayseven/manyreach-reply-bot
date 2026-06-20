@@ -426,31 +426,38 @@ def _render() -> str:
         # Mailbox expéditeur d'origine (le compte ManyReach qui a contacté ce
         # prospect) → c'est AVEC LUI que la conversation doit se poursuivre.
         sender_mailbox = str(a.get("_sender_mailbox") or "").strip()
+        # message_id du reply → on peut répondre via l'API (champ in-app).
+        msgid = str(a.get("message_id") or "").strip()
+        # Bouton PRINCIPAL "✍ Répondre" : OUVRE le champ de réponse in-app (pas un
+        # mailto mort). Le champ envoie via l'API ManyReach. En secondaire :
+        #  - "↗ ManyReach" si le reply est dans une campagne (ouvre l'inbox réel) ;
+        #  - "✉ Email" mailto (utile surtout pour copier l'orpheline en CC, ou si
+        #    pas de message_id pour répondre via l'API).
+        _open_box = (
+            "var d=this.closest('.alert-row').querySelector('.alert-reply');"
+            "if(d){d.open=true;var t=d.querySelector('textarea');if(t)t.focus();}"
+            "return false;"
+        )
+        _btns = []
+        if msgid:
+            _btns.append(
+                f'<a class="alert-mr" href="#" onclick="{_open_box}" '
+                f'title="Écrire une réponse envoyée dans le fil ManyReach">✍ Répondre</a>'
+            )
         if mr_camp:
-            mr_link_html = (
-                f'<a class="alert-mr" href="{mr_url}" target="_blank" rel="noopener" '
-                f'title="Ouvrir la conversation dans ManyReach (campagne {html.escape(str(mr_camp))})">↗ ManyReach</a>'
+            _btns.append(
+                f'<a class="alert-mr alert-mr-sec" href="{mr_url}" target="_blank" rel="noopener" '
+                f'title="Ouvrir la conversation dans l\'inbox ManyReach (campagne {html.escape(str(mr_camp))})">↗ ManyReach</a>'
             )
-        else:
-            # ORPHELIN : conversation non rattachée à une campagne côté ManyReach →
-            # pas de deep-link inbox possible. On répond par email à l'adresse
-            # initiale (en copiant l'orpheline). Le titre rappelle la campagne
-            # d'origine pour que Rudy puisse la retrouver à la main au besoin.
-            _hint = "Reply hors campagne (non deep-linkable dans l'inbox ManyReach) : réécris à l'email initial"
+        if (orphan or not mr_camp or not msgid):
+            _emhint = "Ouvrir le client mail vers l'email initial"
             if orphan:
-                _hint += f" en copiant {html.escape(orphan)}"
-            if origin_camp:
-                _hint += f". Campagne d'origine : {html.escape(origin_camp)}"
-            if sender_mailbox:
-                _hint += f" (compte {html.escape(sender_mailbox)})"
-            # Libellé "Email" (et pas "Répondre") : la réponse principale se fait via
-            # le champ "✍ Répondre dans ManyReach" ci-dessous. Ce bouton-ci ouvre le
-            # client mail (utile surtout pour copier l'orpheline en CC) ; il peut ne
-            # rien faire si aucun client mail par défaut n'est configuré.
-            mr_link_html = (
-                f'<a class="alert-mr" href="{html.escape(_mailto)}" title="{_hint}.">'
-                f'✉ Email{" (+ CC orphelin)" if orphan else ""}</a>'
+                _emhint += f" (copie {html.escape(orphan)} en CC)"
+            _btns.append(
+                f'<a class="alert-mr alert-mr-sec" href="{html.escape(_mailto)}" '
+                f'title="{_emhint}. Peut ne rien faire sans client mail par défaut.">✉ Email</a>'
             )
+        mr_link_html = "".join(_btns)
         frm = html.escape(prospect_email)
         orphan_chip = (
             f'<span class="alert-orphan" title="A répondu depuis cette adresse — '
@@ -612,6 +619,8 @@ def _render() -> str:
  .alert-msg{{color:#5c574c;font-size:13px;line-height:1.55}}
  .alert-mr{{font-size:11px;font-weight:700;color:#3b6fd4;background:#edf2fc;padding:3px 9px;border-radius:6px;text-decoration:none;border:1px solid #cfdcf6;transition:all .12s}}
  .alert-mr:hover{{background:#3b6fd4;color:#fff;text-decoration:none;border-color:#3b6fd4}}
+ .alert-mr-sec{{color:#8c8678;background:#f3f0e9;border-color:#e7e1d5}}
+ .alert-mr-sec:hover{{background:#8c8678;color:#fff;border-color:#8c8678}}
  .alert-dismiss{{background:transparent;border:1px solid #d8c79a;color:#a07520;width:24px;height:24px;border-radius:50%;padding:0;font-size:13px;font-weight:700;line-height:1;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;transition:all .12s}}
  .alert-dismiss:hover{{background:#d4493f;color:#fff;border-color:#d4493f;transform:scale(1.08)}}
  .alert-explain{{font-size:12.5px;color:#6e5a2a;background:#faefd6;border:1px solid #f0e2c2;padding:12px 14px;border-radius:9px;margin-bottom:4px;line-height:1.7}}
@@ -827,6 +836,7 @@ class handler(BaseHTTPRequestHandler):
                             pass
                 except Exception as e:  # noqa: BLE001
                     log_status = f"❌ Réponse ManyReach échouée : {str(e)[:200]}"
+            _ok = log_status.startswith("✉️")
             if kvstore.kv_available():
                 # 'from' = l'email du prospect (extrait de l'alert_id "at|email")
                 _pemail = alert_id.split("|", 1)[1] if "|" in alert_id else ""
@@ -834,7 +844,9 @@ class handler(BaseHTTPRequestHandler):
                     "at": _dt.now(_tz.utc).isoformat(),
                     "from": _pemail,
                     "subject": "✍ Réponse manuelle (dashboard)",
-                    "intent": "manual_reply",
+                    # succès → 'manual_reply' (apparaît en envoi) ; échec → 'error'
+                    # pour être bien visible dans la carte Erreurs du dashboard.
+                    "intent": "manual_reply" if _ok else "error",
                     "status": log_status,
                     "reply": "",
                     "response": body_txt[:1000],
