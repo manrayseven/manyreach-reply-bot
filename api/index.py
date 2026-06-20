@@ -231,7 +231,19 @@ def _render() -> str:
             # cas a été géré depuis (réponse envoyée / silencieux / refus).
             _em = (a.get("from") or "").lower().strip()
             superseded = bool(_em and _resolved_at.get(_em, "") > a.get("at", ""))
-            if alert_id not in dismissed and not superseded:
+            # FILTRE REFUS : alerte PÉRIMÉE d'avant les fixes classifier (ex. coachs
+            # "non + signature promo" mal classés interested/ask_more_info avant
+            # qu'on apprenne au classifier à ignorer les signatures). Si le TEXTE du
+            # reply est un refus net, ce n'est pas un vrai lead → on cache. Cohérent
+            # avec la politique soft-no (refus = réponse auto, jamais d'alerte).
+            _rlow = str(a.get("reply", "")).lower()
+            _is_refusal = any(ph in _rlow for ph in (
+                "ne suis pas intéress", "ne sommes pas intéress", "ne suis pas interess",
+                "ne m'intéresse pas", "ne nous intéresse pas", "ne m interesse pas",
+                "non merci", "rien besoin", "pas de besoin", "aucun besoin",
+                "pas intéressé par votre", "pas intéressée par votre", "pas interesse par votre",
+            ))
+            if alert_id not in dismissed and not superseded and not _is_refusal:
                 alerts.append(a)
         elif "envoyé" in status:
             sent_list.append(a)
@@ -264,7 +276,7 @@ def _render() -> str:
                 if not em:
                     _kept.append(a)
                     continue
-                ck = "mrenrich:" + em
+                ck = "mrenrich:v2:" + em  # v2 = blob inclut reply_msgid (réponse API)
                 data = None
                 _raw = kvstore.cache_get(ck)
                 if _raw:
@@ -431,9 +443,13 @@ def _render() -> str:
                 _hint += f". Campagne d'origine : {html.escape(origin_camp)}"
             if sender_mailbox:
                 _hint += f" (compte {html.escape(sender_mailbox)})"
+            # Libellé "Email" (et pas "Répondre") : la réponse principale se fait via
+            # le champ "✍ Répondre dans ManyReach" ci-dessous. Ce bouton-ci ouvre le
+            # client mail (utile surtout pour copier l'orpheline en CC) ; il peut ne
+            # rien faire si aucun client mail par défaut n'est configuré.
             mr_link_html = (
                 f'<a class="alert-mr" href="{html.escape(_mailto)}" title="{_hint}.">'
-                f'✉ Répondre{" + CC orphelin" if orphan else ""}</a>'
+                f'✉ Email{" (+ CC orphelin)" if orphan else ""}</a>'
             )
         frm = html.escape(prospect_email)
         orphan_chip = (
