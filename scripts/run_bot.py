@@ -51,10 +51,6 @@ from src.alerts import send_meeting_alert  # noqa: E402
 from src.classifier import Classifier, _strip_html, _trim_quoted_history  # noqa: E402
 from src.drafter import Drafter  # noqa: E402
 from src.manyreach import ManyReachClient, is_bounce_or_auto, is_mailinblack  # noqa: E402
-from src.slot_holds import SlotHoldStore  # noqa: E402
-
-# Intents for which the bot may propose concrete calendar slots
-SLOT_INTENTS = {"interested_warm", "interested_lukewarm", "ask_more_info"}
 
 
 def load_settings(path: Path) -> dict:
@@ -287,204 +283,6 @@ def main() -> int:
         # Deterministic per-message jitter so the threshold is stable across runs
         extra = (abs(hash(reply.message_id)) % (jitter + 1)) if jitter > 0 else 0
         return delta >= (min_age + extra) * 60
-
-    # --- Google Calendar (optional) ---
-    cal_cfg = settings.get("calendar", {}) or {}
-    calendar_client = None
-    hold_store = None
-    if cal_cfg.get("enabled"):
-        try:
-            from src.calendar_slots import CalendarClient
-
-            calendar_client = CalendarClient()
-            hold_store = SlotHoldStore(hold_days=int(cal_cfg.get("hold_days", 5)))
-            print(f"Calendar: connecté ({calendar_client.whoami()})")
-        except Exception as e:
-            print(f"Calendar: désactivé (erreur d'init : {e})")
-            calendar_client = None
-
-    def compute_slots(prospect_email: str):
-        """Return (list[Slot], list[str]) of free slots excluding others' holds."""
-        if not calendar_client or not hold_store:
-            return [], None
-        try:
-            held = hold_store.held_starts_for_others(prospect_email)
-            slot_objs = calendar_client.find_free_slots(
-                working_hours=cal_cfg.get("working_hours", {}),
-                tz_name=cal_cfg.get("timezone", "Europe/Paris"),
-                duration_min=int(cal_cfg.get("meeting_duration_minutes", 30)),
-                buffer_min=int(cal_cfg.get("buffer_minutes", 15)),
-                days_ahead=int(cal_cfg.get("days_ahead", 5)),
-                max_slots=3,
-                exclude_starts=held,
-                min_lead_hours=int(cal_cfg.get("min_lead_hours", 3)),
-                late_cutoff_hour=int(cal_cfg.get("late_cutoff_hour", 16)),
-                next_day_min_time_if_late=cal_cfg.get("next_day_min_time_if_late", "10:30"),
-            )
-            return slot_objs, [s.fr() for s in slot_objs]
-        except Exception as e:
-            print(f"  !! find_free_slots a échoué : {e}")
-            return [], None
-
-    def _clean_name(prospect) -> str | None:
-        """first_name du prospect, sauf s'il est corrompu (timestamps)."""
-        if not prospect or not prospect.first_name:
-            return None
-        fn = str(prospect.first_name)
-        # données corrompues côté ManyReach : firstName contient parfois un timestamp
-        if fn[:4].isdigit() or "-" in fn[:7] or ":" in fn:
-            return None
-        return fn
-
-    def create_meeting_event(classification, reply, prospect, dry_run: bool) -> str | None:
-        """Crée l'event Google Agenda UNIQUEMENT si une date+heure explicite a été
-        extraite. Sinon (date inventée/absente), on NE crée RIEN et on laisse Rudy
-        caler à la main via l'alerte — pour ne jamais poser un faux RDV.
-        """
-        from datetime import datetime as _dt, timedelta as _td, timezone as _tz
-
-        from src.calendar_slots import build_meeting_description, build_meeting_title
-
-        iso = classification.confirmed_datetime
-        # Nom lisible : nom extrait du reply > company > prénom (non corrompu) > email
-        who = (
-            classification.prospect_name
-            or (prospect.company if prospect and prospect.company else None)
-            or _clean_name(prospect)
-            or reply.from_email
-        )
-        offer = classification.offer_label or "échange"
-
-        # GARDE-FOU : pas de date explicite → on ne crée pas d'event (évite les faux RDV)
-        if not iso:
-            return (
-                "[RDV] Pas de date/heure explicite dans le message → AUCUN event créé "
-                f"(évite un faux RDV). À caler à la main. Message : {classification.key_phrase!r}"
-            )
-        if not calendar_client:
-            return "[RDV] Calendar non connecté → à créer à la main"
-        try:
-            start = _dt.fromisoformat(iso)
-            if start.tzinfo is None:
-                start = start.replace(tzinfo=_tz.utc)
-        except ValueError:
-            return f"[RDV] date non parsable ({iso!r}) → à créer à la main"
-
-        # GARDE-FOU : la date doit être dans le futur proche (pas passée, pas absurde)
-        now = _dt.now(_tz.utc)
-        if start < now - _td(hours=1):
-            return f"[RDV] date extraite dans le passé ({start.isoformat()}) → ignorée, à caler à la main"
-        if start > now + _td(days=60):
-            return f"[RDV] date extraite trop lointaine ({start.isoformat()}) → ignorée, à caler à la main"
-
-        hhmm = start.strftime("%H.%M")
-        title = f"{hhmm} {build_meeting_title(offer, who)}"
-        description = build_meeting_description(
-            email=reply.from_email,
-            phone=classification.contact_phone,
-            zoom_link=classification.zoom_link,
-            website=(prospect.website if prospect else None),
-            company=(prospect.company if prospect else None),
-            notes=f"RDV pris automatiquement par le bot. Raison : {offer}. Message du prospect : {classification.key_phrase}",
-        )
-        if dry_run:
-            return f"[DRY-RUN] créerait l'event '{title}' le {start.isoformat()}"
-        # IDEMPOTENCE : ne JAMAIS recréer un event déjà posé pour ce prospect à
-        # cette date (le même reply peut être re-traité à plusieurs runs du cron
-        # tant que l'accusé de réception n'est pas encore visible dans le thread).
-        exists = calendar_client.event_exists_for(
-            email=reply.from_email,
-            start=start,
-            tz_name=cal_cfg.get("timezone", "Europe/Paris"),
-        )
-        if exists is True:
-            return f"[RDV] event déjà existant pour {reply.from_email} le {start.isoformat()} — pas de doublon"
-        # Invite Rudy en attendee → il aura l'event dans sa boîte
-        # contact@webmarketing-conseil.fr (notif + apparition dans son agenda perso).
-        notify_email = os.environ.get("NOTIFY_EMAIL", "contact@webmarketing-conseil.fr")
-        try:
-            calendar_client.create_event(
-                title=title,
-                start=start,
-                duration_min=int(cal_cfg.get("meeting_duration_minutes", 30)),
-                description=description,
-                tz_name=cal_cfg.get("timezone", "Europe/Paris"),
-                attendee_emails=[notify_email] if notify_email else None,
-            )
-            return f"[EXEC] event créé : '{title}' le {start.isoformat()} (Rudy invité : {notify_email})"
-        except Exception as e:
-            return f"[RDV] échec création event ({e}) — à créer à la main"
-
-    def _schedule_recontact_event(
-        *, calendar_client, reply, prospect, classification, cal_cfg
-    ) -> str | None:
-        """Crée un event Google Agenda "🔁 Relance" à la date demandée par le
-        prospect (objection_timing). Idempotent : si un event existe déjà pour
-        cette adresse dans les 6 mois à venir, on n'en crée pas un nouveau.
-        """
-        from datetime import datetime as _dt, timedelta as _td, timezone as _tz
-
-        # Date cible : recontact_datetime fourni par le classifier, sinon J+90.
-        iso = classification.recontact_datetime
-        try:
-            start = _dt.fromisoformat(iso) if iso else (_dt.now(_tz.utc) + _td(days=90))
-            if start.tzinfo is None:
-                start = start.replace(tzinfo=_tz.utc)
-        except ValueError:
-            start = _dt.now(_tz.utc) + _td(days=90)
-
-        # On cale à 10h Paris pour visibilité dans l'agenda
-        try:
-            from zoneinfo import ZoneInfo
-            paris = ZoneInfo(cal_cfg.get("timezone", "Europe/Paris"))
-            start = start.astimezone(paris).replace(hour=10, minute=0, second=0, microsecond=0)
-        except Exception:
-            pass
-
-        # Idempotence : si un event "relance" existe déjà pour ce prospect dans une fenêtre
-        # large, on n'en crée pas un autre.
-        exists = calendar_client.event_exists_for(
-            email=reply.from_email,
-            start=start,
-            tz_name=cal_cfg.get("timezone", "Europe/Paris"),
-            window_hours=24 * 60,  # 60 jours
-        )
-        if exists is True:
-            return f"[RELANCE] event de relance déjà présent pour {reply.from_email} → pas de doublon"
-
-        who = (
-            classification.prospect_name
-            or (prospect.company if prospect and prospect.company else None)
-            or reply.from_email
-        )
-        title = f"🔁 Relance : {who}"
-        notes = (
-            f"Raison du report (extrait du reply) : {classification.key_phrase}\n\n"
-            f"Le bot peut être branché pour envoyer la relance automatiquement "
-            f"(cf. moteur run_bumps) ; sinon, relance manuelle à cette date."
-        )
-        from src.calendar_slots import build_meeting_description
-        description = build_meeting_description(
-            email=reply.from_email,
-            phone=classification.contact_phone,
-            zoom_link=classification.zoom_link,
-            website=(prospect.website if prospect else None),
-            company=(prospect.company if prospect else None),
-            notes=notes,
-        )
-        notify_email = os.environ.get("NOTIFY_EMAIL", "contact@webmarketing-conseil.fr")
-        try:
-            calendar_client.create_event(
-                title=title,
-                start=start,
-                duration_min=15,
-                description=description,
-                tz_name=cal_cfg.get("timezone", "Europe/Paris"),
-                attendee_emails=[notify_email] if notify_email else None,
-            )
-            return f"[RELANCE] event de relance posé : '{title}' le {start.date().isoformat()}"
-        except Exception as e:
-            return f"[RELANCE] échec création event relance ({e})"
 
     processed_count = 0          # total iterations (pour stats)
     heavy_count = 0              # iterations "lourdes" (draft+send) — c'est ELLES qui consomment le quota
@@ -1121,42 +919,19 @@ def main() -> int:
                     processed_count += 1
                     continue
 
-                # Compute concrete calendar slots for meeting-leading intents
-                slot_objs, slot_strs = [], None
-                company_context = ""
-                if classification.intent in SLOT_INTENTS:
-                    slot_objs, slot_strs = compute_slots(reply.from_email)
-                    if slot_strs:
-                        print(f"  SLOTS proposables : {', '.join(slot_strs)}")
-                    # Personnalisation : on scanne le SITE du prospect (uniquement pour
-                    # les prospects chauds → coût tokens minime, et seulement si site connu).
-                    if prospect and prospect.website:
-                        try:
-                            from src.web_context import fetch_company_context
-                            company_context = fetch_company_context(prospect.website)
-                            if company_context:
-                                print(f"  CONTEXTE site récupéré ({len(company_context)} car.)")
-                        except Exception as e:
-                            print(f"  !! fetch site échoué : {e}")
-
-                # Draft
+                # Draft. (Plus de créneaux Calendar ni de contexte site : les
+                # intents qui menaient à une proposition de RDV sont désormais
+                # remontés en alerte — Rudy gère les RDV à la main.)
                 draft = drafter.draft(
                     reply=reply,
                     classification=classification,
                     original_outreach=original_outreach,
                     prospect=prospect,
                     style_guide=style_guide,
-                    proposed_slots=slot_strs,
+                    proposed_slots=None,
                     silent_on_not_interested=silent_on_not_interested,
-                    company_context=company_context,
+                    company_context="",
                 )
-
-                # If the drafter actually used the slots, reserve them (soft-hold)
-                if draft.slots_used and slot_objs and hold_store and not dry_run:
-                    hold_store.record(reply.from_email, [s.start for s in slot_objs])
-                    print(f"  SLOTS réservés pour {reply.from_email} (soft-hold)")
-                elif draft.slots_used and slot_objs and dry_run:
-                    print(f"  [DRY-RUN] aurait réservé {len(slot_objs)} créneaux pour {reply.from_email}")
 
                 if draft.skip_send:
                     print("  DRAFT  [skip_send=true]  no reply will be sent")
@@ -1173,7 +948,7 @@ def main() -> int:
                     classification=classification,
                     draft=draft,
                     min_autosend_confidence=min_conf,
-                    has_calendar_slots=bool(slot_strs),
+                    has_calendar_slots=False,
                 )
 
                 # Controlled test: force-send for the explicitly targeted email
@@ -1213,62 +988,9 @@ def main() -> int:
                 if will_really_send:
                     sends_done += 1
 
-                # Meeting booked → create calendar event + release holds + alert Rudy
-                if classification.intent == "meeting_confirmed":
-                    event_line = create_meeting_event(
-                        classification=classification,
-                        reply=reply,
-                        prospect=prospect,
-                        dry_run=dry_run,
-                    )
-                    if event_line:
-                        print(f"    {event_line}")
-                    # Release any soft-holds for this prospect (meeting is set)
-                    if hold_store and not dry_run:
-                        hold_store.clear(reply.from_email)
-                    # Alerte email à Rudy. On NE renvoie PAS d'alerte si l'event
-                    # était un doublon déjà présent (sinon spam à chaque run).
-                    is_duplicate = bool(event_line) and "déjà existant" in event_line
-                    in_calendar = bool(event_line) and "event créé" in event_line
-                    if not is_duplicate:
-                        # firstName ManyReach parfois corrompu → on préfère le nom
-                        # extrait du reply, sinon la société.
-                        alert_name = (
-                            classification.prospect_name
-                            or (prospect.company if prospect and prospect.company else None)
-                        )
-                        alert_line = send_meeting_alert(
-                            prospect_email=reply.from_email,
-                            prospect_name=alert_name,
-                            company=(prospect.company if prospect else None),
-                            reply_snippet=_short(classification.key_phrase, 200),
-                            proposed_when=(classification.confirmed_datetime or classification.key_phrase),
-                            campaign_id=reply.campaign_id,
-                            dry_run=dry_run,
-                            phone=classification.contact_phone,
-                            in_calendar=in_calendar,
-                        )
-                        print(f"    {alert_line}")
-
-                # objection_timing → on pose un event Google Agenda "🔁 Relance"
-                # à la date demandée par le prospect (ou J+90 par défaut). Comme
-                # ça même si le bumps engine n'est pas câblé, Rudy voit le rappel
-                # dans son agenda. Le bumps engine pourra ensuite envoyer la
-                # relance automatique.
-                if (
-                    classification.intent == "objection_timing"
-                    and calendar_client is not None
-                    and not dry_run
-                ):
-                    relance_line = _schedule_recontact_event(
-                        calendar_client=calendar_client,
-                        reply=reply,
-                        prospect=prospect,
-                        classification=classification,
-                        cal_cfg=cal_cfg,
-                    )
-                    if relance_line:
-                        print(f"    {relance_line}")
+                # NB : meeting_confirmed et objection_timing sont désormais traités
+                # en amont par la branche ALERT_ONLY (Rudy gère RDV/relances à la
+                # main). Plus de création d'event Google Agenda ici.
 
                 log_entry["reply_clean"] = _trim_quoted_history(_strip_html(reply.body))
                 log_entry["original_clean"] = (
