@@ -550,9 +550,6 @@ def _render() -> str:
         sent_html = '<div class="empty-section">Aucun envoi récent.</div>'
     errors_html = "".join(_error_row(a) for a in error_list[:5])
 
-    # KPIs simples
-    rate_pct = f"{int(stats['meeting_rate'] * 100)}%" if stats["engaged_total"] else "—"
-
     # Bloc stats compact
     stats_html = f"""
     <div class="kpi-grid">
