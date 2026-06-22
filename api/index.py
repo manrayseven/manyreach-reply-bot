@@ -268,78 +268,94 @@ def _render() -> str:
         "bouncehard", "bounce", "donotcontact", "blacklisted",
     }
     if alerts:
-        _mr_client = None
-        _kept = []
-        try:
-            for a in alerts:
-                em = (a.get("prospect_email") or a.get("from") or "").lower().strip()
-                if not em:
-                    _kept.append(a)
-                    continue
-                ck = "mrenrich:v2:" + em  # v2 = blob inclut reply_msgid (réponse API)
-                data = None
-                _raw = kvstore.cache_get(ck)
-                if _raw:
-                    try:
-                        data = json.loads(_raw)
-                    except (json.JSONDecodeError, TypeError):
-                        data = None
-                if data is None:
-                    data = {}
-                    try:
-                        if _mr_client is None:
-                            from src.manyreach import ManyReachClient
-                            _mr_client = ManyReachClient(timeout=8.0)
-                        _p = _mr_client.find_prospect_by_email(em)
-                        if _p:
-                            data["status"] = _p.sending_status or ""
-                            data["prospect_email"] = _p.email or em
-                            # Campagne d'origine + mailbox expéditeur + message_id du
-                            # dernier reply (pour répondre via l'API) : UNIQUEMENT pour
-                            # les orphelins (hors campagne). Les classiques n'ont pas
-                            # besoin du champ in-app → on évite le get_thread.
-                            if not (a.get("campaign_id") or a.get("campaignId")):
-                                _thr = sorted(
-                                    _mr_client.get_prospect_thread(_p.prospect_id),
-                                    key=lambda m: m.created_at,
-                                )
-                                for _m in _thr:
-                                    if _m.type in ("Sent", "SentManual") and _m.campaign_id:
-                                        data["campaign"] = str(_m.campaign_id)
-                                        data["sender"] = _m.from_email or ""
-                                        break
-                                # message_id du DERNIER reply du prospect → cible de
-                                # la réponse API (fil correct).
-                                for _m in reversed(_thr):
-                                    if _m.type == "Reply":
-                                        data["reply_msgid"] = _m.message_id
-                                        break
-                        kvstore.cache_set(ck, json.dumps(data), 1800)
-                    except Exception:  # noqa: BLE001
-                        data = None  # fail-open, ne pas cacher l'échec
-                if data:
-                    if str(data.get("status", "")).lower().strip() in _TERMINAL_MR:
-                        continue  # prospect déjà terminal → masque l'alerte
-                    # ⚠️ On N'injecte PAS data["campaign"] dans campaign_id : pour un
-                    # reply orphelin, la conversation n'est dans aucune campagne côté
-                    # ManyReach → une URL inbox scopée campagne reste VIDE (confirmé
-                    # par Rudy). On garde la campagne d'origine + le mailbox seulement
-                    # comme INFO (badge), et le lien reste un mailto pour les orphelins.
-                    if data.get("prospect_email") and not a.get("prospect_email"):
-                        a["prospect_email"] = data["prospect_email"]
-                    if data.get("campaign") and not a.get("origin_campaign_id"):
-                        a["origin_campaign_id"] = data["campaign"]
-                    if data.get("sender"):
-                        a["_sender_mailbox"] = data["sender"]
-                    if data.get("reply_msgid") and not a.get("message_id"):
-                        a["message_id"] = data["reply_msgid"]
-                _kept.append(a)
-        finally:
-            if _mr_client is not None:
+        def _ck(em: str) -> str:
+            return "mrenrich:v2:" + em  # v2 = blob inclut reply_msgid (réponse API)
+
+        # 1) Charge le cache pour chaque email ; collecte les emails à interroger
+        #    en live (cache froid). Dédup par email (plusieurs alertes même prospect).
+        enrich: dict[str, dict | None] = {}
+        to_fetch: dict[str, bool] = {}  # email -> a-t-il déjà une campagne (classique)
+        for a in alerts:
+            em = (a.get("prospect_email") or a.get("from") or "").lower().strip()
+            if not em or em in enrich or em in to_fetch:
+                continue
+            _raw = kvstore.cache_get(_ck(em))
+            if _raw:
                 try:
-                    _mr_client.close()
+                    enrich[em] = json.loads(_raw)
+                except (json.JSONDecodeError, TypeError):
+                    enrich[em] = None
+            else:
+                to_fetch[em] = bool(a.get("campaign_id") or a.get("campaignId"))
+
+        # 2) Interroge ManyReach EN PARALLÈLE (httpx.Client est thread-safe). Évite
+        #    le N×latence séquentiel sur cache froid. Fail-open par email.
+        if to_fetch:
+            from concurrent.futures import ThreadPoolExecutor
+            from src.manyreach import ManyReachClient
+
+            _client = ManyReachClient(timeout=8.0)
+
+            def _fetch(item):
+                em, has_camp = item
+                data: dict = {}
+                try:
+                    p = _client.find_prospect_by_email(em)
+                    if p:
+                        data["status"] = p.sending_status or ""
+                        data["prospect_email"] = p.email or em
+                        # Campagne d'origine + mailbox + message_id du dernier reply :
+                        # UNIQUEMENT pour les orphelins (hors campagne). Classiques →
+                        # pas besoin du champ in-app → on évite le get_thread.
+                        if not has_camp:
+                            thr = sorted(
+                                _client.get_prospect_thread(p.prospect_id),
+                                key=lambda m: m.created_at,
+                            )
+                            for m in thr:
+                                if m.type in ("Sent", "SentManual") and m.campaign_id:
+                                    data["campaign"] = str(m.campaign_id)
+                                    data["sender"] = m.from_email or ""
+                                    break
+                            for m in reversed(thr):
+                                if m.type == "Reply":
+                                    data["reply_msgid"] = m.message_id
+                                    break
+                    kvstore.cache_set(_ck(em), json.dumps(data), 1800)
+                    return em, data
+                except Exception:  # noqa: BLE001
+                    return em, None  # fail-open, ne pas cacher l'échec
+
+            try:
+                with ThreadPoolExecutor(max_workers=8) as ex:
+                    for em, data in ex.map(_fetch, list(to_fetch.items())):
+                        enrich[em] = data
+            finally:
+                try:
+                    _client.close()
                 except Exception:  # noqa: BLE001
                     pass
+
+        # 3) Applique : masque les prospects TERMINAUX, injecte les champs d'enrichi.
+        #    ⚠️ On N'injecte PAS data["campaign"] dans campaign_id : un reply orphelin
+        #    n'est dans aucune campagne côté ManyReach → URL inbox scopée campagne
+        #    vide. La campagne d'origine reste une INFO (badge), le lien reste mailto.
+        _kept = []
+        for a in alerts:
+            em = (a.get("prospect_email") or a.get("from") or "").lower().strip()
+            data = enrich.get(em)
+            if data:
+                if str(data.get("status", "")).lower().strip() in _TERMINAL_MR:
+                    continue  # prospect déjà terminal → masque l'alerte
+                if data.get("prospect_email") and not a.get("prospect_email"):
+                    a["prospect_email"] = data["prospect_email"]
+                if data.get("campaign") and not a.get("origin_campaign_id"):
+                    a["origin_campaign_id"] = data["campaign"]
+                if data.get("sender"):
+                    a["_sender_mailbox"] = data["sender"]
+                if data.get("reply_msgid") and not a.get("message_id"):
+                    a["message_id"] = data["reply_msgid"]
+            _kept.append(a)
         alerts = _kept
 
     keyq = os.environ.get("DASHBOARD_KEY")
