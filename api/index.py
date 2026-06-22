@@ -249,8 +249,10 @@ def _render() -> str:
                 alerts.append(a)
         elif "envoyé" in status:
             sent_list.append(a)
-        elif intent in ("test_resend", "run_now", "retry_alerts", "diagnose"):
-            # diagnostics manuels → ne pas polluer les compteurs
+        elif intent in ("run_now", "diagnose", "manual_reply",
+                         "test_resend", "retry_alerts"):
+            # actions manuelles / diagnostics (+ vieux intents Resend obsolètes
+            # encore présents dans le log) → ne pas polluer les compteurs
             pass
         elif intent != "bounce_or_auto":
             silent_list.append(a)

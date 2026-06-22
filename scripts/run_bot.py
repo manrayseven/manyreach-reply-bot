@@ -818,9 +818,9 @@ def main() -> int:
                             execute_plan(alert_plan, reply, mr, dry_run=dry_run, tag_cache=tag_cache)
                         except Exception as _e:  # noqa: BLE001
                             print(f"  !! status update fail: {_e}")
-                    # PAS d'envoi de mail Resend automatique — Rudy gère tout
-                    # depuis le dashboard. On garde l'enregistrement KV (avec
-                    # prospect_id pour le lien ManyReach) + une trace locale.
+                    # Pas d'envoi automatique — Rudy gère tout depuis le dashboard.
+                    # On garde l'enregistrement KV (avec prospect_id pour le lien
+                    # ManyReach) + une trace locale.
                     alert_line = f"🔔 ALERTE détectée — visible dashboard ({classification.intent})"
                     print(f"    {alert_line}")
                     # Log KV pour visibilité dans le dashboard
