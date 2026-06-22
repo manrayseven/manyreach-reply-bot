@@ -60,69 +60,71 @@ def _time_fr(iso: str) -> str:
         return iso[:16].replace("T", " ")
 
 
-def _compute_stats(actions: list) -> dict:
-    """Aggrège l'historique du KV log pour donner une vue de perf simple.
+# Intents qui correspondent à une VRAIE réponse de prospect (≠ bounce/auto, ≠
+# entrées système : erreurs, diagnostics, run manuel, orphelins, accusé-réception).
+_NEG_INTENTS = {
+    "not_interested_polite", "objection_already_have_solution",
+    "objection_price", "unsubscribe", "hostile",
+}
+_POS_INTENTS = {
+    "interested_warm", "interested_lukewarm", "ask_more_info", "meeting_confirmed",
+}
+# objection_timing ("plus tard") et wrong_person_redirect = ni positif ni négatif,
+# mais comptent comme une réponse reçue.
+_REAL_REPLY_INTENTS = _NEG_INTENTS | _POS_INTENTS | {"objection_timing", "wrong_person_redirect"}
 
-    Logique :
-    - On groupe par prospect (email).
-    - Chaque prospect a un "état effectif" = meeting_confirmed s'il a un
-      meeting_confirmed dans son historique, sinon son DERNIER intent.
-    - On compte : total prospects, RDV pris, intéressés en cours, conversion.
-    - On compte aussi : envoyés vs gardés vs en attente (vue activité brute).
+
+def _perf_30d(actions: list, now=None) -> dict:
+    """Suivi de perf sur 30 jours, dédupliqué PAR PROSPECT (email).
+
+    - réponses reçues = nb de prospects uniques ayant répondu (hors bounce/auto).
+    - négatives / positives = selon l'intent EFFECTIF du prospect (meeting_confirmed
+      s'il existe dans son historique, sinon son dernier intent réel).
+    - RDV bookés = prospects avec un meeting_confirmed.
+    NB : borné par le log KV (cap MAX_LOG_ENTRIES) — si le volume dépasse ce cap
+    sur 30 j, les plus anciennes entrées ne sont plus comptées.
     """
+    from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+
+    now = now or _dt.now(_tz.utc)
+    cutoff = now - _td(days=30)
+
     by_email: dict[str, list] = {}
     for a in actions:
+        intent = a.get("intent", "")
+        if intent not in _REAL_REPLY_INTENTS:
+            continue
         email = (a.get("from") or "").lower().strip()
-        if email:
-            by_email.setdefault(email, []).append((
-                a.get("at", ""),
-                a.get("intent", ""),
-                a.get("status", ""),
-            ))
+        if not email:
+            continue
+        at = a.get("at", "")
+        try:
+            t = _dt.fromisoformat(at)
+            if t.tzinfo is None:
+                t = t.replace(tzinfo=_tz.utc)
+            if t < cutoff:
+                continue
+        except (ValueError, TypeError):
+            pass  # timestamp illisible → on garde par sécurité
+        by_email.setdefault(email, []).append((at, intent))
 
-    # Counts UNIQUE par prospect (pas par action) — sinon les crashes de cron ou
-    # le re-traitement avant les fixes gonflaient artificiellement les chiffres.
-    sent_count = held_count = pending_count = silent_count = 0
-    for email, items in by_email.items():
-        statuses = " ".join((s or "") for _, _, s in items).lower()
-        # Priorité au statut le plus "fort" pour ce prospect (envoyé > attente > gardé > silencieux)
-        if "envoyé" in statuses:
-            sent_count += 1
-        elif "attente" in statuses:
-            pending_count += 1
-        elif "gardé" in statuses or "relire" in statuses:
-            held_count += 1
-        elif "silencieux" in statuses or "silent" in statuses:
-            silent_count += 1
-
-    intent_counts: dict[str, int] = {}
-    meetings = 0
-    interested = 0
+    received = len(by_email)
+    negative = positive = meetings = 0
     for email, items in by_email.items():
         items.sort(key=lambda x: x[0], reverse=True)
         has_meeting = any(i[1] == "meeting_confirmed" for i in items)
+        effective = "meeting_confirmed" if has_meeting else items[0][1]
         if has_meeting:
-            effective = "meeting_confirmed"
             meetings += 1
-        else:
-            effective = items[0][1] if items else ""
-        intent_counts[effective] = intent_counts.get(effective, 0) + 1
-        if effective in ("interested_warm", "interested_lukewarm", "ask_more_info"):
-            interested += 1
-
-    engaged = meetings + interested
-    rate = (meetings / engaged) if engaged else 0.0
+        if effective in _POS_INTENTS:
+            positive += 1
+        elif effective in _NEG_INTENTS:
+            negative += 1
     return {
-        "unique_prospects": len(by_email),
-        "sent_count": sent_count,
-        "held_count": held_count,
-        "pending_count": pending_count,
-        "silent_count": silent_count,
-        "intent_counts": intent_counts,
+        "received": received,
+        "negative": negative,
+        "positive": positive,
         "meetings": meetings,
-        "interested_in_pipeline": interested,
-        "engaged_total": engaged,
-        "meeting_rate": rate,
     }
 
 
@@ -163,7 +165,7 @@ def _render() -> str:
 
     actions_full = [a for a in actions_full_raw if not _is_foreign_entry(a)]
     actions = actions_full  # alertes/envois/erreurs extraits de la fenêtre complète
-    stats = _compute_stats(actions_full)
+    perf = _perf_30d(actions_full)
     ov = kvstore.get_settings_overrides()
     sending = ov.get("sending", {})
     hours = sending.get("allowed_hours", [9, 19])
@@ -290,11 +292,15 @@ def _render() -> str:
 
         # 2) Interroge ManyReach EN PARALLÈLE (httpx.Client est thread-safe). Évite
         #    le N×latence séquentiel sur cache froid. Fail-open par email.
+        _client = None
         if to_fetch:
+            try:
+                from src.manyreach import ManyReachClient
+                _client = ManyReachClient(timeout=8.0)
+            except Exception:  # noqa: BLE001
+                _client = None  # fail-open : pas d'enrichissement (ex. clé absente)
+        if _client is not None:
             from concurrent.futures import ThreadPoolExecutor
-            from src.manyreach import ManyReachClient
-
-            _client = ManyReachClient(timeout=8.0)
 
             def _fetch(item):
                 em, has_camp = item
@@ -566,13 +572,14 @@ def _render() -> str:
         sent_html = '<div class="empty-section">Aucun envoi récent.</div>'
     errors_html = "".join(_error_row(a) for a in error_list[:5])
 
-    # Bloc stats compact
+    # Bloc perf 30 jours (dédupliqué par prospect)
     stats_html = f"""
+    <div class="kpi-caption">Performance · 30 derniers jours</div>
     <div class="kpi-grid">
-      <div class="kpi"><div class="kpi-v">{len(alerts)}</div><div class="kpi-l"><span class="kdot" style="background:#c98a2b"></span>À traiter</div></div>
-      <div class="kpi"><div class="kpi-v">{len(sent_list)}</div><div class="kpi-l"><span class="kdot" style="background:#2e7d52"></span>Envoyés auto</div></div>
-      <div class="kpi"><div class="kpi-v">{stats['silent_count']}</div><div class="kpi-l"><span class="kdot" style="background:#cfcabd"></span>Silencieux</div></div>
-      <div class="kpi"><div class="kpi-v">{len(error_list)}</div><div class="kpi-l"><span class="kdot" style="background:#d4493f"></span>Erreurs</div></div>
+      <div class="kpi"><div class="kpi-v">{perf['received']}</div><div class="kpi-l"><span class="kdot" style="background:#8c8678"></span>Réponses reçues</div></div>
+      <div class="kpi"><div class="kpi-v">{perf['positive']}</div><div class="kpi-l"><span class="kdot" style="background:#2e7d52"></span>Réponses positives</div></div>
+      <div class="kpi"><div class="kpi-v">{perf['negative']}</div><div class="kpi-l"><span class="kdot" style="background:#d4493f"></span>Réponses négatives</div></div>
+      <div class="kpi"><div class="kpi-v">{perf['meetings']}</div><div class="kpi-l"><span class="kdot" style="background:#3b6fd4"></span>Rendez-vous bookés</div></div>
     </div>"""
 
     return f"""<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8">
@@ -609,6 +616,7 @@ def _render() -> str:
  .card.errors h2 .badge{{background:#d4493f}}
 
  /* KPI GRID */
+ .kpi-caption{{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#a39c8c;margin-bottom:10px}}
  .kpi-grid{{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:18px}}
  @media (max-width:640px){{.kpi-grid{{grid-template-columns:repeat(2,1fr)}}}}
  .kpi{{background:#fff;border-radius:14px;padding:22px 18px;border:1px solid #ebe6dc;box-shadow:0 1px 2px rgba(60,50,30,.03);text-align:center}}
