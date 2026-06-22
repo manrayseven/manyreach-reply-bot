@@ -47,7 +47,6 @@ from src.actions import (  # noqa: E402
     plan_actions,
     plan_mailinblack_actions,
 )
-from src.alerts import send_meeting_alert  # noqa: E402
 from src.classifier import Classifier, _strip_html, _trim_quoted_history  # noqa: E402
 from src.drafter import Drafter  # noqa: E402
 from src.manyreach import ManyReachClient, is_bounce_or_auto, is_mailinblack  # noqa: E402
@@ -726,22 +725,10 @@ def main() -> int:
                 # === RACCOURCI 0 : prospect partage SON calendrier / lien de booking ===
                 # Le bot ne peut pas booker dans le calendrier du prospect.
                 # → on N'envoie PAS de réponse (sinon on raconte n'importe quoi)
-                # → on alerte Rudy par email pour qu'il aille booker manuellement
+                # → on remonte une ALERTE au dashboard pour que Rudy aille booker
                 # → on marque traité (sinon retraitement infini)
                 if classification.prospect_offers_calendar:
-                    print("  >> Prospect partage SON calendrier → alerte Rudy, pas de réponse auto")
-                    alert_line = send_meeting_alert(
-                        prospect_email=reply.from_email,
-                        prospect_name=(classification.prospect_name or (prospect.company if prospect else None)),
-                        company=(prospect.company if prospect else None),
-                        reply_snippet=_short(_trim_quoted_history(_strip_html(reply.body)), 400),
-                        proposed_when="Le prospect partage son propre calendrier — Rudy doit booker manuellement",
-                        campaign_id=reply.campaign_id,
-                        dry_run=dry_run,
-                        phone=classification.contact_phone,
-                        in_calendar=False,
-                    )
-                    print(f"    {alert_line}")
+                    print("  >> Prospect partage SON calendrier → alerte dashboard, pas de réponse auto")
                     log_entry["intent"] = "interested_warm_calendar_shared"
                     log_entry["confidence"] = classification.confidence
                     log_entry["key_phrase"] = classification.key_phrase
