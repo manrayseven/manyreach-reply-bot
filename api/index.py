@@ -496,6 +496,26 @@ def _render() -> str:
             f'— réponds avec celui-ci">via {html.escape(sender_mailbox)}</span>'
             if sender_mailbox else ""
         )
+        # Bouton "Réponse auto" : l'IA génère une CLÔTURE POLIE (décline en douceur)
+        # et l'envoie dans le fil ManyReach, puis retire l'alerte. Pour les leads que
+        # Rudy ne veut pas traiter à la main. Confirmation avant envoi (vrai email).
+        _ai_confirm = (
+            f"Envoyer une clôture polie générée par IA à {prospect_email} ? "
+            f"Le lead sera ensuite retiré des alertes."
+        )
+        ai_close_btn = (
+            f'<form method="POST" action="/{keyparam}" style="display:inline" '
+            f'onsubmit="if(!confirm(\'{_ai_confirm}\'))return false;'
+            f'var b=this.querySelector(\'button\');b.disabled=true;b.innerHTML=\'⏳ IA…\';return true;">'
+            f'<input type="hidden" name="action" value="ai_close">'
+            f'<input type="hidden" name="prospect_id" value="{html.escape(str(a.get("prospect_id") or ""))}">'
+            f'<input type="hidden" name="email" value="{html.escape(prospect_email)}">'
+            f'<input type="hidden" name="alert_id" value="{alert_id}">'
+            f'<button type="submit" class="alert-mr alert-mr-ai" '
+            f'title="L\'IA rédige une clôture polie (décline en douceur, aucun engagement) '
+            f'et l\'envoie dans le fil ManyReach, puis retire l\'alerte">🤖 Réponse auto</button>'
+            f'</form>'
+        )
         # RÉPONSE DANS MANYREACH (via API) : UNIQUEMENT pour les orphelins (hors
         # campagne) que l'UI ManyReach n'affiche pas. Les classiques se répondent
         # via le lien "↗ ManyReach" (vraie conversation).
@@ -524,6 +544,7 @@ def _render() -> str:
             <a class="alert-email" href="{html.escape(_mailto)}">{frm}</a>
             {orphan_chip}
             {mr_link_html}
+            {ai_close_btn}
             {sender_chip}
             <span class="alert-when">{when}</span>
             <form method="POST" action="/{keyparam}" style="display:inline" onsubmit="this.querySelector('button').disabled=true;return true;">
@@ -647,6 +668,8 @@ def _render() -> str:
  .alert-mr:hover{{background:#3b6fd4;color:#fff;text-decoration:none;border-color:#3b6fd4}}
  .alert-mr-sec{{color:#8c8678;background:#f3f0e9;border-color:#e7e1d5}}
  .alert-mr-sec:hover{{background:#8c8678;color:#fff;border-color:#8c8678}}
+ .alert-mr-ai{{color:#6d4aff;background:#f0ecff;border-color:#d9cefb;cursor:pointer}}
+ .alert-mr-ai:hover{{background:#6d4aff;color:#fff;border-color:#6d4aff;opacity:1}}
  .alert-dismiss{{background:transparent;border:1px solid #d8c79a;color:#a07520;width:24px;height:24px;border-radius:50%;padding:0;font-size:13px;font-weight:700;line-height:1;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;transition:all .12s}}
  .alert-dismiss:hover{{background:#d4493f;color:#fff;border-color:#d4493f;transform:scale(1.08)}}
  .alert-explain{{font-size:12.5px;color:#6e5a2a;background:#faefd6;border:1px solid #f0e2c2;padding:12px 14px;border-radius:9px;margin-bottom:4px;line-height:1.7}}
@@ -876,6 +899,81 @@ class handler(BaseHTTPRequestHandler):
                     "status": log_status,
                     "reply": "",
                     "response": body_txt[:1000],
+                })
+        elif action == "ai_close":
+            # RÉPONSE AUTO (IA) : Rudy ne veut pas traiter ce lead à la main → l'IA
+            # génère une CLÔTURE POLIE (remercie + décline en douceur, aucun
+            # engagement) et l'envoie dans le fil ManyReach. L'alerte est masquée.
+            from datetime import datetime as _dt, timezone as _tz
+            alert_id = (form.get("alert_id") or "").strip()
+            pid = (form.get("prospect_id") or "").strip()
+            email = (form.get("email") or "").strip().lower()
+            log_status = ""
+            resp_preview = ""
+            try:
+                from src.manyreach import ManyReachClient
+                with ManyReachClient(timeout=20.0) as _mr:
+                    # Récupère prospect + thread (par prospect_id si dispo, sinon email).
+                    prospect = thread = None
+                    if pid:
+                        try:
+                            prospect = _mr.get_prospect(int(pid))
+                        except Exception:  # noqa: BLE001
+                            prospect = None
+                        thread = _mr.get_prospect_thread(int(pid)) if pid else []
+                    if thread is None:
+                        prospect = _mr.find_prospect_by_email(email) if email else None
+                        thread = _mr.get_prospect_thread(prospect.prospect_id) if prospect else []
+                    thread = sorted(thread or [], key=lambda mm: mm.created_at)
+                    replies = [mm for mm in thread if mm.type == "Reply"]
+                    sents = [mm for mm in thread if mm.type in ("Sent", "SentManual")]
+                    if not replies:
+                        log_status = "❌ Réponse auto : aucun reply trouvé pour ce prospect"
+                    else:
+                        last_reply = replies[-1]
+                        original_outreach = sents[0] if sents else None
+                        sender = original_outreach.from_email if original_outreach else None
+                        # Style guide (voix de Rudy) pour le drafter.
+                        try:
+                            style_guide = (ROOT / "training_examples.md").read_text(encoding="utf-8")
+                        except Exception:  # noqa: BLE001
+                            style_guide = ""
+                        from src.drafter import Drafter
+                        _draft = Drafter().draft_polite_close(
+                            reply=last_reply,
+                            prospect=prospect,
+                            original_outreach=original_outreach,
+                            style_guide=style_guide,
+                        )
+                        if not _draft.body_html:
+                            log_status = "❌ Réponse auto : l'IA n'a pas produit de texte"
+                        else:
+                            _mr.send_reply(
+                                message_id=last_reply.message_id,
+                                body_html=_draft.body_html,
+                                send_as_reply=True,
+                                from_email=sender,
+                            )
+                            resp_preview = _draft.body_html
+                            log_status = f"🤖 Clôture IA envoyée via ManyReach{(' (compte ' + sender + ')') if sender else ''}"
+                            if alert_id:
+                                try:
+                                    kvstore.dismiss_alert(alert_id)
+                                except Exception:  # noqa: BLE001
+                                    pass
+            except Exception as e:  # noqa: BLE001
+                log_status = f"❌ Réponse auto échouée : {str(e)[:200]}"
+            _ok = log_status.startswith("🤖")
+            if kvstore.kv_available():
+                _pemail = email or (alert_id.split("|", 1)[1] if "|" in alert_id else "")
+                kvstore.log_action({
+                    "at": _dt.now(_tz.utc).isoformat(),
+                    "from": _pemail,
+                    "subject": "🤖 Réponse auto IA (clôture)",
+                    "intent": "manual_reply" if _ok else "error",
+                    "status": log_status,
+                    "reply": "",
+                    "response": resp_preview[:1000],
                 })
         elif action == "run_now" or action == "run_email":
             # Lancement manuel synchrone du bot. Si action=run_email + champ

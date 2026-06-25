@@ -225,7 +225,10 @@ Rédige maintenant la réponse selon les règles du system prompt et du style gu
             ],
             messages=[{"role": "user", "content": user_content}],
         )
-        raw = msg.content[0].text.strip()
+        return self._parse(msg.content[0].text.strip())
+
+    def _parse(self, raw: str) -> Draft:
+        """Parse la sortie JSON du modèle (tolérant) → Draft, + nettoyage tirets."""
         if raw.startswith("```"):
             raw = re.sub(r"^```(?:json)?\s*", "", raw)
             raw = re.sub(r"\s*```\s*$", "", raw)
@@ -245,3 +248,53 @@ Rédige maintenant la réponse selon les règles du system prompt et du style gu
                 data["body_html"].replace(" — ", " - ").replace("—", "-").replace("–", "-")
             )
         return Draft.from_json(data)
+
+    def draft_polite_close(
+        self,
+        reply: Message,
+        prospect: Prospect | None = None,
+        original_outreach: Message | None = None,
+        style_guide: str = "",
+    ) -> Draft:
+        """Réponse de CLÔTURE POLIE : Rudy a décidé de NE PAS donner suite à ce lead.
+        Remercie + décline en douceur, AUCUN engagement (pas de RDV, question, relance).
+        Déclenché manuellement depuis le dashboard (bouton "réponse auto")."""
+        clean_reply = _trim_quoted_history(_strip_html(reply.body))
+        orig = ""
+        if original_outreach:
+            orig = _trim_quoted_history(_strip_html(original_outreach.body), 1500)
+        sys_prompt = (
+            "Tu rédiges, dans la VOIX de Rudy (cf. STYLE GUIDE ci-dessous), une courte "
+            "réponse de CLÔTURE POLIE à un prospect. Rudy a décidé de NE PAS donner "
+            "suite à cet échange (lead non retenu). Règles STRICTES :\n"
+            "- Remercie brièvement pour le retour / l'intérêt.\n"
+            "- Décline en douceur : on ne va pas donner suite pour le moment (sans "
+            "justification lourde, sans excuse exagérée, sans dénigrer).\n"
+            "- AUCUN rendez-vous, AUCUN créneau, AUCUNE question, AUCUNE relance, AUCUN lien.\n"
+            "- 2 à 4 phrases maximum. Ton humain, chaleureux, sobre.\n"
+            "- Termine par la signature habituelle de Rudy (déduite du style guide / "
+            "du mail initial).\n"
+            "- JAMAIS de tiret long (— ou –).\n"
+            "- Langue = celle du reply du prospect.\n"
+            'Réponds UNIQUEMENT en JSON : {"body_html": "<HTML simple, <br> pour les '
+            'sauts de ligne>", "subject": null, "skip_send": false, "notes": ""}'
+        )
+        user_content = (
+            f"### Reply du prospect\nFrom: {reply.from_email}\nSubject: {reply.subject}\n"
+            f"---\n{clean_reply}\n\n"
+            f"### Mail initial envoyé (contexte + voix/signature)\n{orig or '(non disponible)'}\n"
+        )
+        msg = self.client.messages.create(
+            model=self.simple_model,  # clôture simple → modèle éco
+            max_tokens=1200,
+            system=[
+                {"type": "text", "text": sys_prompt, "cache_control": {"type": "ephemeral"}},
+                {
+                    "type": "text",
+                    "text": "## STYLE GUIDE (voix + signature)\n" + (style_guide or "(none)"),
+                    "cache_control": {"type": "ephemeral"},
+                },
+            ],
+            messages=[{"role": "user", "content": user_content}],
+        )
+        return self._parse(msg.content[0].text.strip())
