@@ -613,10 +613,10 @@ def _render() -> str:
  body{{font-family:-apple-system,'Inter','Segoe UI',Roboto,sans-serif;background:#f7f4ee;color:#2b2823;font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}}
  a{{color:#3b6fd4;text-decoration:none}}
  a:hover{{text-decoration:underline}}
- .wrap{{max-width:960px;margin:0 auto;padding:30px 20px 70px}}
+ .wrap{{max-width:960px;margin:0 auto;padding:22px 20px 50px}}
 
  /* HEADER */
- .header{{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:12px}}
+ .header{{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:12px}}
  .header h1{{font-size:19px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:center;gap:10px}}
  .header h1 .dot{{display:inline-block;width:9px;height:9px;border-radius:50%;background:{status_color};vertical-align:middle;box-shadow:0 0 0 3px {status_color}26}}
  .status-pill{{font-size:10.5px;font-weight:700;letter-spacing:.06em;padding:4px 10px;border-radius:20px}}
@@ -628,8 +628,8 @@ def _render() -> str:
  .fresh-ko{{color:#c0392b;font-weight:600}}
 
  /* CARDS */
- .card{{background:#fff;border-radius:14px;padding:22px;margin-bottom:18px;border:1px solid #ebe6dc;box-shadow:0 1px 2px rgba(60,50,30,.03)}}
- .card h2{{font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#8c8678;margin-bottom:16px;display:flex;align-items:center;gap:9px}}
+ .card{{background:#fff;border-radius:14px;padding:16px 18px;margin-bottom:14px;border:1px solid #ebe6dc;box-shadow:0 1px 2px rgba(60,50,30,.03)}}
+ .card h2{{font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#8c8678;margin-bottom:12px;display:flex;align-items:center;gap:9px}}
  .card h2 .badge{{background:#2b2823;color:#fff;font-size:11px;min-width:20px;height:20px;padding:0 6px;border-radius:20px;font-weight:700;letter-spacing:0;display:inline-flex;align-items:center;justify-content:center}}
  .card.alerts{{background:#fdf6e9;border:1px solid #f0e2c2}}
  .card.alerts h2{{color:#a07520}}
@@ -640,31 +640,31 @@ def _render() -> str:
 
  /* KPI GRID */
  .kpi-caption{{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#a39c8c;margin-bottom:10px}}
- .kpi-grid{{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:18px}}
+ .kpi-grid{{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px}}
  @media (max-width:640px){{.kpi-grid{{grid-template-columns:repeat(2,1fr)}}}}
- .kpi{{background:#fff;border-radius:14px;padding:22px 18px;border:1px solid #ebe6dc;box-shadow:0 1px 2px rgba(60,50,30,.03);text-align:center}}
- .kpi-v{{font-family:Georgia,'Times New Roman',serif;font-size:40px;font-weight:600;color:#b3742f;line-height:1;letter-spacing:-.01em}}
- .kpi-l{{font-size:10.5px;color:#8c8678;margin-top:12px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;display:flex;align-items:center;justify-content:center;gap:6px}}
+ .kpi{{background:#fff;border-radius:12px;padding:16px 14px;border:1px solid #ebe6dc;box-shadow:0 1px 2px rgba(60,50,30,.03);text-align:center}}
+ .kpi-v{{font-family:Georgia,'Times New Roman',serif;font-size:34px;font-weight:600;color:#b3742f;line-height:1;letter-spacing:-.01em}}
+ .kpi-l{{font-size:10.5px;color:#8c8678;margin-top:9px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;display:flex;align-items:center;justify-content:center;gap:6px}}
  .kdot{{display:inline-block;width:6px;height:6px;border-radius:50%}}
 
  /* ALERTS */
- .alert-row{{background:#fff;border:1px solid #efe7d3;border-radius:11px;padding:14px 16px;margin-top:12px}}
- .alert-head{{display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap}}
- .alert-intent{{font-size:11px;font-weight:700;padding:3px 9px;border-radius:6px;white-space:nowrap}}
+ .alert-row{{background:#fff;border:1px solid #efe7d3;border-radius:10px;padding:9px 12px;margin-top:8px}}
+ .alert-head{{display:flex;align-items:center;gap:7px;margin-bottom:4px;flex-wrap:wrap}}
+ .alert-intent{{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:6px;white-space:nowrap}}
  .alert-email{{font-weight:700;color:#2b2823;font-size:13px}}
- .alert-orphan{{font-size:11px;font-weight:600;color:#a07520;background:#faefd6;border:1px solid #f0e2c2;padding:2px 7px;border-radius:6px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}}
- .alert-sender{{font-size:11px;font-weight:500;color:#8c8678;background:#f3f0e9;border:1px solid #e7e1d5;padding:2px 7px;border-radius:6px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}}
- .alert-reply{{margin-top:10px}}
- .alert-reply summary{{font-size:12px;font-weight:600;color:#3b6fd4;cursor:pointer;list-style:none;display:inline-block;padding:2px 0}}
+ .alert-orphan{{font-size:10px;font-weight:600;color:#a07520;background:#faefd6;border:1px solid #f0e2c2;padding:1px 6px;border-radius:6px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}}
+ .alert-sender{{font-size:10px;font-weight:500;color:#8c8678;background:#f3f0e9;border:1px solid #e7e1d5;padding:1px 6px;border-radius:6px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
+ .alert-reply{{margin-top:7px}}
+ .alert-reply summary{{font-size:11.5px;font-weight:600;color:#3b6fd4;cursor:pointer;list-style:none;display:inline-block;padding:1px 0}}
  .alert-reply summary::-webkit-details-marker{{display:none}}
  .alert-reply[open] summary{{margin-bottom:8px}}
  .alert-reply textarea{{width:100%;box-sizing:border-box;border:1px solid #e0d9cb;border-radius:9px;padding:10px 12px;font-size:13px;font-family:inherit;color:#2b2823;background:#fff;resize:vertical;line-height:1.5}}
  .alert-reply textarea:focus{{outline:none;border-color:#3b6fd4}}
  .alert-reply-actions{{display:flex;align-items:center;gap:12px;margin-top:8px}}
  .alert-reply-hint{{font-size:11px;color:#8c8678;margin-right:auto;line-height:1.4}}
- .alert-when{{color:#a39c8c;font-size:12px;margin-left:auto;font-variant-numeric:tabular-nums;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}}
- .alert-msg{{color:#5c574c;font-size:13px;line-height:1.55}}
- .alert-mr{{font-size:11px;font-weight:700;color:#3b6fd4;background:#edf2fc;padding:3px 9px;border-radius:6px;text-decoration:none;border:1px solid #cfdcf6;transition:all .12s}}
+ .alert-when{{color:#a39c8c;font-size:11px;margin-left:auto;font-variant-numeric:tabular-nums;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;white-space:nowrap}}
+ .alert-msg{{color:#5c574c;font-size:13px;line-height:1.5}}
+ .alert-mr{{font-size:10.5px;font-weight:700;color:#3b6fd4;background:#edf2fc;padding:2px 8px;border-radius:6px;text-decoration:none;border:1px solid #cfdcf6;transition:all .12s}}
  .alert-mr:hover{{background:#3b6fd4;color:#fff;text-decoration:none;border-color:#3b6fd4}}
  .alert-mr-sec{{color:#8c8678;background:#f3f0e9;border-color:#e7e1d5}}
  .alert-mr-sec:hover{{background:#8c8678;color:#fff;border-color:#8c8678}}
@@ -672,7 +672,7 @@ def _render() -> str:
  .alert-mr-ai:hover{{background:#6d4aff;color:#fff;border-color:#6d4aff;opacity:1}}
  .alert-dismiss{{background:transparent;border:1px solid #d8c79a;color:#a07520;width:24px;height:24px;border-radius:50%;padding:0;font-size:13px;font-weight:700;line-height:1;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;transition:all .12s}}
  .alert-dismiss:hover{{background:#d4493f;color:#fff;border-color:#d4493f;transform:scale(1.08)}}
- .alert-explain{{font-size:12.5px;color:#6e5a2a;background:#faefd6;border:1px solid #f0e2c2;padding:12px 14px;border-radius:9px;margin-bottom:4px;line-height:1.7}}
+ .alert-explain{{font-size:12px;color:#6e5a2a;background:#faefd6;border:1px solid #f0e2c2;padding:9px 12px;border-radius:9px;margin-bottom:2px;line-height:1.5}}
  .alert-explain b{{color:#4a3c14}}
  .legdot{{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:3px;vertical-align:middle}}
 
@@ -691,7 +691,7 @@ def _render() -> str:
  .action-toggle-row .toggle-help{{font-size:12px;color:#8c8678;margin-right:auto}}
 
  /* SENT FEED */
- .sent-row{{display:flex;align-items:center;gap:14px;padding:11px 0;border-bottom:1px solid #f1ece1;font-size:13px}}
+ .sent-row{{display:flex;align-items:center;gap:14px;padding:8px 0;border-bottom:1px solid #f1ece1;font-size:13px}}
  .sent-row:last-child{{border-bottom:0}}
  .sent-when{{color:#a39c8c;font-size:11.5px;font-variant-numeric:tabular-nums;min-width:90px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}}
  .sent-pill{{font-size:11px;font-weight:600;padding:3px 11px;border-radius:20px;white-space:nowrap;background:#fff}}
