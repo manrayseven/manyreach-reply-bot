@@ -912,18 +912,21 @@ class handler(BaseHTTPRequestHandler):
             resp_preview = ""
             try:
                 from src.manyreach import ManyReachClient
-                with ManyReachClient(timeout=20.0) as _mr:
-                    # Récupère prospect + thread (par prospect_id si dispo, sinon email).
-                    prospect = thread = None
+                # timeout 40s (budget Vercel = 60s) : l'envoi ManyReach délivre
+                # vraiment l'email côté serveur et peut être lent (>20s observé).
+                with ManyReachClient(timeout=40.0) as _mr:
+                    # draft_polite_close n'utilise PAS les données prospect → on ne
+                    # charge QUE le thread (par prospect_id si dispo, sinon via email).
+                    # Plus d'appel get_prospect inutile.
+                    thread = None
                     if pid:
                         try:
-                            prospect = _mr.get_prospect(int(pid))
+                            thread = _mr.get_prospect_thread(int(pid))
                         except Exception:  # noqa: BLE001
-                            prospect = None
-                        thread = _mr.get_prospect_thread(int(pid)) if pid else []
-                    if thread is None:
-                        prospect = _mr.find_prospect_by_email(email) if email else None
-                        thread = _mr.get_prospect_thread(prospect.prospect_id) if prospect else []
+                            thread = None
+                    if thread is None and email:
+                        _p = _mr.find_prospect_by_email(email)
+                        thread = _mr.get_prospect_thread(_p.prospect_id) if _p else []
                     thread = sorted(thread or [], key=lambda mm: mm.created_at)
                     replies = [mm for mm in thread if mm.type == "Reply"]
                     sents = [mm for mm in thread if mm.type in ("Sent", "SentManual")]
@@ -941,7 +944,7 @@ class handler(BaseHTTPRequestHandler):
                         from src.drafter import Drafter
                         _draft = Drafter().draft_polite_close(
                             reply=last_reply,
-                            prospect=prospect,
+                            prospect=None,
                             original_outreach=original_outreach,
                             style_guide=style_guide,
                         )
