@@ -930,10 +930,24 @@ class handler(BaseHTTPRequestHandler):
                     thread = sorted(thread or [], key=lambda mm: mm.created_at)
                     replies = [mm for mm in thread if mm.type == "Reply"]
                     sents = [mm for mm in thread if mm.type in ("Sent", "SentManual")]
+                    last_reply = replies[-1] if replies else None
+                    # ANTI-DOUBLON : si une réponse (Sent) existe DÉJÀ après le dernier
+                    # reply, le fil a déjà été répondu (par le bot, Rudy, ou un envoi
+                    # précédent dont le timeout avait masqué le succès) → on ne renvoie
+                    # PAS, on retire juste l'alerte. Gère l'ambiguïté d'un timeout d'envoi.
+                    already_answered = bool(last_reply and any(
+                        mm.created_at > last_reply.created_at for mm in sents
+                    ))
                     if not replies:
                         log_status = "❌ Réponse auto : aucun reply trouvé pour ce prospect"
+                    elif already_answered:
+                        log_status = "✅ Déjà répondu dans le fil ManyReach — alerte retirée (pas de doublon)"
+                        if alert_id:
+                            try:
+                                kvstore.dismiss_alert(alert_id)
+                            except Exception:  # noqa: BLE001
+                                pass
                     else:
-                        last_reply = replies[-1]
                         original_outreach = sents[0] if sents else None
                         sender = original_outreach.from_email if original_outreach else None
                         # Style guide (voix de Rudy) pour le drafter.
@@ -966,7 +980,8 @@ class handler(BaseHTTPRequestHandler):
                                     pass
             except Exception as e:  # noqa: BLE001
                 log_status = f"❌ Réponse auto échouée : {str(e)[:200]}"
-            _ok = log_status.startswith("🤖")
+            # Succès = envoi IA (🤖) OU déjà répondu (✅) → pas une erreur.
+            _ok = log_status.startswith("🤖") or log_status.startswith("✅")
             if kvstore.kv_available():
                 _pemail = email or (alert_id.split("|", 1)[1] if "|" in alert_id else "")
                 kvstore.log_action({
