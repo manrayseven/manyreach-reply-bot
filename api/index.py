@@ -203,6 +203,15 @@ def _render() -> str:
             if at > _resolved_at.get(em, ""):
                 _resolved_at[em] = at
 
+    # Seuil d'ancienneté des ERREURS : une erreur non résolue depuis > 3 jours est
+    # du bruit (transitoire déjà passé, ou cas d'avant un fix) → on la masque
+    # automatiquement. Évite qu'une vieille erreur reste affichée indéfiniment.
+    try:
+        from datetime import datetime as _dt2, timedelta as _td2, timezone as _tz2
+        _err_stale_cutoff = (_dt2.now(_tz2.utc) - _td2(days=3)).isoformat()
+    except Exception:  # noqa: BLE001
+        _err_stale_cutoff = ""
+
     for a in actions:
         intent = a.get("intent", "")
         status = a.get("status", "")
@@ -221,7 +230,9 @@ def _render() -> str:
                 and "ERREUR" not in str(o.get("status", ""))
                 for o in actions
             )
-            if not resolved and alert_id not in dismissed:
+            # Vieille erreur non résolue (> 3 jours) → masquée automatiquement.
+            too_old = bool(_err_stale_cutoff and err_at and err_at < _err_stale_cutoff)
+            if not resolved and not too_old and alert_id not in dismissed:
                 error_list.append(a)
         elif intent == "wrong_person_redirect":
             # Plus jamais d'alerte pour ces cas (changement d'adresse / personne
