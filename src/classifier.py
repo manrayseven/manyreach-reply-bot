@@ -109,8 +109,16 @@ def _strip_html(html: str) -> str:
 # et classe à tort meeting_confirmed → faux MeetingBooked + alerte au lieu d'une
 # réponse auto (cas proramonage45, gpharmaciese — 17/06).
 _QUOTE_END_RE = re.compile(
-    r"a\s+écrit\s*:|wrote\s*:|-{2,}\s*Original Message|_{10,}",
-    re.IGNORECASE,
+    r"a\s+écrit\s*:|wrote\s*:|-{2,}\s*Original Message|_{10,}"
+    # En-têtes de citation Outlook (FR/EN) + Allemand : "De : X Envoyé/Objet : ..."
+    # / "From: X Sent/Subject: ..." / "Von: X Gesendet/Betreff: ...". Non ambigus
+    # (un vrai message n'a jamais cette paire) → coupe même tôt. CRUCIAL pour les
+    # refus courts + citation Outlook du pitch (cas contact@3gelec.fr — sinon
+    # l'override lit "audits flash / créneau" cité et bascule en meeting_confirmed).
+    r"|\bDe\s*:.{0,220}?\b(?:Envoy\w{0,3}|Objet)\s*:"
+    r"|\bFrom\s*:.{0,220}?\b(?:Sent|Subject)\s*:"
+    r"|\bVon\s*:.{0,220}?\b(?:Gesendet|Betreff)\s*:",
+    re.IGNORECASE | re.DOTALL,
 )
 
 

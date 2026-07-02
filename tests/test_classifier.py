@@ -55,6 +55,25 @@ def test_trim_outlook_separator():
     assert "pitch" not in out
 
 
+def test_trim_outlook_fr_header_early():
+    # Refus court + citation Outlook FR "De : ... Envoyé : ... Objet : ..." tôt dans
+    # le texte (cas 3gelec) : sans coupe, l'override lit le pitch cité (créneau/appel)
+    # et bascule en meeting_confirmed.
+    raw = ("Bonjour, Ne nous somme pas intéressé. Merci. De : Rudy Viard "
+           "<r@x.fr> Envoyé : jeudi 2 juillet 2026 10:24 À : c@3gelec.fr "
+           "Objet : RE: Fiche Google Bonjour, audits flash, on peut caler un créneau par téléphone")
+    out = _trim_quoted_history(raw)
+    assert out == "Bonjour, Ne nous somme pas intéressé. Merci.", out
+    assert "créneau" not in out and "audits flash" not in out
+
+
+def test_trim_outlook_german_header():
+    raw = ("Bonjour, en ce moment pas un sujet pour nous. Merci. Von: Rudy Viard "
+           "[mailto:x] Gesendet: Dienstag An: David Betreff: RE: Question Bonjour, appel créneau")
+    out = _trim_quoted_history(raw)
+    assert out == "Bonjour, en ce moment pas un sujet pour nous. Merci.", out
+
+
 def test_strip_html_basic():
     html = "<div>Bonjour,</div><div><br></div><div>Je ne suis pas int&#233;ress&#233;e.</div>"
     out = _strip_html(html)
