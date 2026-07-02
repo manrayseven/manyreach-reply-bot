@@ -250,13 +250,33 @@ def _render() -> str:
             # reply est un refus net, ce n'est pas un vrai lead → on cache. Cohérent
             # avec la politique soft-no (refus = réponse auto, jamais d'alerte).
             _rlow = str(a.get("reply", "")).lower()
+            _slow = str(a.get("subject", "")).lower()
             _is_refusal = any(ph in _rlow for ph in (
                 "ne suis pas intéress", "ne sommes pas intéress", "ne suis pas interess",
                 "ne m'intéresse pas", "ne nous intéresse pas", "ne m interesse pas",
                 "non merci", "rien besoin", "pas de besoin", "aucun besoin",
                 "pas intéressé par votre", "pas intéressée par votre", "pas interesse par votre",
+                "pas un sujet pour nous", "pas un sujet chez nous", "n'est pas un sujet",
+                "pas d'actualité pour nous",
             ))
-            if alert_id not in dismissed and not superseded and not _is_refusal:
+            # AUTOREPLY OOO / FERMETURE / CONGÉS mal classé en alerte avant les fixes
+            # (sujet "Congés/Fermeture/Absente..." souvent avec corps vide) → pas un
+            # vrai lead → on cache. Idem politique : ces cas sont silencieux.
+            _is_ooo = (
+                any(k in _slow for k in (
+                    "congé", "congés", "conges", "absente", "absence", "fermeture",
+                    "out of office", "réponse automatique", "maternit", "vacances",
+                ))
+                or any(k in _rlow for k in (
+                    "pour toute urgence", "pour toutes urgences", "sera fermé",
+                    "actuellement en congé", "en congés jusqu", "actuellement absent",
+                ))
+            )
+            # Reply SANS contenu lisible (corps vide / "[No Body Detail]") : non
+            # actionnable + désormais classé bounce_or_auto par le bot → on cache.
+            _no_content = _rlow.strip() in ("", "[no body detail]")
+            if (alert_id not in dismissed and not superseded
+                    and not _is_refusal and not _is_ooo and not _no_content):
                 alerts.append(a)
         elif "envoyé" in status:
             sent_list.append(a)

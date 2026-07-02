@@ -466,6 +466,18 @@ BOUNCE_SUBJECT_PATTERNS = (
     "conge parental",
     "maternity leave",
     "parental leave",
+    # Congés / absence / fermeture temporaire : autoreply → silencieux. Le corps
+    # est SOUVENT vide (l'info n'est que dans le sujet, cas c.nizon "Absente pour
+    # congés", homeconcept36 "Congés Re:...", capservices83 "Fermeture Re:...").
+    "congé",
+    "congés",
+    "conges",
+    "absente",
+    "absent ",
+    "fermeture",
+    "fermé pour",
+    "fermeture estivale",
+    "fermeture annuelle",
 )
 
 
@@ -475,9 +487,19 @@ BOUNCE_BODY_PATTERNS = (
     "suis en congés",
     "suis en conge",
     "actuellement en congé",
+    "en congés jusqu",
+    "en congé jusqu",
     "actuellement absent",
     "je suis absent",
     "actuellement en vacances",
+    # Autoreply de fermeture temporaire + marqueur "pour toute(s) urgence(s)" (les
+    # OOO renvoient vers un contact d'urgence — signal fort d'autoreply). On reste
+    # sur "sera fermé" (annonce de fermeture à venir = autoreply) et PAS "sommes
+    # fermés" (souvent une vraie réponse "on est fermé, recontactez à la réouverture"
+    # → doit atteindre le classifier, cf. test fermeture saisonnière).
+    "pour toute urgence",
+    "pour toutes urgences",
+    "sera fermé",
     "en arrêt maladie",
     "en arrêt de travail",
     "pour raisons de santé",
