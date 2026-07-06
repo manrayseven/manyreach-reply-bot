@@ -742,7 +742,7 @@ def main() -> int:
                             "subject": reply.subject,
                             "intent": "interested_warm",
                             "status": "⚠️ ALERTE : prospect partage son calendrier — à booker à la main",
-                            "reply": _trim_quoted_history(_strip_html(reply.body))[:700],
+                            "reply": _trim_quoted_history(_strip_html(reply.body))[:2000],
                             "response": "(aucune — Rudy doit aller sur le calendrier du prospect)",
                         })
                     if not dry_run:
@@ -781,7 +781,7 @@ def main() -> int:
                             "subject": reply.subject,
                             "intent": classification.intent,
                             "status": "exécuté (silencieux)",
-                            "reply": _trim_quoted_history(_strip_html(reply.body))[:700],
+                            "reply": _trim_quoted_history(_strip_html(reply.body))[:2000],
                             "response": "(pas de réponse — silencieux)",
                         })
                     if not dry_run:
@@ -854,7 +854,7 @@ def main() -> int:
                             "subject": reply.subject,
                             "intent": classification.intent,
                             "status": "🔔 ALERTE — à traiter dashboard",
-                            "reply": _trim_quoted_history(_strip_html(reply.body))[:700],
+                            "reply": _trim_quoted_history(_strip_html(reply.body))[:2000],
                             "response": alert_line,
                             "prospect_id": (prospect.prospect_id if prospect else None),
                             "campaign_id": reply.campaign_id,   # None si orphelin → mailto
@@ -895,7 +895,7 @@ def main() -> int:
                                 "subject": reply.subject,
                                 "intent": classification.intent,
                                 "status": "en attente (fenêtre 9h-19h Paris)",
-                                "reply": _trim_quoted_history(_strip_html(reply.body))[:700],
+                                "reply": _trim_quoted_history(_strip_html(reply.body))[:2000],
                                 "response": "(pas drafté — sera fait à l'ouverture de la fenêtre)",
                             })
                     log_entry["intent"] = classification.intent
@@ -1015,7 +1015,7 @@ def main() -> int:
                         "subject": reply.subject,
                         "intent": classification.intent,
                         "status": _status,
-                        "reply": _trim_quoted_history(_strip_html(reply.body))[:700],
+                        "reply": _trim_quoted_history(_strip_html(reply.body))[:2000],
                         "response": _resp_txt[:1800] if not draft.skip_send else "(pas de réponse — silencieux)",
                     })
 

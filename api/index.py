@@ -274,7 +274,7 @@ def _render() -> str:
             )
             # Reply SANS contenu lisible (corps vide / "[No Body Detail]") : non
             # actionnable + désormais classé bounce_or_auto par le bot → on cache.
-            _no_content = _rlow.strip() in ("", "[no body detail]")
+            _no_content = (not _rlow.strip()) or ("no body detail" in _rlow)
             if (alert_id not in dismissed and not superseded
                     and not _is_refusal and not _is_ooo and not _no_content):
                 alerts.append(a)
@@ -359,6 +359,16 @@ def _render() -> str:
                             for m in reversed(thr):
                                 if m.type == "Reply":
                                     data["reply_msgid"] = m.message_id
+                                    # Message COMPLET du prospect → nécessaire pour
+                                    # répondre à un orphelin depuis le dashboard
+                                    # (le champ KV stocké est tronqué).
+                                    try:
+                                        from src.classifier import _strip_html, _trim_quoted_history
+                                        data["reply_full"] = _trim_quoted_history(
+                                            _strip_html(m.body or "")
+                                        )[:4000]
+                                    except Exception:  # noqa: BLE001
+                                        pass
                                     break
                     kvstore.cache_set(_ck(em), json.dumps(data), 1800)
                     return em, data
@@ -394,6 +404,9 @@ def _render() -> str:
                     a["_sender_mailbox"] = data["sender"]
                 if data.get("reply_msgid") and not a.get("message_id"):
                     a["message_id"] = data["reply_msgid"]
+                # Message complet (orphelin) → remplace le reply tronqué stocké.
+                if data.get("reply_full"):
+                    a["reply"] = data["reply_full"]
             _kept.append(a)
         alerts = _kept
 
@@ -442,7 +455,9 @@ def _render() -> str:
         intent_label, intent_color = _INTENT_FR.get(intent, (intent, "#8a8579"))
         when = _time_fr(a.get("at", ""))
         frm = html.escape(str(a.get("from", "")))
-        reply_txt = html.escape(str(a.get("reply", "")))[:300]
+        # Message COMPLET (plus de troncature à 300) — nécessaire pour répondre,
+        # surtout aux orphelins traités depuis le dashboard.
+        reply_txt = html.escape(str(a.get("reply", "")))[:4000]
         alert_id = html.escape(f"{a.get('at', '')}|{(a.get('from') or '').lower()}")
         # Lien direct vers l'Unibox ManyReach filtré sur cette conversation.
         # IMPORTANT : on laisse activestatus= VIDE (au lieu de '1') pour que
@@ -694,7 +709,7 @@ def _render() -> str:
  .alert-reply-actions{{display:flex;align-items:center;gap:12px;margin-top:8px}}
  .alert-reply-hint{{font-size:11px;color:#8c8678;margin-right:auto;line-height:1.4}}
  .alert-when{{color:#a39c8c;font-size:11px;margin-left:auto;font-variant-numeric:tabular-nums;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;white-space:nowrap}}
- .alert-msg{{color:#5c574c;font-size:13px;line-height:1.5}}
+ .alert-msg{{color:#5c574c;font-size:13px;line-height:1.5;max-height:240px;overflow-y:auto;word-break:break-word}}
  .alert-mr{{font-size:10.5px;font-weight:700;color:#3b6fd4;background:#edf2fc;padding:2px 8px;border-radius:6px;text-decoration:none;border:1px solid #cfdcf6;transition:all .12s}}
  .alert-mr:hover{{background:#3b6fd4;color:#fff;text-decoration:none;border-color:#3b6fd4}}
  .alert-mr-sec{{color:#8c8678;background:#f3f0e9;border-color:#e7e1d5}}
