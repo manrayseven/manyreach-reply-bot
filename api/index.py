@@ -404,9 +404,15 @@ def _render() -> str:
                     a["_sender_mailbox"] = data["sender"]
                 if data.get("reply_msgid") and not a.get("message_id"):
                     a["message_id"] = data["reply_msgid"]
-                # Message complet (orphelin) → remplace le reply tronqué stocké.
-                if data.get("reply_full"):
-                    a["reply"] = data["reply_full"]
+                # Message complet (orphelin) → remplace le reply STOCKÉ seulement si
+                # le corps live est RÉELLEMENT meilleur (non vide, pas "[No Body
+                # Detail]", et plus long que le stocké). ManyReach renvoie souvent un
+                # corps vide via le thread alors que le stocké a le vrai texte capté
+                # à l'ingestion → ne jamais l'écraser par du vide (cas ruben@lasolas).
+                _rf = str(data.get("reply_full") or "").strip()
+                if (_rf and "no body detail" not in _rf.lower()
+                        and len(_rf) > len(str(a.get("reply") or "").strip())):
+                    a["reply"] = _rf
             _kept.append(a)
         alerts = _kept
 
