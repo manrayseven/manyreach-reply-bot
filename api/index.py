@@ -270,6 +270,10 @@ def _render() -> str:
                 or any(k in _rlow for k in (
                     "pour toute urgence", "pour toutes urgences", "sera fermé",
                     "actuellement en congé", "en congés jusqu", "actuellement absent",
+                    "exceptionnellement fermé", "exceptionnellement ferme",
+                    "fermé du ", "ferme du ", "fermée du ", "fermee du ",
+                    "nous répondrons", "nous repondrons",
+                    "répondrons à vos demandes", "repondrons a vos demandes",
                 ))
             )
             # Reply SANS contenu lisible (corps vide / "[No Body Detail]") : non

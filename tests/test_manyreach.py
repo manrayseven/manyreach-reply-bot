@@ -49,6 +49,13 @@ def test_real_refusal_is_not_bounce():
     assert is_bounce_or_auto(_msg(body=body)) is False
 
 
+def test_closure_autoreply_dated_is_bounce():
+    # Autoreply de fermeture datée + "nous répondrons à partir du..." (cas enault).
+    body = ("Le bureau sera exceptionnellement fermé du 07/07 au 09/07 inclus. "
+            "Nous répondrons à vos demandes à partir du 10/07.")
+    assert is_bounce_or_auto(_msg(body=body)) is True
+
+
 def test_seasonal_closure_is_not_bounce():
     # Fermeture saisonnière d'entreprise avec réouverture → doit atteindre le
     # classifier (objection_timing), donc PAS attrapée par le pré-filtre bounce.

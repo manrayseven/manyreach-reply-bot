@@ -500,6 +500,22 @@ BOUNCE_BODY_PATTERNS = (
     "pour toute urgence",
     "pour toutes urgences",
     "sera fermé",
+    # Fermeture datée + "nous répondrons à partir du..." (cas enault.plomberie
+    # "bureau sera exceptionnellement fermé du 07/07... nous répondrons à vos
+    # demandes à partir du 10/07"). Ces marqueurs N'attrapent PAS "fermés pour la
+    # saison, réouverture le X, recontactez-nous" (qui reste un vrai objection_timing).
+    "exceptionnellement fermé",
+    "exceptionnellement ferme",
+    "fermé du ",
+    "ferme du ",
+    "fermée du ",
+    "fermee du ",
+    "fermés du ",
+    "nous répondrons",
+    "nous repondrons",
+    "répondrons à vos demandes",
+    "repondrons a vos demandes",
+    "de retour au bureau le",
     "en arrêt maladie",
     "en arrêt de travail",
     "pour raisons de santé",
