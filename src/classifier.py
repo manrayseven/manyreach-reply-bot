@@ -149,6 +149,27 @@ def _trim_quoted_history(body: str, max_len: int = 4000) -> str:
     return body
 
 
+def _salvage_classification(raw: str) -> dict:
+    """Récupère les champs d'une sortie classifier malformée (JSON tronqué/cassé)
+    via regex tolérant, pour ne pas perdre le traitement du reply. L'intent
+    récupéré est ensuite validé par l'appelant (fallback si invalide)."""
+    def _f(pat, default=None):
+        m = re.search(pat, raw)
+        return m.group(1) if m else default
+
+    conf = _f(r'"confidence"\s*:\s*([0-9.]+)')
+    return {
+        "intent": _f(r'"intent"\s*:\s*"([a-z_]+)"'),
+        "confidence": float(conf) if conf else 0.5,
+        "key_phrase": _f(r'"key_phrase"\s*:\s*"([^"]*)"', ""),
+        "language": _f(r'"language"\s*:\s*"([a-z]+)"', "fr"),
+        "reasoning": "[récupéré après JSON classifier malformé]",
+        "redirected_email": _f(r'"redirected_email"\s*:\s*"([^"]+)"'),
+        "redirected_to": _f(r'"redirected_to"\s*:\s*"([^"]+)"'),
+        "contact_phone": _f(r'"contact_phone"\s*:\s*"([^"]+)"'),
+    }
+
+
 class Classifier:
     def __init__(
         self,
@@ -210,7 +231,7 @@ class Classifier:
 
         msg = self.client.messages.create(
             model=self.model,
-            max_tokens=500,
+            max_tokens=700,
             # temperature=0 : classification DÉTERMINISTE. Sans ça (défaut 1.0), un
             # même reply pouvait être classé différemment d'un run à l'autre sur les
             # cas-limites → alertes parasites (ex. jlevasseur "nous avons une bonne
@@ -232,6 +253,19 @@ class Classifier:
             raw = re.sub(r"\s*```\s*$", "", raw)
         try:
             data = json.loads(raw)
-        except json.JSONDecodeError as e:
-            raise ValueError(f"Classifier returned non-JSON: {raw[:300]}") from e
+        except json.JSONDecodeError:
+            # JSON malformé/tronqué (ex. reply = juste un numéro de tél → le modèle
+            # part parfois en vrille + coupe à max_tokens). On RÉCUPÈRE les champs par
+            # regex au lieu de crasher tout le traitement du reply.
+            data = _salvage_classification(raw)
+        # Intent absent ou invalide → fallback SÛR = interested_warm (→ alerte, review
+        # humaine) plutôt que lever une erreur. Ne jamais bloquer un reply là-dessus.
+        if data.get("intent") not in VALID_INTENTS:
+            data = {
+                **data,
+                "intent": "interested_warm",
+                "confidence": min(float(data.get("confidence", 0.5) or 0.5), 0.7),
+                "reasoning": (data.get("reasoning") or "")
+                + " [intent invalide/illisible → fallback interested_warm pour review]",
+            }
         return Classification.from_json(data)

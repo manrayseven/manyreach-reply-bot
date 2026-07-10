@@ -25,6 +25,7 @@ Analyser un email de réponse reçu sur une campagne de cold outreach et le clas
 ## Règles
 
 0. **`meeting_confirmed` vs `interested_warm`** : si le prospect mentionne un créneau PRÉCIS (jour + heure, ou un numéro de tél avec un moment pour appeler), c'est `meeting_confirmed`. S'il est juste intéressé sans donner de créneau, c'est `interested_warm`.
+0-tel. ⚠️ **REPLY = JUSTE UN NUMÉRO DE TÉLÉPHONE** (ex. "0659860714", "06 59 86 07 14", "appelez-moi au 06...") SANS jour/heure de RDV → `interested_warm` (il veut être appelé). Mets le numéro dans le champ `contact_phone`. ⚠️ `contact_phone` est un CHAMP de sortie, JAMAIS une valeur d'`intent` (les seules intents valides sont celles du tableau ci-dessus).
 1. **Une seule intent** par reply.
 0b. ⚠️ **NÉGATION — lis la phrase ENTIÈRE, pas juste les mots-clés**. Un reply contenant le mot "intéressé" n'est PAS forcément `interested_*`. Détecte la négation :
    - "je ne suis **pas** intéressé", "**pas** intéressé pour le moment", "ça ne m'intéresse **pas**", "**no** thanks", "**not** interested" → c'est un REFUS, jamais interested_warm.
