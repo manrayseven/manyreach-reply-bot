@@ -203,14 +203,19 @@ def _render() -> str:
             if at > _resolved_at.get(em, ""):
                 _resolved_at[em] = at
 
-    # Seuil d'ancienneté des ERREURS : une erreur non résolue depuis > 3 jours est
-    # du bruit (transitoire déjà passé, ou cas d'avant un fix) → on la masque
-    # automatiquement. Évite qu'une vieille erreur reste affichée indéfiniment.
+    # Seuils d'ancienneté des ERREURS masquées automatiquement :
+    #  - erreur générique non résolue > 3 jours = bruit → cachée.
+    #  - erreur TRANSITOIRE (timeout / connexion) > 4h → cachée : le bot réessaie
+    #    tout seul au cron suivant, donc un timeout ponctuel se répare seul. Une
+    #    erreur de timeout PERSISTANTE re-logge à chaque cron (timestamp frais) →
+    #    reste visible. Évite que 1-2 timeouts réseau traînent des jours.
     try:
         from datetime import datetime as _dt2, timedelta as _td2, timezone as _tz2
-        _err_stale_cutoff = (_dt2.now(_tz2.utc) - _td2(days=3)).isoformat()
+        _now2 = _dt2.now(_tz2.utc)
+        _err_stale_cutoff = (_now2 - _td2(days=3)).isoformat()
+        _err_transient_cutoff = (_now2 - _td2(hours=4)).isoformat()
     except Exception:  # noqa: BLE001
-        _err_stale_cutoff = ""
+        _err_stale_cutoff = _err_transient_cutoff = ""
 
     for a in actions:
         intent = a.get("intent", "")
@@ -230,8 +235,13 @@ def _render() -> str:
                 and "ERREUR" not in str(o.get("status", ""))
                 for o in actions
             )
-            # Vieille erreur non résolue (> 3 jours) → masquée automatiquement.
-            too_old = bool(_err_stale_cutoff and err_at and err_at < _err_stale_cutoff)
+            # Timeout / erreur de connexion = transitoire (le bot réessaie) → seuil
+            # court (4h). Autres erreurs → seuil 3 jours.
+            _st_low = str(status).lower()
+            _transient = ("timed out" in _st_low or "timeout" in _st_low
+                          or "connection error" in _st_low or "connection aborted" in _st_low)
+            _cutoff = _err_transient_cutoff if _transient else _err_stale_cutoff
+            too_old = bool(_cutoff and err_at and err_at < _cutoff)
             if not resolved and not too_old and alert_id not in dismissed:
                 error_list.append(a)
         elif intent == "wrong_person_redirect":
