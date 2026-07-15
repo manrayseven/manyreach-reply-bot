@@ -1017,6 +1017,10 @@ def main() -> int:
                         "status": _status,
                         "reply": _trim_quoted_history(_strip_html(reply.body))[:2000],
                         "response": _resp_txt[:1800] if not draft.skip_send else "(pas de réponse — silencieux)",
+                        # Pour le dashboard : macaron Répondu/Sans réponse + lien ManyReach.
+                        "replied": bool(plan.auto_send and not dry_run and not draft.skip_send),
+                        "campaign_id": reply.campaign_id,
+                        "prospect_email": (prospect.email if prospect else None),
                     })
 
                 # Marquer comme traité dès que le bot a TENTÉ de gérer le reply

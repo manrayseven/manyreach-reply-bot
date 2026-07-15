@@ -628,10 +628,35 @@ def _render() -> str:
         intent_label, intent_color = _INTENT_FR.get(intent, (intent, "#64748b"))
         when = _time_fr(a.get("at", ""))
         frm = html.escape(str(a.get("from", "")))
+        # Macaron Répondu / Sans réponse : "replied" stocké par le bot ; pour les
+        # vieilles entrées, on déduit du champ response ("(pas de réponse…)" = skip).
+        replied = a.get("replied")
+        if replied is None:
+            replied = not str(a.get("response", "")).strip().startswith("(pas de réponse")
+        if replied:
+            badge = '<span class="sent-tag sent-yes" title="Une réponse a été envoyée au prospect">Répondu</span>'
+        else:
+            badge = ('<span class="sent-tag sent-no" title="Aucune réponse envoyée '
+                     '(le bot a jugé inutile de répondre) — à creuser si le message était cordial">Sans réponse</span>')
+        # Lien ManyReach vers la conversation (comme les alertes).
+        mr_org = os.environ.get("MANYREACH_ORG_ID", "7288")
+        _pemail = urllib.parse.quote(str(a.get("prospect_email") or a.get("from") or ""))
+        _camp = a.get("campaign_id") or a.get("campaignId") or ""
+        _scope = f"&campaign={_camp}&type=campaign" if _camp else "&campaign=&type="
+        mr_url = (
+            f"https://app.manyreach.com/e/inbox?sender=-1&status=&leadstatus=&autostatus=&list=-1"
+            f"&search=from:{_pemail}{_scope}&activestatus=&pagesize=25&currentpage=1&o={mr_org}"
+        )
+        mr_link = (
+            f'<a class="sent-mr" href="{mr_url}" target="_blank" rel="noopener" '
+            f'title="Ouvrir la conversation dans ManyReach">↗</a>'
+        )
         return f"""<div class="sent-row">
           <span class="sent-when">{when}</span>
           <span class="sent-pill" style="color:{intent_color};border:1px solid {intent_color}40">{html.escape(intent_label)}</span>
           <span class="sent-email">{frm}</span>
+          {badge}
+          {mr_link}
         </div>"""
 
     def _error_row(a: dict) -> str:
@@ -762,6 +787,11 @@ def _render() -> str:
  .sent-when{{color:#a39c8c;font-size:11.5px;font-variant-numeric:tabular-nums;min-width:90px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}}
  .sent-pill{{font-size:11px;font-weight:600;padding:3px 11px;border-radius:20px;white-space:nowrap;background:#fff}}
  .sent-email{{color:#5c574c;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
+ .sent-tag{{font-size:10px;font-weight:700;letter-spacing:.02em;padding:2px 8px;border-radius:20px;white-space:nowrap}}
+ .sent-yes{{color:#2e7d52;background:#e6f0e9;border:1px solid #c2ddcc}}
+ .sent-no{{color:#a07520;background:#faefd6;border:1px solid #f0e2c2}}
+ .sent-mr{{color:#3b6fd4;font-weight:700;text-decoration:none;padding:0 4px;font-size:13px}}
+ .sent-mr:hover{{text-decoration:none;color:#26509e}}
 
  /* ERRORS */
  .error-row{{padding:11px 0;border-bottom:1px solid #f2cdc8}}
