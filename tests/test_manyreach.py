@@ -49,6 +49,22 @@ def test_real_refusal_is_not_bounce():
     assert is_bounce_or_auto(_msg(body=body)) is False
 
 
+def test_dated_absence_autoreply_is_bounce():
+    # "en séminaire/formation/déplacement/absent JUSQU'AU X" = autoreply daté
+    # (cas benjamin.blanchard) → silencieux, surtout pas une alerte "plus tard".
+    for body in (
+        "Bonjour, Je suis en séminaire jusqu'au 17 Juillet inclus. Je reviens vers vous.",
+        "Je suis absent jusqu'au 20 août.",
+        "En formation jusqu'au 5 septembre.",
+    ):
+        assert is_bounce_or_auto(_msg(body=body)) is True, body
+
+
+def test_real_timing_request_is_not_bounce():
+    # Un vrai "recontactez-moi en septembre" doit atteindre le classifier.
+    assert is_bounce_or_auto(_msg(body="Rappelez-moi en septembre, le sujet m'intéresse.")) is False
+
+
 def test_closure_autoreply_dated_is_bounce():
     # Autoreply de fermeture datée + "nous répondrons à partir du..." (cas enault).
     body = ("Le bureau sera exceptionnellement fermé du 07/07 au 09/07 inclus. "

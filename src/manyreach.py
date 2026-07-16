@@ -489,6 +489,16 @@ BOUNCE_BODY_PATTERNS = (
     "actuellement en congé",
     "en congés jusqu",
     "en congé jusqu",
+    # Absences datées : séminaire / formation / déplacement / absent "jusqu'au X".
+    # Le "jusqu" impose une date de retour = autoreply, pas un vrai "recontactez-moi"
+    # (cas benjamin.blanchard "Je suis en séminaire jusqu'au 17 Juillet inclus").
+    "en séminaire jusqu",
+    "en seminaire jusqu",
+    "en formation jusqu",
+    "en déplacement jusqu",
+    "en deplacement jusqu",
+    "absent jusqu",
+    "absente jusqu",
     "actuellement absent",
     "je suis absent",
     "actuellement en vacances",
