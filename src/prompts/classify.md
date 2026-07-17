@@ -103,7 +103,7 @@ Champs RDV (remplis-les SURTOUT pour `meeting_confirmed`, sinon `null`) :
   - "rappelez-moi le 15 octobre" → 15 octobre à 10h00
   - "réouverture le 25 juin" / "back on Y" → la date donnée
   Si le prospect dit "plus tard" sans précision → laisse `null` (le bot prend J+90 par défaut). Sinon `null` aussi pour les autres intents.
-- `offer_label` : raison de l'appel = label court de l'offre pitchée dans le cold mail (ex. "Cold Email", "Audit SEO", "Refonte site", "Audit digital"). Déduis-le du cold mail. Si vraiment indéterminable → "échange".
+- `offer_label` : raison de l'appel = label court de l'offre pitchée dans le cold mail (ex. "Cold Email", "Audit SEO", "Refonte site", "Audit digital", "GrowPulser" — si le cold mail mentionne GrowPulser/growpulser.com ou des réseaux sociaux gérés en automatique par l'IA). Déduis-le du cold mail. Si vraiment indéterminable → "échange".
 - `prospect_name` : prénom + nom du prospect, extrait de sa signature (ex. "Sarah Laroye"). Sinon le prénom seul si connu. Sinon `null`.
 
 ## Confidence guidance
