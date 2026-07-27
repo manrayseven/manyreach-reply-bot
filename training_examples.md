@@ -57,19 +57,22 @@ Fondateur Webmarketing Conseil
 
 **Ressources que tu peux référencer** :
 - Article cold email : https://www.webmarketing-conseil.fr/emails-froid
-- **GrowPulser (réseaux sociaux pilotés en automatique avec l'IA) : https://www.growpulser.com**
+- **GrowPulser (RÉFÉRENCEMENT/SEO — création + publication auto de contenus SEO par IA) : https://www.growpulser.com**
+- **GrowPoster (RÉSEAUX SOCIAUX — création + publication auto de contenus sociaux par IA) : https://www.growposter.com**
 - Plaquette cold email : https://www.webmarketing-conseil.fr/wp-content/uploads/2026/05/plaquette-cold-email-v2.pdf
 - Étude de cas refonte : https://www.webmarketing-conseil.fr/refonte-site-internet/
 - Réalisations Luneos : https://www.luneos.fr/realisations (peut être référencé même en signant WC, c'est l'agence dans laquelle Rudy travaille)
 
-⚠️ **NE PROMEUS PAS QUE LE COLD EMAIL en fin de réponse.** Choisis LE lien le plus
-pertinent selon le prospect (jamais les deux, une seule ressource) :
-- **GrowPulser** (https://www.growpulser.com) — piloter ses **réseaux sociaux en
-  automatique avec l'IA. C'est le bon lien pour un COMMERCE LOCAL** (restaurant,
-  garage, institut, pharmacie, hôtel, artisan…) et plus largement pour tout prospect
-  dont l'enjeu est la visibilité / la présence en ligne plutôt que la prospection B2B.
-  Formulation type : "si le sujet réseaux sociaux vous parle, j'ai monté un outil qui
-  les pilote en automatique avec l'IA : https://www.growpulser.com".
+⚠️ **NE PROMEUS PAS QUE LE COLD EMAIL en fin de réponse.** Choisis le(s) lien(s)
+pertinent(s) selon l'enjeu du prospect (cf. règle 10-lien du draft.md) :
+- **GrowPulser** (https://www.growpulser.com) — automatise la création + publication
+  de contenus de **RÉFÉRENCEMENT / SEO** avec l'IA. **Défaut** (plus mainstream), et le
+  bon lien quand l'enjeu est la **visibilité Google / le référencement / la fiche Maps**.
+- **GrowPoster** (https://www.growposter.com) — automatise la création + publication
+  de contenus sur les **RÉSEAUX SOCIAUX** avec l'IA. Le bon lien quand l'enjeu est la
+  **présence sur les réseaux sociaux**.
+- **Les DEUX** quand le message couvre référencement ET réseaux sociaux (ex. "j'ai
+  déjà quelqu'un pour mes réseaux et mon référencement") — une phrase chacun.
 - **Article cold email** (/emails-froid) — uniquement pour une cible **B2B** dont
   l'enjeu est la **prospection sortante**. Jamais pour un commerce local.
 
@@ -173,12 +176,14 @@ Fondateur Webmarketing Conseil
 ⚠️ **Le dernier paragraphe (le lien) est à ADAPTER, pas à recopier tel quel.** Le lien
 cold email ci-dessus vaut pour une cible **B2B / prospection sortante**. Pour un
 **commerce local** ou un prospect dont l'enjeu est la visibilité, remplace ce
-paragraphe par GrowPulser, ex. :
+paragraphe par le bon outil (cf. règle 10-lien du draft.md) :
 ```
-Et si le sujet réseaux sociaux vous parle, j'ai monté un outil qui les pilote
-en automatique avec l'IA : https://www.growpulser.com
+Et pour aller plus loin, j'ai monté un outil qui automatise votre référencement
+avec l'IA : https://www.growpulser.com
 ```
-Un seul lien par mail — jamais les deux, jamais un lien hors sujet (cf. règle 10-lien du draft.md).
+Et si le prospect parle AUSSI de réseaux sociaux, ajoute GrowPoster (réseaux
+sociaux) : https://www.growposter.com — les deux quand l'enjeu couvre référencement
++ social, sinon un seul (par défaut GrowPulser).
 
 > **Variante pour prospect local** (si le cold mail s'adresse à un artisan/commerce local) — basée sur Example 4 :
 ```

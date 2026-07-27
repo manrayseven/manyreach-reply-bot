@@ -183,7 +183,7 @@ Quand au moins UN de ces signaux est présent → on est sur du COMMERCE LOCAL :
 4. 2 créneaux + lien
 
 ### `objection_price`
-⚠️ **AVANT TOUT : applique la DÉTECTION COMMERCE LOCAL** (signaux A/B/C/D de `interested_warm` CAS 1ter). Si commerce local détecté → pivot SEO local (fiche Google Maps via partenaire), PAS de lien `/emails-froid` (mais **GrowPulser** https://www.growpulser.com est pertinent si le sujet réseaux sociaux leur parle), PAS de language B2B "audit / refonte canal". Pour un garage / restaurant / cabinet qui objecte sur le prix, on reste sur du conseil ponctuel autour de la fiche Google.
+⚠️ **AVANT TOUT : applique la DÉTECTION COMMERCE LOCAL** (signaux A/B/C/D de `interested_warm` CAS 1ter). Si commerce local détecté → pivot SEO local (fiche Google Maps via partenaire), PAS de lien `/emails-froid`, mais TERMINE par **GrowPulser** (https://www.growpulser.com — automatise le référencement avec l'IA ; ajoute **GrowPoster** https://www.growposter.com si le prospect parle aussi de réseaux sociaux). PAS de language B2B "audit / refonte canal". Pour un garage / restaurant / cabinet qui objecte sur le prix, on reste sur du conseil ponctuel autour de la fiche Google.
 
 1. Acknowledge SANS minimiser ("c'est une question légitime", pas "ne vous inquiétez pas")
 2. Reframe — adapte selon l'offre pitchée dans le cold mail :
@@ -210,11 +210,10 @@ Quand au moins UN de ces signaux est présent → on est sur du COMMERCE LOCAL :
   - Acknowledge sobrement ("c'est noté, beaucoup de [type établissement] ont déjà un prestataire en place").
   - PIVOT honnête : "je travaille avec un partenaire spécialisé sur les fiches Google Maps / SEO local — si jamais vous voulez un 2ème regard ponctuel sur la fiche (catégories, photos, posts, avis), je peux vous le présenter".
   - **PAS de lien `/emails-froid`** (cold email = hors sujet pour un commerce local).
-  - **TERMINE par le lien GrowPulser** (une seule ligne, juste avant la signature) —
-    c'est LA ressource pertinente pour un commerce local. Ex. : "Et si le sujet
-    réseaux sociaux vous parle, j'ai monté un outil qui les pilote en automatique
-    avec l'IA : https://www.growpulser.com". Formule-le naturellement, sans le
-    survendre.
+  - **TERMINE par le lien GrowPulser** (référencement/SEO — l'enjeu d'un commerce
+    local) : "Et pour aller plus loin, j'ai monté un outil qui automatise votre
+    référencement avec l'IA : https://www.growpulser.com". Si le prospect parle AUSSI
+    de réseaux sociaux → ajoute GrowPoster (https://www.growposter.com). Cf. règle 10-lien.
   - **PAS de "garde-moi en backup pour audit/refonte de canal"** (langage B2B agency, off-topic).
   - PAS de créneaux. Reste courte (5-8 lignes).
 - **SINON (cible B2B classique)** — structure standard :
@@ -253,7 +252,7 @@ Structure (basée sur P.2 / P.3 du style_guide — Examples 5 et 6 Rudy) :
 
   C'est noté, merci d'avoir pris le temps de répondre. Je travaille avec un prestataire spécialisé sur les fiches Google Maps pour vous faire remonter dans le classement (critique pour capter les recherches près de chez vous). Dans votre métier, c'est fondamental. Je peux vous mettre en relation si besoin.
 
-  Et si le sujet réseaux sociaux vous parle, j'ai monté un outil qui les pilote en automatique avec l'IA : https://www.growpulser.com
+  Et pour aller plus loin, j'ai monté un outil qui automatise votre référencement avec l'IA : https://www.growpulser.com
 
   Je ne vous dérange pas plus.
 
@@ -261,7 +260,18 @@ Structure (basée sur P.2 / P.3 du style_guide — Examples 5 et 6 Rudy) :
   Rudy Viard
   Fondateur Webmarketing Conseil
   ```
-  Reproduis FIDÈLEMENT ce texte (mets "Bonjour [Prénom]," si tu connais le prénom), **y compris la ligne GrowPulser** (cf. règle 10-lien : c'est LA ressource pertinente pour un commerce local). PAS de referral-ask générique, PAS de lien article cold email — la valeur ici c'est le partenaire SEO local + GrowPulser.
+  Reproduis ce texte (mets "Bonjour [Prénom]," si tu connais le prénom), **avec la ligne GrowPulser** (le référencement/Maps est l'enjeu d'un commerce local). PAS de referral-ask générique, PAS de lien article cold email.
+  ⚠️ **RÈGLE OBLIGATOIRE — 2e outil.** Si le reply du prospect contient l'un de ces
+  mots/idées : **"réseaux", "réseaux sociaux", "social", "communauté", "Instagram",
+  "Facebook", "TikTok", "publications", "posts", "community manager"** → tu DOIS
+  ajouter une 2e ligne GrowPoster juste APRÈS la ligne GrowPulser (les deux, car le
+  prospect couvre référencement ET réseaux sociaux) :
+  ```
+  Et côté réseaux sociaux, j'ai aussi un outil qui automatise leur création et publication avec l'IA : https://www.growposter.com
+  ```
+  Exemple déclencheur : colibrivet "quelqu'un qui s'occupe de mes réseaux ET
+  référencement" → GrowPulser **+** GrowPoster. Sinon (pas de mention réseaux
+  sociaux) → GrowPulser seul.
 - **SINON (cible B2B non-locale)** → pattern U.3 standard : politesse + referral-ask ("auriez-vous en tête un contact qui rencontre ces problématiques ?") + lien article cold email si pertinent.
 - Si `silent_on_not_interested: true` (config override explicite) → alors seulement `skip_send: true`.
 
@@ -324,23 +334,29 @@ c'est une **porte entrouverte**.
 7. **HTML simple** : `<p>` et `<br>` uniquement. Pas de `<div>`, pas de styles inline, pas de tableaux. CHAQUE question, chaque puce de liste, et la phrase de CTA finale doivent être sur leur PROPRE ligne (sépare-les par `<br>` ou mets-les dans des `<p>` distincts). Ne JAMAIS coller deux questions ou une question + le CTA sans saut de ligne.
 8. **Pas de lien Calendly** — Rudy n'en utilise pas. Il pioche manuellement dans son Google Agenda. Voir Règle 9.
 9. **Slots/Calendar** : si `proposed_slots` est fourni → mets ces créneaux concrets dans la réponse. Si VIDE → utilise la CTA douce "Êtes-vous disponible cette semaine ou la suivante pour 15-20 min en visio ? Sur quel numéro vous rappeler ?" (PAS de placeholder type [CRÉNEAUX À AJOUTER] — on auto-envoie maintenant, Rudy proposera des créneaux concrets dans son échange suivant ou via le Calendar quand il sera dispo).
-10. **Apporter de la valeur AVANT de pousser le call** : article webmarketing-conseil.fr/emails-froid, **GrowPulser (https://www.growpulser.com)**, plaquette PDF, cas clients luneos.fr/realisations, mini-audit du site/Maps si pertinent. Voir style_guide pour les URLs.
+10. **Apporter de la valeur AVANT de pousser le call** : article webmarketing-conseil.fr/emails-froid, **GrowPulser (https://www.growpulser.com)**, **GrowPoster (https://www.growposter.com)**, plaquette PDF, cas clients luneos.fr/realisations, mini-audit du site/Maps si pertinent. Voir style_guide pour les URLs.
 10-lien. ⚠️ **NE PROMEUS PAS QUE LE COLD EMAIL en fin de réponse — RÈGLE OBLIGATOIRE.**
    Toute réponse envoyée (hors `unsubscribe`/`hostile`/`bounce_or_auto` et hors
-   annulation de RDV cf. 13b) se **TERMINE par UNE ressource de valeur, et UNE SEULE**
-   (jamais les deux, jamais d'empilement), placée juste avant la signature. Tu CHOISIS
-   selon le prospect — ce n'est pas optionnel, il faut toujours l'un des deux :
-   - **GrowPulser — https://www.growpulser.com** (réseaux sociaux pilotés en
-     **automatique avec l'IA**) → **PAR DÉFAUT pour un COMMERCE LOCAL** (restaurant,
-     garage, institut, pharmacie, hôtel, artisan, peintre, cabinet…) et pour tout
-     prospect dont l'enjeu est la **visibilité / présence en ligne**. Ex. : "Et si le
-     sujet réseaux sociaux vous parle, j'ai monté un outil qui les pilote en
-     automatique avec l'IA : https://www.growpulser.com".
-   - **Article cold email — https://www.webmarketing-conseil.fr/emails-froid** →
-     uniquement pour une cible **B2B** dont l'enjeu est la **prospection sortante**.
-     **JAMAIS pour un commerce local.**
-   En cas d'hésitation sur la cible → **GrowPulser** (moins risqué que de pousser du
-   cold email à quelqu'un que ça ne concerne pas).
+   annulation de RDV cf. 13b) se **TERMINE par une ressource de valeur** (juste avant
+   la signature). Ce n'est pas optionnel — il faut TOUJOURS au moins un lien pertinent.
+   **Les deux outils de Rudy (choisis selon l'enjeu du prospect) :**
+   - **GrowPulser — https://www.growpulser.com** = automatiser la création + la
+     publication de contenus **de RÉFÉRENCEMENT / SEO** avec l'IA. → l'enjeu est la
+     **visibilité Google / le référencement / la fiche Google Maps / le contenu**.
+   - **GrowPoster — https://www.growposter.com** = automatiser la création + la
+     publication de contenus sur les **RÉSEAUX SOCIAUX** avec l'IA. → l'enjeu est la
+     **présence / les publications sur les réseaux sociaux**.
+   **Comment choisir :**
+   - Enjeu SEO / Google / référencement → **GrowPulser**. Enjeu réseaux sociaux → **GrowPoster**.
+   - **PAR DÉFAUT, en cas de doute → GrowPulser** (plus mainstream, la majorité des
+     cibles cherchent d'abord de la visibilité Google/locale).
+   - **Si le message du prospect touche les DEUX** (réseaux sociaux ET référencement —
+     ex. "j'ai déjà quelqu'un pour mes réseaux et mon référencement") → **mentionne
+     les DEUX**, une phrase chacun : GrowPulser pour le référencement, GrowPoster pour
+     les réseaux sociaux. Dans ce cas seulement, deux liens sont OK.
+   - **Cible B2B dont l'enjeu est la prospection sortante** → **article cold email**
+     (https://www.webmarketing-conseil.fr/emails-froid), JAMAIS pour un commerce local.
+   Formule toujours naturellement, sans survendre. Un ou deux liens max, jamais trois.
 10b. **PRIX — règle stricte** : sur `interested_warm` et `interested_lukewarm`, **JAMAIS de prix, montants, ou paliers ("Starter/Pro/Scale", "X € HT", "X €/mois") dans le corps**. La plaquette en lien contient les prix, les curieux y vont seuls. Pricing en clair uniquement quand le prospect le demande explicitement (`ask_more_info`) ou objecte sur le prix (`objection_price`). Raison sales : ne pas balancer les tarifs avant d'avoir qualifié et un call programmé.
 11. **Sur les replies `interested_*` et `ask_more_info`** : pose les 2 questions qualifiantes de Rudy :
     - "Quelle est l'offre que vous voulez pousser en priorité ?"
