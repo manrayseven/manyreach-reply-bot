@@ -532,13 +532,17 @@ def main() -> int:
                     except Exception as e:
                         print(f"  !! get_prospect_thread failed: {e}")
 
-                # CAP ANTI-PING-PONG : si le bot a déjà répondu N fois sur ce thread
-                # (en réponse à des replies du prospect), on se TAIT sur le nouveau
-                # reply. Empêche le ping-pong type pharmacie-bonnatrait (7 replies du
-                # prospect "mauvaise personne" → 7 réponses du bot, inutile).
-                # Compte les Sent/SentManual qui suivent un Reply dans l'historique
-                # avant le reply actuel.
+                # CAP ANTI-PING-PONG : si le bot a déjà répondu N fois sur ce thread,
+                # on ne veut plus AUTO-RÉPONDRE (évite le ping-pong type pharmacie-
+                # bonnatrait : 7 "mauvaise personne" → 7 réponses inutiles). MAIS on
+                # ne coupe PAS ici : on pose juste un flag. Le silence ne s'appliquera
+                # qu'aux intents AUTO-ENVOI après classification — un lead chaud /
+                # RDV / demande d'info doit TOUJOURS être remonté en ALERTE, même
+                # au-delà du cap (cas stephanie@bryceparis : 2 échanges puis "appelez-
+                # moi au 06…" → alerte, jamais silence).
+                # Compte les Sent/SentManual (dédup par msgId) qui suivent un Reply.
                 PROSPECT_REPLY_CAP = int(os.environ.get("PROSPECT_REPLY_CAP", "2"))
+                _cap_reached = False
                 if (
                     not args.only_email
                     and not args.reprocess
@@ -546,10 +550,6 @@ def main() -> int:
                     and len(thread) >= 3  # au moins 1 cold + 1 reply + 1 réponse bot
                 ):
                     ordered = sorted(thread, key=lambda m: m.created_at)
-                    # IMPORTANT : ManyReach renvoie chaque envoi du bot 2 FOIS dans
-                    # le thread (une entrée "Sent" + une entrée "SentManual" avec le
-                    # MÊME msgId). On dédoublonne par msgId pour ne compter chaque
-                    # réponse du bot qu'UNE fois (sinon le cap=2 saute après 1 envoi).
                     bot_msg_ids: set[str] = set()
                     seen_first_reply = False
                     for _m in ordered:
@@ -559,25 +559,9 @@ def main() -> int:
                             seen_first_reply = True
                         elif _m.type in ("Sent", "SentManual") and seen_first_reply:
                             bot_msg_ids.add(_m.message_id)
-                    bot_replies_so_far = len(bot_msg_ids)
-                    if bot_replies_so_far >= PROSPECT_REPLY_CAP:
-                        print(f"  >> CAP ATTEINT ({bot_replies_so_far} réponses bot déjà sur ce thread) — silent")
-                        log_entry["intent"] = "ping_pong_cap"
-                        log_entry["actions"] = [f"silent (cap {PROSPECT_REPLY_CAP} réponses atteint)"]
-                        logf.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
-                        if kvstore and kvstore.kv_available():
-                            kvstore.log_action({
-                                "at": now_utc.isoformat(),
-                                "from": reply.from_email,
-                                "subject": reply.subject,
-                                "intent": "ack_only",
-                                "status": f"silencieux (cap {PROSPECT_REPLY_CAP} réponses atteint sur ce thread)",
-                                "reply": _trim_quoted_history(_strip_html(reply.body))[:500],
-                                "response": "(pas de réponse — anti ping-pong)",
-                            })
-                        _mark_done(reply.message_id)
-                        skipped_count += 1
-                        continue
+                    _cap_reached = len(bot_msg_ids) >= PROSPECT_REPLY_CAP
+                    if _cap_reached:
+                        print(f"  >> CAP atteint ({len(bot_msg_ids)} réponses sur ce thread) — pas d'auto-envoi, mais on classifie (les alertes passent quand même)")
 
                 # IDEMPOTENCE : si une réponse (Sent/SentManual) existe déjà APRÈS ce
                 # reply, c'est que le thread a déjà été traité — par le bot OU par Rudy
@@ -870,6 +854,31 @@ def main() -> int:
                     if not dry_run:
                         _mark_done(reply.message_id)
                     processed_count += 1
+                    continue
+
+                # === SILENCE-CAP ANTI-PING-PONG (post-classification) ===
+                # On n'arrive ici QUE pour des intents auto-envoi (ALWAYS_SILENT et
+                # ALERT_ONLY ont déjà `continue`). Si le cap est atteint, on se tait
+                # au lieu d'auto-répondre une Nème fois — les leads chauds sont déjà
+                # partis en alerte plus haut, donc on ne perd jamais un lead.
+                if _cap_reached:
+                    print(f"  >> CAP atteint + intent auto-envoi ({classification.intent}) — silent (anti ping-pong)")
+                    log_entry["intent"] = "ping_pong_cap"
+                    log_entry["actions"] = [f"silent (cap {PROSPECT_REPLY_CAP} réponses atteint)"]
+                    logf.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
+                    if kvstore and kvstore.kv_available():
+                        kvstore.log_action({
+                            "at": now_utc.isoformat(),
+                            "from": reply.from_email,
+                            "subject": reply.subject,
+                            "intent": "ack_only",
+                            "status": f"silencieux (cap {PROSPECT_REPLY_CAP} réponses atteint sur ce thread)",
+                            "reply": _trim_quoted_history(_strip_html(reply.body))[:500],
+                            "response": "(pas de réponse — anti ping-pong)",
+                        })
+                    if not dry_run:
+                        _mark_done(reply.message_id)
+                    skipped_count += 1
                     continue
 
                 # === RACCOURCI 2 : intent qui enverrait un mail, mais hors fenêtre ===
