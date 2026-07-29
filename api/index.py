@@ -318,7 +318,7 @@ def _render() -> str:
     }
     if alerts:
         def _ck(em: str) -> str:
-            return "mrenrich:v2:" + em  # v2 = blob inclut reply_msgid (réponse API)
+            return "mrenrich:v3:" + em  # v3 = blob inclut we_spoke_last_at (supersede)
 
         # 1) Charge le cache pour chaque email ; collecte les emails à interroger
         #    en live (cache froid). Dédup par email (plusieurs alertes même prospect).
@@ -357,14 +357,24 @@ def _render() -> str:
                     if p:
                         data["status"] = p.sending_status or ""
                         data["prospect_email"] = p.email or em
-                        # Campagne d'origine + mailbox + message_id du dernier reply :
-                        # UNIQUEMENT pour les orphelins (hors campagne). Classiques →
-                        # pas besoin du champ in-app → on évite le get_thread.
+                        # On récupère le thread pour TOUTES les alertes (classiques
+                        # incluses) : il sert au SUPERSEDE — si on a répondu APRÈS le
+                        # reply qui a déclenché l'alerte (bot OU Rudy à la main dans
+                        # ManyReach), l'alerte est traitée et doit disparaître. Sans ça
+                        # une conversation déjà répondue reste en alerte avec un lien
+                        # ManyReach qui ouvre vide (cas veterinairephoenix06).
+                        thr = sorted(
+                            _client.get_prospect_thread(p.prospect_id),
+                            key=lambda m: m.created_at,
+                        )
+                        # "On a parlé en dernier" = dernier message du thread est un
+                        # Sent/SentManual de notre côté → date ISO du dernier message.
+                        # Comparée à l'heure de l'alerte en étape 3 pour masquer.
+                        if thr and thr[-1].type in ("Sent", "SentManual"):
+                            data["we_spoke_last_at"] = thr[-1].created_at.isoformat()
+                        # Champs in-app (réponse via API) : UNIQUEMENT pour les
+                        # orphelins (hors campagne) — les classiques gardent le lien.
                         if not has_camp:
-                            thr = sorted(
-                                _client.get_prospect_thread(p.prospect_id),
-                                key=lambda m: m.created_at,
-                            )
                             for m in thr:
                                 if m.type in ("Sent", "SentManual") and m.campaign_id:
                                     data["campaign"] = str(m.campaign_id)
@@ -410,6 +420,21 @@ def _render() -> str:
             if data:
                 if str(data.get("status", "")).lower().strip() in _TERMINAL_MR:
                     continue  # prospect déjà terminal → masque l'alerte
+                # SUPERSEDE : on a répondu (bot ou Rudy) APRÈS le reply qui a créé
+                # cette alerte → conversation traitée → masque. On compare le dernier
+                # Sent du thread à l'heure de l'alerte (a["at"]). Marge de 2 min pour
+                # absorber les petits décalages d'horloge d'ingestion.
+                _spoke = str(data.get("we_spoke_last_at") or "").strip()
+                _alert_at = str(a.get("at") or "").strip()
+                if _spoke and _alert_at:
+                    try:
+                        from datetime import datetime as _dt, timedelta as _td
+                        _s = _dt.fromisoformat(_spoke)
+                        _al = _dt.fromisoformat(_alert_at)
+                        if _s > _al - _td(minutes=2):
+                            continue  # répondu depuis l'alerte → masque
+                    except Exception:  # noqa: BLE001
+                        pass
                 if data.get("prospect_email") and not a.get("prospect_email"):
                     a["prospect_email"] = data["prospect_email"]
                 if data.get("campaign") and not a.get("origin_campaign_id"):
