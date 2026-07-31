@@ -154,6 +154,44 @@ def _trim_quoted_history(body: str, max_len: int = 4000) -> str:
     return body
 
 
+# Désinscription EXPLICITE (n'importe où dans le corps) : macros standard.
+_UNSUB_PHRASE_RE = re.compile(
+    r"d[eé]sinscri\w*|d[eé]sabonn\w*|unsubscribe|remove\s+me\b"
+    r"|ne\s+plus\s+(?:me\s+|nous\s+)?(?:contacter|recevoir|[eé]crire|solliciter)"
+    r"|retire[z]?[-\s]?(?:moi|nous)\b|opt[-\s]?out",
+    re.IGNORECASE,
+)
+
+
+def is_stop_signal(body: str, subject: str = "") -> bool:
+    """True si le message est un signal d'ARRÊT clair → doit forcer `unsubscribe`
+    (blacklist ManyReach + statut Unsub), sans dépendre de l'IA. RGPD : on veut
+    une garantie déterministe. Conservateur pour éviter les faux positifs.
+
+    Déclenche sur : "STOP" dans le sujet, un corps réduit à « stop » (avec
+    politesse), « stop » comme mot isolé dans un message court, ou une phrase de
+    désinscription explicite (désinscription / ne plus me contacter / unsubscribe).
+    """
+    s = (subject or "")
+    if re.search(r"\b(stop|unsubscribe)\b", s, re.IGNORECASE):
+        return True
+    b = (body or "").strip()
+    if not b:
+        return False
+    low = b.lower()
+    if _UNSUB_PHRASE_RE.search(low):
+        return True
+    # Corps dont la 1re ligne réelle EST « stop » (+ éventuelle politesse courte).
+    first = low.split("\n", 1)[0].strip(" .!?,:;\"'()-*>•")
+    if first in ("stop", "stop merci", "merci stop", "stop svp", "stop s'il vous plait",
+                 "stop please", "please stop", "stop.", "stoppp"):
+        return True
+    # « stop » comme mot isolé dans un message court (< 40 car) → intention d'arrêt.
+    if len(b) < 40 and re.search(r"\bstop\b", low):
+        return True
+    return False
+
+
 def _salvage_classification(raw: str) -> dict:
     """Récupère les champs d'une sortie classifier malformée (JSON tronqué/cassé)
     via regex tolérant, pour ne pas perdre le traitement du reply. L'intent

@@ -47,7 +47,7 @@ from src.actions import (  # noqa: E402
     plan_actions,
     plan_mailinblack_actions,
 )
-from src.classifier import Classifier, _strip_html, _trim_quoted_history  # noqa: E402
+from src.classifier import Classifier, _strip_html, _trim_quoted_history, is_stop_signal  # noqa: E402
 from src.drafter import Drafter  # noqa: E402
 from src.manyreach import ManyReachClient, is_bounce_or_auto, is_mailinblack  # noqa: E402
 
@@ -655,6 +655,20 @@ def main() -> int:
                 # commence par un acquiescement explicite, on force interested_warm
                 # (= alerte Rudy, pas de réponse auto qui pourrait être maladroite).
                 _clean_body = _trim_quoted_history(_strip_html(reply.body)).strip()
+
+                # STOP / DÉSINSCRIPTION → unsubscribe GARANTI (déterministe, RGPD).
+                # Rudy (31/07) : "si quelqu'un répond stop, mets-le en blacklist
+                # ManyReach / unsubscribed". On ne dépend pas de l'IA : dès qu'un
+                # signal d'arrêt clair est détecté, on FORCE unsubscribe → la
+                # branche ALWAYS_SILENT exécute blacklist_emails + statut Unsub.
+                if is_stop_signal(_clean_body, reply.subject) and classification.intent != "unsubscribe":
+                    print(f"  >> STOP/désinscription détecté — force unsubscribe (blacklist + Unsub) [était {classification.intent}]")
+                    classification = _dc_replace(
+                        classification,
+                        intent="unsubscribe",
+                        confidence=max(classification.confidence, 0.97),
+                    )
+
                 # On enlève les signatures basiques pour évaluer la longueur réelle
                 _body_first_line = _clean_body.split("\n")[0].strip()
                 _body_short = _clean_body[:200].lower()

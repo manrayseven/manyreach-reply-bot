@@ -13,7 +13,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from src.classifier import _strip_html, _trim_quoted_history  # noqa: E402
+from src.classifier import _strip_html, _trim_quoted_history, is_stop_signal  # noqa: E402
 
 
 def test_trim_short_refusal_with_gmail_quote():
@@ -84,6 +84,28 @@ def test_trim_fr_message_dorigine_separator():
     out = _trim_quoted_history(raw)
     assert out == "Bonjour, je ne suis pas intéressé. Merci et bel été.", out
     assert "appel" not in out and "disponible" not in out
+
+
+def test_is_stop_signal_positive():
+    assert is_stop_signal("stop")
+    assert is_stop_signal("STOP.")
+    assert is_stop_signal("Stop merci")
+    assert is_stop_signal("", subject="STOP")
+    assert is_stop_signal("Merci de me désinscrire de votre liste.")
+    assert is_stop_signal("Ne plus me contacter svp.")
+    assert is_stop_signal("Please unsubscribe me")
+    assert is_stop_signal("retirez-moi de votre base")
+
+
+def test_is_stop_signal_negative():
+    # Un refus poli n'est PAS un stop (il ne blackliste pas).
+    assert not is_stop_signal("Non merci, pas intéressé.")
+    assert not is_stop_signal("Bonjour, c'est parfait, on continue.")
+    # "stop" noyé dans une longue phrase ≠ demande d'arrêt.
+    assert not is_stop_signal(
+        "Je ne veux pas de stop and go dans notre stratégie, mais votre offre "
+        "pourrait m'intéresser, pouvez-vous m'en dire plus ?"
+    )
 
 
 def test_strip_html_basic():
