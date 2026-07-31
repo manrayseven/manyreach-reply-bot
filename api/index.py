@@ -159,7 +159,7 @@ ALERT_INTENTS = {
 }
 
 
-def _render() -> str:
+def _render(client_filter: str | None = None) -> str:
     enabled = kvstore.is_enabled()
     last_run = kvstore.get_last_run()
     last_run_fr = _time_fr(last_run) if last_run else "jamais"
@@ -216,6 +216,17 @@ def _render() -> str:
             pass
     clients_by_id = {c.get("id"): c for c in clients_all if c.get("id")}
     triage_map = kvstore.get_triage()  # {alert_id: client_id}
+
+    # SWITCHER DE COMPTE : filtre la vue (alertes/envois/perf) sur un client.
+    # None = tous les comptes. Le client effectif d'une entrée = assignation
+    # manuelle (triage) sinon client_id stocké par le bot.
+    def _eff_client_id(a: dict) -> str | None:
+        aid = f"{a.get('at', '')}|{(a.get('from') or '').lower()}"
+        return triage_map.get(aid) or a.get("client_id")
+
+    sel_client = client_filter if (client_filter and client_filter in clients_by_id) else None
+    if sel_client:
+        perf = _perf_30d([a for a in actions_full if _eff_client_id(a) == sel_client])
 
     # AUTO-RÉSOLUTION DES ALERTES : pour chaque email, on note le timestamp de la
     # dernière entrée "gérée" (réponse envoyée, action silencieuse, ou reclassée en
@@ -803,6 +814,11 @@ def _render() -> str:
           <div class="error-msg">{status}</div>
         </div>"""
 
+    # Filtre compte (switcher) : ne garde que les entrées du client sélectionné.
+    if sel_client:
+        alerts = [a for a in alerts if _eff_client_id(a) == sel_client]
+        sent_list = [a for a in sent_list if _eff_client_id(a) == sel_client]
+
     # Sections HTML
     alerts_html = "".join(_alert_row(a) for a in alerts[:25])
     if not alerts_html:
@@ -822,6 +838,10 @@ def _render() -> str:
         desc = html.escape(str(c.get("description") or ""))
         mbx = html.escape("\n".join(c.get("mailboxes") or []))
         cps = html.escape("\n".join(str(x) for x in (c.get("campaigns") or [])))
+        tone = html.escape(str(c.get("tone") or ""))
+        link = html.escape(str(c.get("link") or ""))
+        guidelines = html.escape(str(c.get("guidelines") or ""))
+        examples = html.escape(str(c.get("examples") or ""))
         offer = html.escape(str(c.get("offer_context") or ""))
         sig = html.escape(str(c.get("signature") or ""))
         is_def = bool(c.get("is_default"))
@@ -833,9 +853,22 @@ def _render() -> str:
         # IMPORTANT : l'action est portée par le BOUTON cliqué (name=action), pas
         # par un champ caché — le navigateur n'envoie que le submit activé, donc
         # Enregistrer et Supprimer ne se marchent pas dessus.
+        _del_confirm = (
+            f"Supprimer definitivement le compte « {str(c.get('name') or cid)} » ? "
+            "Cette action est irreversible."
+        )
         del_btn = "" if is_new else (
             f'<button type="submit" name="action" value="delete_client" class="cdel" '
-            f'onclick="return confirm(\'Supprimer ce client ?\')">Supprimer</button>'
+            f'onclick="return confirm(\'{html.escape(_del_confirm)}\')">🗑 Supprimer ce compte</button>'
+        )
+        # Bloc "réponses" : pour le compte MOI, note qu'il est optionnel (voix déjà
+        # configurée). Pour un client tiers, ces champs pilotent la réponse.
+        _resp_note = (
+            '<div class="fhint" style="margin:2px 0 8px">Ton compte utilise déjà ta configuration existante — '
+            'ces champs sont <b>optionnels</b> (les remplir surchargerait ta voix actuelle).</div>'
+            if is_def else
+            '<div class="fhint" style="margin:2px 0 8px">C\'est ici que tu apprends au bot à répondre <b>au nom de ce client</b> '
+            '(refus polis, objections). Plus tu remplis, meilleures sont les réponses.</div>'
         )
         return f"""
       <div class="client-block">
@@ -847,16 +880,28 @@ def _render() -> str:
               <input type="text" name="name" value="{name}" placeholder="Ex. Cabinet Durand" required></div>
             <div class="client-field"><label>Email du client <span class="fhint">(pour « Mettre en relation »)</span></label>
               <input type="email" name="contact_email" value="{cemail}" placeholder="contact@client.com"></div>
-            <div class="client-field full"><label>Description de l'offre <span class="fhint">(sert à deviner le bon client quand aucune adresse ne matche)</span></label>
-              <textarea name="description" rows="2" placeholder="Ce que ce client vend / propose">{desc}</textarea></div>
+            <div class="client-field full"><label>Offre — ce qu'il vend <span class="fhint">(sert au tri quand aucune adresse ne matche, ET à ancrer la réponse)</span></label>
+              <textarea name="description" rows="2" placeholder="Ex. Cabinet d'expertise comptable pour TPE/PME">{desc}</textarea></div>
             <div class="client-field"><label>Adresses d'envoi <span class="fhint">(une par ligne — quelques exemples suffisent)</span></label>
               <textarea name="mailboxes" rows="3" placeholder="contact@client.com&#10;pro@client.com">{mbx}</textarea></div>
             <div class="client-field"><label>Campagnes <span class="fhint">(ids, une par ligne — optionnel)</span></label>
               <textarea name="campaigns" rows="3" placeholder="98002&#10;55501">{cps}</textarea></div>
-            <div class="client-field full"><label>Réponses aux négatifs <span class="fhint">(qui est ce client, quoi pitcher, quels liens — laissé vide pour « MOI » = comportement actuel)</span></label>
-              <textarea name="offer_context" rows="3" placeholder="Ex. Tu réponds pour le Cabinet Durand (expertise comptable). En cas de refus, reste courtois et propose la newsletter conseils : https://...">{offer}</textarea></div>
-            <div class="client-field full"><label>Signature <span class="fhint">(optionnel)</span></label>
+          </div>
+          <div class="client-subhead">✍️ Comment répondre pour ce client</div>
+          {_resp_note}
+          <div class="client-grid">
+            <div class="client-field"><label>Ton & style <span class="fhint">(vouvoiement/tutoiement, chaleureux/direct, emojis…)</span></label>
+              <textarea name="tone" rows="2" placeholder="Ex. Vouvoiement, pro et chaleureux, phrases courtes, sans emoji">{tone}</textarea></div>
+            <div class="client-field"><label>Lien / ressource à proposer <span class="fhint">(glissé en fin de réponse si pertinent)</span></label>
+              <textarea name="link" rows="2" placeholder="Ex. https://cabinet-durand.fr/guide-tpe">{link}</textarea></div>
+            <div class="client-field full"><label>À respecter / à éviter <span class="fhint">(garde-fous)</span></label>
+              <textarea name="guidelines" rows="2" placeholder="Ex. Ne jamais donner de prix. Ne rien promettre. Ne pas proposer de rendez-vous (Rudy s'en charge).">{guidelines}</textarea></div>
+            <div class="client-field full"><label>Exemples de réponses <span class="fhint">(le plus efficace — le bot copie le ton, pas le texte)</span></label>
+              <textarea name="examples" rows="3" placeholder="Colle 1-2 vraies réponses type déjà écrites pour ce client">{examples}</textarea></div>
+            <div class="client-field full"><label>Signature exacte <span class="fhint">(optionnel)</span></label>
               <textarea name="signature" rows="2" placeholder="Ex. L'équipe Durand&#10;01 23 45 67 89">{sig}</textarea></div>
+            <div class="client-field full"><label>Instructions libres <span class="fhint">(optionnel — tout ce qui ne rentre pas ailleurs)</span></label>
+              <textarea name="offer_context" rows="2" placeholder="Notes additionnelles pour l'IA">{offer}</textarea></div>
           </div>
           <div class="client-actions">
             <label class="client-check"><input type="checkbox" name="is_default" value="1" {'checked' if is_def else ''}> C'est mon compte (client par défaut)</label>
@@ -868,6 +913,27 @@ def _render() -> str:
 
     clients_blocks = "".join(_client_form(c) for c in clients_all)
     clients_section_html = clients_blocks + _client_form(None)
+
+    # SWITCHER DE COMPTE en haut de page (seulement si 2+ comptes paramétrés).
+    account_switcher_html = ""
+    if len(clients_all) >= 2:
+        def _acc_link(cid: str, label: str, active: bool) -> str:
+            if cid:
+                sep = "&" if keyparam else "?"
+                href = f"/{keyparam}{sep}client={urllib.parse.quote(cid)}"
+            else:
+                href = f"/{keyparam}" or "/"
+            cls = "acc-tab acc-tab-on" if active else "acc-tab"
+            return f'<a class="{cls}" href="{href}">{html.escape(label)}</a>'
+        _tabs = [_acc_link("", "Tous les comptes", sel_client is None)]
+        for _c in clients_all:
+            _cid = str(_c.get("id") or "")
+            _lbl = str(_c.get("name") or _cid) + (" (moi)" if _c.get("is_default") else "")
+            _tabs.append(_acc_link(_cid, _lbl, sel_client == _cid))
+        account_switcher_html = (
+            '<div class="acc-switch"><span class="acc-switch-lbl">Compte&nbsp;:</span>'
+            + "".join(_tabs) + "</div>"
+        )
 
     # Bloc perf 30 jours (dédupliqué par prospect)
     stats_html = f"""
@@ -963,6 +1029,14 @@ def _render() -> str:
  .client-field input[type=text],.client-field input[type=email],.client-field textarea{{width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #e0d9cb;border-radius:8px;font-size:12.5px;font-family:inherit;background:#fff;color:#2b2823;resize:vertical}}
  .client-field textarea{{line-height:1.5}}
  .client-actions{{display:flex;gap:8px;align-items:center;margin-top:10px}}
+ /* ACCOUNT SWITCHER */
+ .acc-switch{{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:14px;background:#fff;border:1px solid #ebe6dc;border-radius:12px;padding:8px 12px}}
+ .acc-switch-lbl{{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#a39c8c;margin-right:2px}}
+ .acc-tab{{font-size:12px;font-weight:600;color:#5c574c;background:#f3f0e9;border:1px solid #e7e1d5;padding:5px 12px;border-radius:20px;text-decoration:none;transition:all .12s}}
+ .acc-tab:hover{{background:#e7e1d5;text-decoration:none}}
+ .acc-tab-on{{background:#26231e;color:#fff;border-color:#26231e}}
+ .acc-tab-on:hover{{background:#26231e;color:#fff}}
+ .client-subhead{{font-size:11.5px;font-weight:700;color:#5c574c;margin:14px 0 2px;letter-spacing:.02em}}
  .client-actions .cdel{{margin-left:auto;background:#fff;color:#c0392b;border:1px solid #f0cbc6;font-size:11px;padding:7px 12px}}
  .client-actions .cdel:hover{{background:#c0392b;color:#fff;opacity:1}}
  .client-check{{display:flex;align-items:center;gap:6px;font-size:11.5px;color:#5c574c;font-weight:500}}
@@ -1037,6 +1111,8 @@ def _render() -> str:
     <h1><span class="dot"></span>ManyReach Bot <span class="status-pill {status_pill_cls}">{status_txt}</span></h1>
     <div class="status">Dernier passage : {html.escape(last_run_fr)}<br>{last_run_freshness}</div>
   </div>
+
+  {account_switcher_html}
 
   {stats_html}
 
@@ -1148,7 +1224,8 @@ class handler(BaseHTTPRequestHandler):
         if not kvstore.kv_available():
             self._send(200, "<h2>KV non configurée</h2><p>Connecte une base Vercel KV au projet (voir DEPLOY-VERCEL.md).</p>", html_=True)
             return
-        self._send(200, _render(), html_=True)
+        _cf = query.get("client", [None])[0]
+        self._send(200, _render(client_filter=_cf), html_=True)
 
     def do_POST(self):
         query = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
@@ -1437,6 +1514,10 @@ class handler(BaseHTTPRequestHandler):
                     "description": (form.get("description") or "").strip(),
                     "mailboxes": _split(form.get("mailboxes", "")),
                     "campaigns": _split(form.get("campaigns", "")),
+                    "tone": (form.get("tone") or "").strip(),
+                    "link": (form.get("link") or "").strip(),
+                    "guidelines": (form.get("guidelines") or "").strip(),
+                    "examples": (form.get("examples") or "").strip(),
                     "offer_context": (form.get("offer_context") or "").strip(),
                     "signature": (form.get("signature") or "").strip(),
                     "is_default": form.get("is_default") == "1",

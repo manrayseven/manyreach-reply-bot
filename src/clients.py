@@ -191,27 +191,54 @@ def infer_client_llm(
 
 
 def build_client_draft_context(client: dict | None) -> str:
-    """Bloc d'identité injecté au drafter pour les réponses NÉGATIVES d'un client.
-    Vide pour le client par défaut sans offer_context (→ comportement historique
-    inchangé). Sinon décrit qui est le client et quoi pitcher."""
+    """Bloc d'identité injecté au drafter pour répondre au nom d'un client.
+
+    Assemble les champs guidés (offre, ton, lien, signature, garde-fous, exemples)
+    en un bloc système prioritaire. IMPORTANT : le compte par défaut (MOI/Rudy)
+    sans champ de RÉPONSE rempli → renvoie "" → comportement historique inchangé
+    (draft.md + training_examples.md restent la voie par défaut). La `description`
+    (offre) seule ne suffit PAS à déclencher un bloc pour le compte par défaut :
+    elle sert au routage et est présente même pour MOI.
+    """
     if not client:
         return ""
-    if client.get("is_default") and not (client.get("offer_context") or "").strip():
-        return ""  # Rudy sans surcharge → on garde draft.md/training tels quels
-    parts = []
-    oc = (client.get("offer_context") or "").strip()
-    if oc:
-        parts.append(oc)
-    sig = (client.get("signature") or "").strip()
-    if sig:
-        parts.append(f"Signature à utiliser :\n{sig}")
-    if not parts:
+    offer = (client.get("description") or "").strip()
+    tone = (client.get("tone") or "").strip()
+    link = (client.get("link") or "").strip()
+    signature = (client.get("signature") or "").strip()
+    guidelines = (client.get("guidelines") or "").strip()
+    examples = (client.get("examples") or "").strip()
+    extra = (client.get("offer_context") or "").strip()  # instructions libres (legacy)
+
+    # Champs SPÉCIFIQUES à la réponse (hors offre/description, qui est du routage).
+    reply_specific = any([tone, link, guidelines, examples, extra, signature])
+    if client.get("is_default") and not reply_specific:
+        return ""  # MOI sans config de réponse → drafting inchangé
+    if not (reply_specific or offer):
         return ""
-    body = "\n\n".join(parts)
-    return (
-        "## IDENTITÉ CLIENT POUR CETTE RÉPONSE (PRIORITAIRE)\n"
-        f"Cette réponse est envoyée au nom du client « {client.get('name','')} ». "
-        "Réponds dans SA voix et pour SON offre décrite ci-dessous. Ignore toute "
-        "autre offre (ex. GrowPulser) qui ne correspondrait pas à ce client.\n\n"
-        f"{body}"
-    )
+
+    lines = [
+        "## IDENTITÉ CLIENT POUR CETTE RÉPONSE (PRIORITAIRE)",
+        f"Cette réponse part au nom du client « {client.get('name', '')} ». Réponds "
+        "dans SA voix et pour SON offre. Ignore toute autre offre (ex. GrowPulser) "
+        "qui ne correspond pas à ce client.",
+        "",
+    ]
+    if offer:
+        lines.append(f"- Offre / ce qu'il vend : {offer}")
+    if tone:
+        lines.append(f"- Ton & style à adopter : {tone}")
+    if link:
+        lines.append(f"- Lien / ressource à glisser en fin de réponse si pertinent : {link}")
+    if guidelines:
+        lines.append(f"- À respecter / à éviter absolument : {guidelines}")
+    if signature:
+        lines.append(f"- Signature exacte à utiliser :\n{signature}")
+    if examples:
+        lines.append(
+            "\nExemples de réponses dans sa voix (inspire-toi du TON et du format, "
+            "ne recopie pas mot à mot) :\n" + examples
+        )
+    if extra:
+        lines.append("\nInstructions supplémentaires : " + extra)
+    return "\n".join(lines)

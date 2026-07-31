@@ -105,12 +105,43 @@ def test_default_client():
 
 
 def test_draft_context_empty_for_default_rudy():
-    # Rudy par défaut sans offer_context → aucun bloc (comportement historique).
+    # Rudy par défaut sans champ de réponse → aucun bloc (comportement historique).
     assert build_client_draft_context(RUDY) == ""
+
+
+def test_draft_context_default_with_description_only_stays_empty():
+    # Le compte par défaut (MOI) avec SEULEMENT une description (routage) ne doit
+    # PAS injecter de bloc → drafting inchangé. La description ne compte pas comme
+    # config de réponse.
+    moi = {"id": "moi", "name": "Moi", "is_default": True,
+           "description": "conseil webmarketing, GrowPulser"}
+    assert build_client_draft_context(moi) == ""
 
 
 def test_draft_context_present_for_other_client():
     ctx = build_client_draft_context(DURAND)
     assert "Durand" in ctx
-    assert "estimation gratuite" in ctx
+    assert "estimation gratuite" in ctx  # via offer_context (extra)
     assert "IDENTITÉ CLIENT" in ctx
+
+
+def test_draft_context_non_default_with_description_only():
+    # Un client tiers avec seulement l'offre → bloc présent (grounding + voix).
+    c = {"id": "x", "name": "Client X", "description": "vend des cuisines"}
+    ctx = build_client_draft_context(c)
+    assert "Client X" in ctx and "cuisines" in ctx
+
+
+def test_draft_context_uses_guided_fields():
+    c = {
+        "id": "y", "name": "Client Y", "description": "coaching sportif",
+        "tone": "tutoiement, énergique", "link": "https://y.fr/guide",
+        "guidelines": "jamais de prix", "signature": "Coach Y",
+        "examples": "Merci pour ton retour ! ...",
+    }
+    ctx = build_client_draft_context(c)
+    assert "tutoiement, énergique" in ctx
+    assert "https://y.fr/guide" in ctx
+    assert "jamais de prix" in ctx
+    assert "Coach Y" in ctx
+    assert "Merci pour ton retour" in ctx
