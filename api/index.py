@@ -393,12 +393,23 @@ def _render(client_filter: str | None = None) -> str:
     clients_by_id = {c.get("id"): c for c in clients_all if c.get("id")}
     triage_map = kvstore.get_triage()  # {alert_id: client_id}
 
+    # Compte par défaut (is_default) = FOURRE-TOUT : toute réponse non rattachée
+    # explicitement à un autre client lui revient. Indispensable pour l'historique
+    # (entrées loguées avant l'existence des comptes → pas de client_id).
+    _default_cid = None
+    for _c in clients_all:
+        if _c.get("is_default"):
+            _default_cid = _c.get("id")
+            break
+    if _default_cid is None and clients_all:
+        _default_cid = clients_all[0].get("id")
+
     # SWITCHER DE COMPTE : filtre la vue (alertes/envois/perf) sur un client.
-    # None = tous les comptes. Le client effectif d'une entrée = assignation
-    # manuelle (triage) sinon client_id stocké par le bot.
+    # None = tous les comptes. Client effectif = triage → client_id stocké →
+    # sinon le compte par défaut (fourre-tout).
     def _eff_client_id(a: dict) -> str | None:
         aid = f"{a.get('at', '')}|{(a.get('from') or '').lower()}"
-        return triage_map.get(aid) or a.get("client_id")
+        return triage_map.get(aid) or a.get("client_id") or _default_cid
 
     sel_client = client_filter if (client_filter and client_filter in clients_by_id) else None
     if sel_client:
@@ -583,6 +594,20 @@ def _render(client_filter: str | None = None) -> str:
                     if p:
                         data["status"] = p.sending_status or ""
                         data["prospect_email"] = p.email or em
+                        # Données SOCIÉTÉ/CONTACT pour le transfert "Mettre en
+                        # relation" (société, secteur, taille, ville, rôle, tél).
+                        _raw = p.raw or {}
+                        data["company"] = p.company or ""
+                        data["industry"] = p.industry or ""
+                        data["job"] = p.job_position or ""
+                        data["website"] = p.website or ""
+                        data["city"] = str(_raw.get("city") or "")
+                        data["size"] = str(_raw.get("companySize") or "")
+                        data["phone_live"] = str(_raw.get("phone") or "")
+                        data["pname"] = " ".join(
+                            x for x in [str(p.first_name or ""), str(p.last_name or "")]
+                            if x and not x[:4].isdigit()
+                        ).strip()
                         # On récupère le thread pour TOUTES les alertes (classiques
                         # incluses) : il sert au SUPERSEDE — si on a répondu APRÈS le
                         # reply qui a déclenché l'alerte (bot OU Rudy à la main dans
@@ -678,6 +703,11 @@ def _render(client_filter: str | None = None) -> str:
                 if (_rf and "no body detail" not in _rf.lower()
                         and len(_rf) > len(str(a.get("reply") or "").strip())):
                     a["reply"] = _rf
+                # Données société/contact pour le transfert "Mettre en relation".
+                for _k in ("company", "industry", "job", "website", "city",
+                           "size", "phone_live", "pname"):
+                    if data.get(_k) and not a.get("_" + _k):
+                        a["_" + _k] = data[_k]
             _kept.append(a)
         alerts = _kept
 
@@ -850,8 +880,9 @@ def _render(client_filter: str | None = None) -> str:
             if sender_mailbox else ""
         )
         # === MULTI-CLIENTS : badge client, triage manuel, mise en relation ===
-        # L'assignation manuelle (triage) prime sur le client déduit par le bot.
-        _assigned_cid = triage_map.get(raw_alert_id) or a.get("client_id")
+        # L'assignation manuelle (triage) prime sur le client déduit par le bot,
+        # puis fourre-tout = compte par défaut (comme le filtre du switcher).
+        _assigned_cid = triage_map.get(raw_alert_id) or a.get("client_id") or _default_cid
         _client = clients_by_id.get(_assigned_cid) if _assigned_cid else None
         # "À trier" seulement si ça reste ambigu (2+ clients ET jamais assigné).
         _needs_triage = (
@@ -883,29 +914,59 @@ def _render(client_filter: str | None = None) -> str:
                 f'title="Rattacher à ce client (le bot apprend et triera seul ensuite)">à trier ✓</button>'
                 f'</form>'
             )
-        # "Mettre en relation" : mailto pré-rempli vers l'email du client, récap propre.
+        # "Mettre en relation" : mailto pré-rempli vers l'email du client, avec un
+        # récap STRUCTURÉ (société / contact / campagne / message / à faire) — même
+        # format à chaque fois pour que le transfert soit "carré" côté client.
         mise_en_relation = ""
         if _client and (_client.get("contact_email") or "").strip():
-            _phone = str(a.get("prospect_phone") or "").strip()
-            _recap = "\n".join([
-                "Bonjour,", "",
-                "Voici un lead a reprendre :", "",
-                f"- Contact : {prospect_email}",
-                f"- Telephone : {_phone or 'non communique'}",
-                f"- Recu le : {when}", "",
-                "Son dernier message :",
-                f"\"{str(a.get('reply') or '')[:900]}\"", "",
-                "Bonne prise de contact.",
-            ])
+            _phone = str(a.get("prospect_phone") or a.get("_phone_live") or "").strip()
+            _company = str(a.get("_company") or "").strip()
+            _industry = str(a.get("_industry") or "").strip()
+            _city = str(a.get("_city") or "").strip()
+            _size = str(a.get("_size") or "").strip()
+            _job = str(a.get("_job") or "").strip()
+            _pname = str(a.get("_pname") or "").strip()
+            _camp = str(mr_camp or origin_camp or "").strip()
+            # Société : "Nom - secteur, N salariés, ville" (on omet ce qui manque).
+            _detail = ", ".join(x for x in [
+                _industry, (f"{_size} salariés" if _size else ""), _city
+            ] if x)
+            _soc = (_company or "(société non renseignée)") + (f" - {_detail}" if _detail else "")
+            # Contact : "Rôle/Nom - tél X - email".
+            _who = _job or _pname or "Contact"
+            _coords = " - ".join(x for x in [
+                (f"tél {_phone}" if _phone else ""), (prospect_email or "")
+            ] if x)
+            _contact = _who + (f" - {_coords}" if _coords else "")
+            _msg = str(a.get("reply") or "").strip()[:900]
+            _recap_lines = [
+                "PROSPECT INTÉRESSÉ - transfert automatique",
+                "",
+                f"Société  : {_soc}",
+                f"Contact  : {_contact}",
+            ]
+            if _camp:
+                _recap_lines.append(f"Campagne : {_camp}")
+            _recap_lines += [
+                "",
+                "Message reçu :",
+                (f"« {_msg} »" if _msg else "(message non disponible)"),
+                "",
+                "À faire de votre côté : rappeler ou répondre sous 48 h ouvrées. "
+                "Le prospect sait qui vous êtes et attend votre retour.",
+            ]
+            _recap = "\n".join(_recap_lines)
+            _subj = f"Prospect intéressé à reprendre : {_company or prospect_email}"
             _mer_href = (
                 "mailto:" + urllib.parse.quote(_client["contact_email"])
-                + "?subject=" + urllib.parse.quote(f"Lead a reprendre : {prospect_email}")
+                + "?subject=" + urllib.parse.quote(_subj)
                 + "&body=" + urllib.parse.quote(_recap)
             )
             mise_en_relation = (
                 f'<a class="alert-mr alert-mr-mer" href="{html.escape(_mer_href)}" '
-                f'title="Ouvre ton mail avec un recap propre a envoyer a '
-                f'{html.escape(_client["contact_email"])}">🤝 Mettre en relation</a>'
+                f'title="Ouvre ton mail avec un transfert structuré (société, contact, '
+                f'message) prêt à envoyer à {html.escape(_client["contact_email"])}">'
+                f'🤝 Mettre en relation</a>'
             )
         # Bouton "Réponse auto" : l'IA génère une CLÔTURE POLIE (décline en douceur)
         # et l'envoie dans le fil ManyReach, puis retire l'alerte. Pour les leads que
@@ -1247,7 +1308,12 @@ def _render(client_filter: str | None = None) -> str:
  .report-box{{width:100%;box-sizing:border-box;border:1px solid #cfe8dd;border-radius:10px;padding:12px 14px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;line-height:1.6;color:#2b3a34;background:#fff;resize:vertical}}
  .report-actions{{display:flex;align-items:center;gap:12px;margin-top:10px}}
  .report-hint{{font-size:11.5px;color:#6a9c8c}}
- .report-sel{{padding:9px 10px;border:1px solid #e0d9cb;border-radius:9px;font-size:13px;font-family:inherit;background:#fff;color:#2b2823;flex:1;min-width:0}}
+ .report-sel{{padding:9px 10px;border:1px solid #e0d9cb;border-radius:9px;font-size:13px;font-family:inherit;background:#fff;color:#2b2823;min-width:0}}
+ .report-row{{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:14px 16px 0;margin-top:4px;border-top:1px solid #efe9dd}}
+ .report-form{{display:flex;gap:8px;align-items:stretch;margin:0;flex:0 0 auto}}
+ .report-form .report-sel{{flex:0 0 auto;max-width:220px}}
+ .report-form button{{white-space:nowrap}}
+ .report-row .action-help{{flex:1;min-width:200px}}
  /* ACCOUNT SWITCHER */
  .acc-switch{{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:14px;background:#fff;border:1px solid #ebe6dc;border-radius:12px;padding:8px 12px}}
  .acc-switch-lbl{{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#a39c8c;margin-right:2px}}
@@ -1365,15 +1431,15 @@ def _render(client_filter: str | None = None) -> str:
         </form>
         <div class="action-help">Affiche en clair pourquoi le bot ignore un prospect (statut, idempotence, déjà traité…). Aucun envoi.</div>
       </div>
-      <div class="action-cell">
-        <form method="POST" action="/{keyparam}"
-              onsubmit="var b=this.querySelector('button'); b.disabled=true; b.innerHTML='⏳ Rapport...'; return true;">
-          <input type="hidden" name="action" value="monthly_report">
-          <select name="client_id" class="report-sel">{_report_opts}</select>
-          <button class="btn-primary" type="submit">📊 Reporting mensuel</button>
-        </form>
-        <div class="action-help">Génère un <b>bilan du mois</b> pour un client (chiffres + recommandations), prêt à <b>copier-coller dans un email</b>. Il s'affiche juste en dessous.</div>
-      </div>
+    </div>
+    <div class="report-row">
+      <form method="POST" action="/{keyparam}" class="report-form"
+            onsubmit="var b=this.querySelector('button'); b.disabled=true; b.innerHTML='⏳ Génération...'; return true;">
+        <input type="hidden" name="action" value="monthly_report">
+        <select name="client_id" class="report-sel">{_report_opts}</select>
+        <button class="btn-primary" type="submit">📊 Reporting mensuel</button>
+      </form>
+      <div class="action-help">Génère un <b>bilan du mois</b> pour le client choisi (chiffres + recommandations), prêt à <b>copier-coller dans un email</b>. Il s'affiche juste en dessous.</div>
     </div>
     <div class="action-toggle-row">
       <div class="toggle-help">Stop / start du bot. En pause, il ne traite plus aucune réponse jusqu'à réactivation.</div>
