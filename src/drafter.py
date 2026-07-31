@@ -110,6 +110,7 @@ class Drafter:
         proposed_slots: list[str] | None = None,
         silent_on_not_interested: bool = True,
         company_context: str = "",
+        client_context: str = "",
     ) -> Draft:
         """Generate a reply draft.
 
@@ -207,22 +208,32 @@ Rédige maintenant la réponse selon les règles du system prompt et du style gu
             if classification.intent in SIMPLE_DRAFT_INTENTS
             else self.model
         )
+        system_blocks = [
+            {
+                "type": "text",
+                "text": self.system_prompt,
+                "cache_control": {"type": "ephemeral"},
+            },
+            {
+                "type": "text",
+                "text": "## STYLE GUIDE (voix + entités + training pairs)\n"
+                + (style_guide or "(no style guide provided)"),
+                "cache_control": {"type": "ephemeral"},
+            },
+        ]
+        # Bloc identité CLIENT (multi-clients) : quand la réponse part au nom d'un
+        # client ayant sa propre offre, ce bloc prime sur le contexte GrowPulser
+        # par défaut. Vide pour le client "moi" sans surcharge → inchangé.
+        if (client_context or "").strip():
+            system_blocks.append({
+                "type": "text",
+                "text": client_context,
+                "cache_control": {"type": "ephemeral"},
+            })
         msg = self.client.messages.create(
             model=chosen_model,
             max_tokens=3000,
-            system=[
-                {
-                    "type": "text",
-                    "text": self.system_prompt,
-                    "cache_control": {"type": "ephemeral"},
-                },
-                {
-                    "type": "text",
-                    "text": "## STYLE GUIDE (voix + entités + training pairs)\n"
-                    + (style_guide or "(no style guide provided)"),
-                    "cache_control": {"type": "ephemeral"},
-                },
-            ],
+            system=system_blocks,
             messages=[{"role": "user", "content": user_content}],
         )
         return self._parse(msg.content[0].text.strip())

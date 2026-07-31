@@ -187,6 +187,15 @@ def main() -> int:
 
     style_guide = load_style_guide(args.training)
 
+    # Multi-clients : liste des comptes clients (vide = mode mono-client legacy,
+    # comportement 100% inchangé). Chargée depuis KV, éditée via le dashboard.
+    clients_list: list[dict] = []
+    try:
+        if kvstore is not None and kvstore.kv_available():
+            clients_list = kvstore.get_clients()
+    except Exception:  # noqa: BLE001
+        clients_list = []
+
     # LOG_DIR env permet d'écrire ailleurs (ex. /tmp sur Vercel, FS read-only).
     log_dir_env = os.environ.get("LOG_DIR")
     logs_dir = Path(log_dir_env) if log_dir_env else PROJECT_ROOT / settings.get("logs", {}).get("dir", "logs")
@@ -532,6 +541,47 @@ def main() -> int:
                     except Exception as e:
                         print(f"  !! get_prospect_thread failed: {e}")
 
+                # === ROUTAGE MULTI-CLIENTS ===
+                # Rattache ce reply au bon client, ancré sur la MAILBOX d'envoi
+                # (from_email du 1er Sent du thread), puis la campagne, puis (2+
+                # clients, aucun signal connu) un fallback LLM qui lit le cold mail.
+                # Pas sûr → needs_triage : l'alerte partira "à trier" (Rudy tranche
+                # dans le dashboard, et le système apprend). Vide clients_list =
+                # mono-client → active_client None → comportement legacy inchangé.
+                active_client = None
+                client_needs_triage = False
+                if clients_list:
+                    from src import clients as _clients
+                    _sender_mb = original_outreach.from_email if original_outreach else None
+                    _route = _clients.route(clients_list, _sender_mb, reply.campaign_id)
+                    active_client = _route["client"]
+                    client_needs_triage = _route["needs_triage"]
+                    if client_needs_triage and original_outreach:
+                        try:
+                            _orig_txt = _trim_quoted_history(_strip_html(original_outreach.body), 2000)
+                            _cid, _conf = _clients.infer_client_llm(
+                                drafter.client, clients_list, _orig_txt
+                            )
+                            if _cid:
+                                _match = next((c for c in clients_list if c.get("id") == _cid), None)
+                                if _match:
+                                    active_client = _match
+                                    client_needs_triage = False
+                                    # APPREND : mémorise mailbox/campagne pour ce client.
+                                    if kvstore and kvstore.kv_available():
+                                        try:
+                                            _upd = _clients.learn(_match, _sender_mb, reply.campaign_id)
+                                            clients_list = [
+                                                _upd if c.get("id") == _cid else c
+                                                for c in clients_list
+                                            ]
+                                            kvstore.set_clients(clients_list)
+                                            active_client = _upd
+                                        except Exception:  # noqa: BLE001
+                                            pass
+                        except Exception:  # noqa: BLE001
+                            pass
+
                 # CAP ANTI-PING-PONG : si le bot a déjà répondu N fois sur ce thread,
                 # on ne veut plus AUTO-RÉPONDRE (évite le ping-pong type pharmacie-
                 # bonnatrait : 7 "mauvaise personne" → 7 réponses inutiles). MAIS on
@@ -850,6 +900,16 @@ def main() -> int:
                             # pour envoyer depuis le bon compte.
                             "message_id": reply.message_id,
                             "sender_mailbox": (original_outreach.from_email if original_outreach else None),
+                            # Multi-clients : rattachement + tri manuel + "Mise en
+                            # relation". needs_triage=True → badge "à trier" dans le
+                            # dashboard (2+ clients, aucun signal connu).
+                            "client_id": (active_client or {}).get("id"),
+                            "client_name": (active_client or {}).get("name"),
+                            "needs_triage": bool(client_needs_triage),
+                            "prospect_phone": (
+                                classification.contact_phone
+                                or (prospect.raw.get("phone") if prospect and prospect.raw else None)
+                            ),
                         })
                     if not dry_run:
                         _mark_done(reply.message_id)
@@ -927,6 +987,10 @@ def main() -> int:
                     proposed_slots=None,
                     silent_on_not_interested=silent_on_not_interested,
                     company_context="",
+                    client_context=(
+                        _clients.build_client_draft_context(active_client)
+                        if clients_list else ""
+                    ),
                 )
 
                 if draft.skip_send:
@@ -1030,6 +1094,8 @@ def main() -> int:
                         "replied": bool(plan.auto_send and not dry_run and not draft.skip_send),
                         "campaign_id": reply.campaign_id,
                         "prospect_email": (prospect.email if prospect else None),
+                        "client_id": (active_client or {}).get("id"),
+                        "client_name": (active_client or {}).get("name"),
                     })
 
                 # Marquer comme traité dès que le bot a TENTÉ de gérer le reply
