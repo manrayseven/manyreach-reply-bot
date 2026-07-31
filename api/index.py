@@ -158,6 +158,182 @@ ALERT_INTENTS = {
     "meeting_confirmed", "objection_timing",
 }
 
+_MONTHS_FR = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet",
+              "août", "septembre", "octobre", "novembre", "décembre"]
+
+
+def _monthly_stats(actions: list, now=None) -> dict:
+    """Agrège 30 jours de réponses (dédupliquées par prospect) pour le reporting.
+    `actions` doit déjà être filtré sur le bon client. Retourne des compteurs."""
+    from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+    now = now or _dt.now(_tz.utc)
+    cutoff = now - _td(days=30)
+    by_email: dict[str, list] = {}
+    for a in actions:
+        intent = a.get("intent", "")
+        if intent not in _REAL_REPLY_INTENTS:
+            continue
+        em = (a.get("from") or "").lower().strip()
+        if not em:
+            continue
+        at = a.get("at", "")
+        try:
+            t = _dt.fromisoformat(at)
+            if t.tzinfo is None:
+                t = t.replace(tzinfo=_tz.utc)
+            if t < cutoff:
+                continue
+        except (ValueError, TypeError):
+            pass
+        by_email.setdefault(em, []).append((at, intent))
+    g = {"received": len(by_email), "positive": 0, "negative": 0, "meetings": 0,
+         "timing": 0, "wrong": 0, "warm": 0, "lukewarm": 0, "info": 0,
+         "refus": 0, "already": 0, "price": 0, "unsub": 0, "hostile": 0}
+    _map = {"interested_warm": "warm", "interested_lukewarm": "lukewarm",
+            "ask_more_info": "info", "not_interested_polite": "refus",
+            "objection_already_have_solution": "already", "objection_price": "price",
+            "unsubscribe": "unsub", "hostile": "hostile"}
+    for _em, items in by_email.items():
+        items.sort(key=lambda x: x[0], reverse=True)
+        has_meeting = any(i[1] == "meeting_confirmed" for i in items)
+        eff = "meeting_confirmed" if has_meeting else items[0][1]
+        if has_meeting:
+            g["meetings"] += 1
+        if eff in _POS_INTENTS:
+            g["positive"] += 1
+        elif eff in _NEG_INTENTS:
+            g["negative"] += 1
+        if eff == "objection_timing":
+            g["timing"] += 1
+        if eff == "wrong_person_redirect":
+            g["wrong"] += 1
+        if eff in _map:
+            g[_map[eff]] += 1
+    g["pos_rate"] = (g["positive"] / g["received"]) if g["received"] else 0.0
+    return g
+
+
+def _rule_recos(g: dict) -> list[str]:
+    """Recommandations par défaut (règles) si l'IA n'est pas dispo."""
+    recos: list[str] = []
+    if g["received"] == 0:
+        return ["Aucune réponse enregistrée ce mois : vérifier que les campagnes "
+                "tournent bien, le volume d'envoi et la délivrabilité."]
+    if g["meetings"]:
+        recos.append(f"{g['meetings']} rendez-vous à concrétiser : le suivi rapide "
+                     "de ces contacts est la priorité.")
+    if g["received"] >= 5 and g["pos_rate"] < 0.10:
+        recos.append("Taux d'intérêt faible : affiner le ciblage (secteur/taille) "
+                     "et tester une nouvelle accroche sur les prochains envois.")
+    elif g["pos_rate"] >= 0.25:
+        recos.append("Bon taux d'intérêt : on peut augmenter le volume d'envoi "
+                     "pour capitaliser sur ce message qui fonctionne.")
+    if g["timing"]:
+        recos.append(f"{g['timing']} prospect(s) « pas le bon moment » : une relance "
+                     "programmée d'ici 2 à 3 mois est recommandée.")
+    if g["already"] >= max(2, g["negative"] // 2) and g["already"]:
+        recos.append("Plusieurs « déjà équipé » : mettre en avant un angle "
+                     "différenciant face aux solutions déjà en place.")
+    if g["unsub"] + g["hostile"] >= 3:
+        recos.append("Plusieurs désinscriptions : revérifier la pertinence de la "
+                     "liste pour préserver la délivrabilité.")
+    if not recos:
+        recos.append("Rythme correct : maintenir le volume et relancer les contacts "
+                     "tièdes pour transformer davantage.")
+    return recos
+
+
+def _format_monthly_report(client: dict, g: dict, recos: list[str], now=None) -> str:
+    """Rapport email-ready (texte simple, copiable) pour un client."""
+    from datetime import datetime as _dt, timezone as _tz
+    now = now or _dt.now(_tz.utc)
+    try:
+        from zoneinfo import ZoneInfo
+        now = now.astimezone(ZoneInfo("Europe/Paris"))
+    except Exception:  # noqa: BLE001
+        pass
+    mois = f"{_MONTHS_FR[now.month - 1]} {now.year}"
+    cname = str(client.get("name") or "").strip() or "votre entreprise"
+    lignes = [
+        f"Objet : Reporting prospection - {mois}",
+        "",
+        "Bonjour,",
+        "",
+        f"Voici le bilan de votre campagne de prospection pour {mois}.",
+        "",
+        "LES CHIFFRES DU MOIS",
+        f"- Réponses reçues : {g['received']}",
+    ]
+    _pos = f"- Contacts intéressés : {g['positive']}"
+    if g["meetings"]:
+        _pos += f" (dont {g['meetings']} rendez-vous)"
+    lignes.append(_pos)
+    if g["timing"]:
+        lignes.append(f"- À recontacter plus tard : {g['timing']}")
+    lignes.append(f"- Pas intéressés / déjà équipés : {g['negative']}")
+    if g["wrong"]:
+        lignes.append(f"- Mauvais interlocuteur (à réorienter) : {g['wrong']}")
+    lignes.append("")
+    lignes.append("EN BREF")
+    if g["received"] == 0:
+        lignes.append("Pas encore de réponses sur la période.")
+    else:
+        _tx = int(round(g["pos_rate"] * 100))
+        lignes.append(f"Sur {g['received']} réponses, {g['positive']} sont "
+                      f"positives, soit {_tx}% de contacts intéressés.")
+    lignes += ["", "RECOMMANDATIONS"]
+    lignes += [f"- {r}" for r in recos]
+    lignes += [
+        "",
+        "Je reste à votre disposition pour en discuter.",
+        "",
+        "Bien à vous,",
+        "Rudy Viard",
+        "Webmarketing Conseil",
+    ]
+    return "\n".join(lignes)
+
+
+def _llm_recos(client: dict, g: dict) -> list[str] | None:
+    """Recommandations contextualisées par l'IA (Haiku). None si indispo/échec
+    → l'appelant retombe sur _rule_recos. Court + tolérant aux pannes."""
+    try:
+        import anthropic
+        key = os.environ.get("ANTHROPIC_API_KEY")
+        if not key:
+            return None
+        offer = (client.get("description") or "").strip()
+        stats_txt = (
+            f"reponses={g['received']}, interesses={g['positive']}, "
+            f"rdv={g['meetings']}, pas_le_moment={g['timing']}, "
+            f"negatifs={g['negative']} (dont deja_equipe={g['already']}, "
+            f"prix={g['price']}, desinscriptions={g['unsub']}), "
+            f"taux_positif={int(round(g['pos_rate']*100))}%"
+        )
+        sys = (
+            "Tu es un consultant en prospection B2B. À partir des chiffres du mois "
+            "d'un client, écris 2 à 4 recommandations ACTIONNABLES, concrètes et "
+            "courtes (une phrase chacune), en français, pour le mois suivant. Pas de "
+            "blabla, pas de chiffres réinventés. Réponds UNIQUEMENT en JSON: "
+            '{"recos": ["...", "..."]}'
+        )
+        user = f"Offre du client : {offer or 'non precisee'}\nChiffres du mois : {stats_txt}"
+        client_a = anthropic.Anthropic(api_key=key, max_retries=2)
+        msg = client_a.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=350,
+            system=sys,
+            messages=[{"role": "user", "content": user}],
+        )
+        raw = msg.content[0].text.strip()
+        raw = re.sub(r"^```(?:json)?\s*", "", raw)
+        raw = re.sub(r"\s*```\s*$", "", raw)
+        data = json.loads(raw)
+        recos = [str(x).strip() for x in (data.get("recos") or []) if str(x).strip()]
+        return recos or None
+    except Exception:  # noqa: BLE001
+        return None
+
 
 def _render(client_filter: str | None = None) -> str:
     enabled = kvstore.is_enabled()
@@ -344,7 +520,7 @@ def _render(client_filter: str | None = None) -> str:
                 alerts.append(a)
         elif "envoyé" in status:
             sent_list.append(a)
-        elif intent in ("run_now", "diagnose", "manual_reply",
+        elif intent in ("run_now", "diagnose", "manual_reply", "monthly_report",
                          "test_resend", "retry_alerts"):
             # actions manuelles / diagnostics (+ vieux intents Resend obsolètes
             # encore présents dans le log) → ne pas polluer les compteurs
@@ -521,6 +697,41 @@ def _render(client_filter: str | None = None) -> str:
         diag_banner = (
             f'<div class="diag-banner">📋 {html.escape(when)} — {html.escape(st)}</div>'
         )
+
+    # Dernier reporting mensuel généré → bloc copiable (préfère le compte affiché).
+    report_entry = None
+    for a in actions_full:
+        if a.get("intent") == "monthly_report" and (
+            not sel_client or a.get("client_id") == sel_client
+        ):
+            report_entry = a
+            break
+    report_card = ""
+    if report_entry:
+        _rtxt = html.escape(str(report_entry.get("response") or ""))
+        _rwhen = html.escape(_time_fr(report_entry.get("at", "")))
+        _rname = html.escape(str(report_entry.get("subject") or "Reporting mensuel").replace("📊 ", ""))
+        report_card = (
+            '<div class="card report-card">'
+            f'<h2>📊 {_rname} <span class="report-when">généré {_rwhen}</span></h2>'
+            f'<textarea id="reportBox" class="report-box" readonly rows="18">{_rtxt}</textarea>'
+            '<div class="report-actions">'
+            '<button type="button" class="btn-primary" onclick="'
+            "var t=document.getElementById('reportBox');t.focus();t.select();"
+            "try{navigator.clipboard.writeText(t.value);}catch(e){document.execCommand('copy');}"
+            "this.textContent='\\u2713 Copié !';"
+            '">📋 Copier le rapport</button>'
+            '<span class="report-hint">Colle-le directement dans un email à ton client, puis ajuste si besoin.</span>'
+            '</div></div>'
+        )
+
+    # Options du sélecteur de compte pour le bouton "Reporting mensuel".
+    _report_opts = "".join(
+        f'<option value="{html.escape(str(c.get("id")))}"'
+        f'{" selected" if sel_client == c.get("id") else ""}>'
+        f'{html.escape(str(c.get("name") or c.get("id")))}</option>'
+        for c in clients_all if c.get("id")
+    )
 
     # Couleur statut bot
     status_color = "#2e7d52" if enabled else "#d4493f"
@@ -1029,6 +1240,14 @@ def _render(client_filter: str | None = None) -> str:
  .client-field input[type=text],.client-field input[type=email],.client-field textarea{{width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #e0d9cb;border-radius:8px;font-size:12.5px;font-family:inherit;background:#fff;color:#2b2823;resize:vertical}}
  .client-field textarea{{line-height:1.5}}
  .client-actions{{display:flex;gap:8px;align-items:center;margin-top:10px}}
+ /* REPORTING MENSUEL */
+ .report-card{{background:#f3f9f6;border:1px solid #cfe8dd}}
+ .report-card h2{{color:#0d7a5f}}
+ .report-when{{font-size:10.5px;font-weight:600;color:#6a9c8c;text-transform:none;letter-spacing:0;margin-left:2px}}
+ .report-box{{width:100%;box-sizing:border-box;border:1px solid #cfe8dd;border-radius:10px;padding:12px 14px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;line-height:1.6;color:#2b3a34;background:#fff;resize:vertical}}
+ .report-actions{{display:flex;align-items:center;gap:12px;margin-top:10px}}
+ .report-hint{{font-size:11.5px;color:#6a9c8c}}
+ .report-sel{{padding:9px 10px;border:1px solid #e0d9cb;border-radius:9px;font-size:13px;font-family:inherit;background:#fff;color:#2b2823;flex:1;min-width:0}}
  /* ACCOUNT SWITCHER */
  .acc-switch{{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:14px;background:#fff;border:1px solid #ebe6dc;border-radius:12px;padding:8px 12px}}
  .acc-switch-lbl{{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#a39c8c;margin-right:2px}}
@@ -1146,6 +1365,15 @@ def _render(client_filter: str | None = None) -> str:
         </form>
         <div class="action-help">Affiche en clair pourquoi le bot ignore un prospect (statut, idempotence, déjà traité…). Aucun envoi.</div>
       </div>
+      <div class="action-cell">
+        <form method="POST" action="/{keyparam}"
+              onsubmit="var b=this.querySelector('button'); b.disabled=true; b.innerHTML='⏳ Rapport...'; return true;">
+          <input type="hidden" name="action" value="monthly_report">
+          <select name="client_id" class="report-sel">{_report_opts}</select>
+          <button class="btn-primary" type="submit">📊 Reporting mensuel</button>
+        </form>
+        <div class="action-help">Génère un <b>bilan du mois</b> pour un client (chiffres + recommandations), prêt à <b>copier-coller dans un email</b>. Il s'affiche juste en dessous.</div>
+      </div>
     </div>
     <div class="action-toggle-row">
       <div class="toggle-help">Stop / start du bot. En pause, il ne traite plus aucune réponse jusqu'à réactivation.</div>
@@ -1156,6 +1384,8 @@ def _render(client_filter: str | None = None) -> str:
       </form>
     </div>
   </div>
+
+  {report_card}
 
   <div class="card alerts">
     <h2>🔔 Alertes à traiter <span class="badge">{len(alerts)}</span></h2>
@@ -1236,6 +1466,7 @@ class handler(BaseHTTPRequestHandler):
         body = self.rfile.read(length).decode("utf-8")
         form = {k: v[0] for k, v in urllib.parse.parse_qs(body).items()}
         action = form.get("action")
+        _post_client = None  # compte à conserver dans la vue après le POST
         if action == "toggle":
             kvstore.set_enabled(form.get("enabled") == "1")
         elif action == "dismiss_alert":
@@ -1559,6 +1790,39 @@ class handler(BaseHTTPRequestHandler):
                 if match and (sender_mb or camp):
                     upd = _cl.learn(match, sender_mb, camp)
                     kvstore.set_clients([upd if c.get("id") == cid else c for c in clients])
+        elif action == "monthly_report":
+            # Génère un reporting mensuel copiable pour un client (30 j).
+            from datetime import datetime as _dt, timezone as _tz
+            cid = (form.get("client_id") or "").strip()
+            clients = kvstore.get_clients()
+            client = next((c for c in clients if c.get("id") == cid), None)
+            if client is None and clients:
+                client = clients[0]
+            if client is not None:
+                _post_client = client.get("id")
+                # Filtre les actions sur ce client (triage manuel prioritaire).
+                triage = kvstore.get_triage()
+
+                def _eff(a: dict) -> str | None:
+                    aid = f"{a.get('at', '')}|{(a.get('from') or '').lower()}"
+                    return triage.get(aid) or a.get("client_id")
+
+                acts = kvstore.recent_actions(kvstore.MAX_LOG_ENTRIES)
+                acts_c = [a for a in acts if _eff(a) == client.get("id")]
+                g = _monthly_stats(acts_c)
+                recos = _llm_recos(client, g) or _rule_recos(g)
+                report = _format_monthly_report(client, g, recos)
+                kvstore.log_action({
+                    "at": _dt.now(_tz.utc).isoformat(),
+                    "from": "(reporting)",
+                    "subject": f"📊 Reporting mensuel — {client.get('name', '')}",
+                    "intent": "monthly_report",
+                    "status": f"Reporting généré pour {client.get('name', '')} "
+                              f"({g['received']} réponses, {g['positive']} positives)",
+                    "reply": "",
+                    "response": report,
+                    "client_id": client.get("id"),
+                })
         elif action == "save_settings":
             ov = kvstore.get_settings_overrides()
             sending = ov.get("sending", {})
@@ -1569,9 +1833,11 @@ class handler(BaseHTTPRequestHandler):
                 pass
             ov["sending"] = sending
             kvstore.set_settings_overrides(ov)
-        # redirect back to dashboard
+        # redirect back to dashboard (en conservant la vue compte si pertinent)
         keyq = os.environ.get("DASHBOARD_KEY")
         loc = f"/?key={keyq}" if keyq else "/"
+        if _post_client:
+            loc += ("&" if "?" in loc else "?") + "client=" + urllib.parse.quote(_post_client)
         self.send_response(303)
         self.send_header("Location", loc)
         self.end_headers()
