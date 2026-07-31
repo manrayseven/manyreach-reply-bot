@@ -122,7 +122,17 @@ class ManyReachClient:
         # l'erreur : le run suivant (cron 5 min) reprendra ce reply (FIFO).
         max_attempts = 2
         for attempt in range(max_attempts):
-            resp = self._client.request(method, path, **kwargs)
+            try:
+                resp = self._client.request(method, path, **kwargs)
+            except (httpx.TimeoutException, httpx.TransportError) as e:
+                # Timeout de lecture / blip réseau ManyReach. On ne retry QUE les
+                # GET (idempotents) : retry un POST pourrait double-envoyer un
+                # email. 1 retry court ; sinon on lève → le reply repasse au cron
+                # suivant (non marqué traité), donc auto-réparation sans doublon.
+                if method.upper() == "GET" and attempt < max_attempts - 1:
+                    _t.sleep(1.0)
+                    continue
+                raise
             if resp.status_code == 429 and attempt < max_attempts - 1:
                 _t.sleep(2.0)
                 continue

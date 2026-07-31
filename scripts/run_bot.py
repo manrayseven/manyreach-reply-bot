@@ -1119,10 +1119,23 @@ def main() -> int:
                 traceback.print_exc()
                 log_entry["error"] = repr(e)
                 logf.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
+                # ERREUR TRANSITOIRE (timeout de lecture / blip réseau ManyReach) :
+                # le reply n'a PAS été marqué traité → il repasse au cron suivant et
+                # se répare tout seul. Ce n'est pas actionnable par Rudy → on ne
+                # pollue PAS la carte Erreurs du dashboard avec ça (on garde juste la
+                # trace stdout). Si ManyReach est vraiment down, le badge "dernier
+                # passage" vieillit et alerte de lui-même. Seules les VRAIES erreurs
+                # (parse, 4xx, bug) restent visibles.
+                _elow = str(e).lower()
+                _transient = any(k in _elow for k in (
+                    "timed out", "timeout", "read operation",
+                    "connection error", "connection aborted", "connection reset",
+                    "connecterror", "readerror", "remoteprotocolerror", "temporarily",
+                ))
                 # JOURNAL KV : on EXPOSE l'erreur dans le dashboard pour qu'on la
                 # voie. Avant, les exceptions disparaissaient dans /tmp (éphémère
                 # Vercel) → cause des "trous" silencieux du flux.
-                if kvstore is not None and kvstore.kv_available():
+                if not _transient and kvstore is not None and kvstore.kv_available():
                     try:
                         kvstore.log_action({
                             "at": datetime.now(timezone.utc).isoformat(),
