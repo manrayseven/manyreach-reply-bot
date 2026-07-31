@@ -423,6 +423,47 @@ def _report_html(client: dict, g: dict, sections: dict, now=None) -> str:
     )
 
 
+def _handoff_email_html(company: str, detail_line: str, contact_line: str,
+                        campaign: str, message: str) -> str:
+    """Bel email de TRANSFERT client (styles inline, survit au copier-coller
+    Gmail/Thunderbird). Reprend la maquette : en-tête, Société/Contact/Campagne,
+    citation du message, « à faire de votre côté »."""
+    e = html.escape
+    _lab = ("padding:11px 16px;border-bottom:1px solid #eee4d0;"
+            "font-family:Arial,sans-serif;font-size:10px;letter-spacing:.08em;"
+            "text-transform:uppercase;color:#a89066;vertical-align:top;width:96px")
+    _val = ("padding:11px 16px;border-bottom:1px solid #eee4d0;"
+            "font-family:Georgia,'Times New Roman',serif;font-size:15px;color:#2b2823")
+    soc = e(company or "(société non renseignée)")
+    if detail_line:
+        soc += f' <span style="color:#8c8678;font-size:13px">- {e(detail_line)}</span>'
+    rows = (
+        f'<tr><td style="{_lab}">Société</td><td style="{_val}">{soc}</td></tr>'
+        f'<tr><td style="{_lab}">Contact</td><td style="{_val}">{e(contact_line)}</td></tr>'
+    )
+    if campaign:
+        rows += f'<tr><td style="{_lab}">Campagne</td><td style="{_val}">{e(campaign)}</td></tr>'
+    quote = e(message) if message else "(message non disponible)"
+    return (
+        '<div style="max-width:600px;border:1px solid #e7ddc4;border-radius:10px;'
+        'overflow:hidden;font-family:Arial,Helvetica,sans-serif">'
+        '<table style="width:100%;border-collapse:collapse;background:#faf5e9">'
+        '<tr><td style="padding:12px 16px;font-size:11px;letter-spacing:.1em;'
+        'text-transform:uppercase;color:#a07520;font-weight:bold">Prospect intéressé</td>'
+        '<td style="padding:12px 16px;font-size:11px;letter-spacing:.1em;'
+        'text-transform:uppercase;color:#c0ad82;text-align:right">Transfert automatique</td>'
+        '</tr></table>'
+        f'<table style="width:100%;border-collapse:collapse;background:#fff">{rows}</table>'
+        '<div style="padding:16px;background:#fff;border-bottom:1px solid #eee4d0">'
+        '<div style="border-left:3px solid #d8b56a;padding:2px 0 2px 14px;color:#4a4438;'
+        f'font-style:italic;font-size:14px;line-height:1.55">« {quote} »</div></div>'
+        '<div style="padding:14px 16px;background:#faf5e9;font-size:13.5px;color:#4a4438">'
+        '<strong>À faire de votre côté :</strong> rappeler ou répondre sous 48 h ouvrées. '
+        'Le prospect sait qui vous êtes et attend votre retour.</div>'
+        '</div>'
+    )
+
+
 def _render(client_filter: str | None = None) -> str:
     enabled = kvstore.is_enabled()
     last_run = kvstore.get_last_run()
@@ -1017,6 +1058,7 @@ def _render(client_filter: str | None = None) -> str:
         # récap STRUCTURÉ (société / contact / campagne / message / à faire) — même
         # format à chaque fois pour que le transfert soit "carré" côté client.
         mise_en_relation = ""
+        handoff_box = ""
         if _client and (_client.get("contact_email") or "").strip():
             _phone = str(a.get("prospect_phone") or a.get("_phone_live") or "").strip()
             _company = str(a.get("_company") or "").strip()
@@ -1061,11 +1103,40 @@ def _render(client_filter: str | None = None) -> str:
                 + "?subject=" + urllib.parse.quote(_subj)
                 + "&body=" + urllib.parse.quote(_recap)
             )
+            _contact_email = str(_client.get("contact_email") or "")
+            # Bel email de transfert (HTML) + copie qui garde la mise en forme →
+            # plus fiable que le mailto (qui n'ouvre pas toujours Thunderbird).
+            _card = _handoff_email_html(_company, _detail, _contact, _camp, _msg)
+            _uid = "ho" + str(abs(hash(raw_alert_id)) % (10 ** 9))
+            _copy_ho = (
+                f"var el=document.getElementById('{_uid}');"
+                "var r=document.createRange();r.selectNodeContents(el);"
+                "var s=window.getSelection();s.removeAllRanges();s.addRange(r);"
+                "try{document.execCommand('copy');}catch(e){}"
+                "s.removeAllRanges();this.textContent='\\u2713 Copié (mise en forme conservée) !';"
+            )
+            _open_ho = (
+                "var d=this.closest('.alert-row').querySelector('.handoff');"
+                "if(d){d.open=true;}return false;"
+            )
             mise_en_relation = (
-                f'<a class="alert-mr alert-mr-mer" href="{html.escape(_mer_href)}" '
-                f'title="Ouvre ton mail avec un transfert structuré (société, contact, '
-                f'message) prêt à envoyer à {html.escape(_client["contact_email"])}">'
-                f'🤝 Mettre en relation</a>'
+                f'<a class="alert-mr alert-mr-mer" href="#" onclick="{_open_ho}" '
+                f'title="Prépare un email de transfert propre à envoyer à '
+                f'{html.escape(_contact_email)}">🤝 Mettre en relation</a>'
+            )
+            handoff_box = (
+                '<details class="handoff">'
+                '<summary class="handoff-sum">📨 Email de transfert (à copier)</summary>'
+                '<div class="handoff-body">'
+                f'<div class="handoff-to">À envoyer à : <b>{html.escape(_contact_email)}</b>'
+                f' · Objet suggéré : {html.escape(_subj)}</div>'
+                f'<div id="{_uid}" class="handoff-render">{_card}</div>'
+                '<div class="handoff-actions">'
+                f'<button type="button" class="btn-primary" onclick="{_copy_ho}">📋 Copier l\'email</button>'
+                f'<a class="alert-mr alert-mr-sec" href="{html.escape(_mer_href)}" '
+                'title="Ouvre ton logiciel mail (si le mailto est branché)">✉ Ouvrir dans mon mail</a>'
+                '<span class="handoff-hint">Colle dans un nouveau message Thunderbird : la mise en forme est conservée.</span>'
+                '</div></div></details>'
             )
         # Bouton "Réponse auto" : l'IA génère une CLÔTURE POLIE (décline en douceur)
         # et l'envoie dans le fil ManyReach, puis retire l'alerte. Pour les leads que
@@ -1129,6 +1200,7 @@ def _render(client_filter: str | None = None) -> str:
           </div>
           <div class="alert-msg">{reply_txt}</div>
           {reply_box}
+          {handoff_box}
         </div>"""
 
     def _sent_row(a: dict) -> str:
@@ -1384,6 +1456,14 @@ def _render(client_filter: str | None = None) -> str:
  .alert-client{{font-size:10px;font-weight:700;color:#0d7a5f;background:#e3f4ee;border:1px solid #bfe6da;padding:1px 7px;border-radius:6px;white-space:nowrap}}
  .alert-mr-mer{{color:#0d7a5f;background:#e3f4ee;border-color:#bfe6da;cursor:pointer}}
  .alert-mr-mer:hover{{background:#0d7a5f;color:#fff;border-color:#0d7a5f;opacity:1}}
+ .handoff{{margin-top:8px}}
+ .handoff-sum{{font-size:11.5px;font-weight:600;color:#0d7a5f;cursor:pointer;list-style:none;padding:2px 0}}
+ .handoff-sum::-webkit-details-marker{{display:none}}
+ .handoff[open] .handoff-sum{{margin-bottom:8px}}
+ .handoff-to{{font-size:11.5px;color:#5c574c;margin-bottom:8px}}
+ .handoff-render{{background:#fff;border:1px solid #e7ddc4;border-radius:10px;padding:6px;overflow-x:auto}}
+ .handoff-actions{{display:flex;align-items:center;gap:12px;margin-top:10px;flex-wrap:wrap}}
+ .handoff-hint{{font-size:11px;color:#8c8678}}
  .alert-mr-triage{{color:#a07520;background:#faefd6;border-color:#f0e2c2;cursor:pointer}}
  .alert-mr-triage:hover{{background:#a07520;color:#fff;border-color:#a07520;opacity:1}}
  .alert-triage-sel{{font-size:11px;padding:2px 6px;border:1px solid #e0d9cb;border-radius:6px;background:#fff;color:#2b2823;font-family:inherit;max-width:150px}}
