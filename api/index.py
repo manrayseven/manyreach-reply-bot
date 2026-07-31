@@ -168,27 +168,34 @@ def _monthly_stats(actions: list, now=None) -> dict:
     from datetime import datetime as _dt, timedelta as _td, timezone as _tz
     now = now or _dt.now(_tz.utc)
     cutoff = now - _td(days=30)
+    def _in_window(at: str) -> bool:
+        try:
+            t = _dt.fromisoformat(at)
+            if t.tzinfo is None:
+                t = t.replace(tzinfo=_tz.utc)
+            return t >= cutoff
+        except (ValueError, TypeError):
+            return True  # timestamp illisible → on garde par sécurité
+
     by_email: dict[str, list] = {}
+    transmis = 0
     for a in actions:
         intent = a.get("intent", "")
+        if intent == "handoff" and _in_window(a.get("at", "")):
+            transmis += 1  # prospect transmis au client (déjà dédup à l'écriture)
+            continue
         if intent not in _REAL_REPLY_INTENTS:
             continue
         em = (a.get("from") or "").lower().strip()
         if not em:
             continue
-        at = a.get("at", "")
-        try:
-            t = _dt.fromisoformat(at)
-            if t.tzinfo is None:
-                t = t.replace(tzinfo=_tz.utc)
-            if t < cutoff:
-                continue
-        except (ValueError, TypeError):
-            pass
-        by_email.setdefault(em, []).append((at, intent))
+        if not _in_window(a.get("at", "")):
+            continue
+        by_email.setdefault(em, []).append((a.get("at", ""), intent))
     g = {"received": len(by_email), "positive": 0, "negative": 0, "meetings": 0,
          "timing": 0, "wrong": 0, "warm": 0, "lukewarm": 0, "info": 0,
-         "refus": 0, "already": 0, "price": 0, "unsub": 0, "hostile": 0}
+         "refus": 0, "already": 0, "price": 0, "unsub": 0, "hostile": 0,
+         "transmis": transmis}
     _map = {"interested_warm": "warm", "interested_lukewarm": "lukewarm",
             "ask_more_info": "info", "not_interested_polite": "refus",
             "objection_already_have_solution": "already", "objection_price": "price",
@@ -229,8 +236,10 @@ def _report_sections(g: dict) -> dict:
     tx = int(round(g["pos_rate"] * 100))
     # Ce qui a fonctionné
     if g["positive"]:
-        _m = f", dont {g['meetings']} rendez-vous" if g["meetings"] else ""
-        worked.append(f"{g['positive']} contact(s) réellement intéressé(s){_m}.")
+        worked.append(f"{g['positive']} contact(s) réellement intéressé(s).")
+    if g.get("transmis"):
+        worked.append(f"{g['transmis']} prospect(s) qualifié(s) transmis pour "
+                      "prise de contact directe.")
     if g["pos_rate"] >= 0.20:
         worked.append(f"Bon taux d'intérêt : {tx}% des réponses sont positives.")
     elif g["positive"]:
@@ -262,7 +271,7 @@ def _report_sections(g: dict) -> dict:
     # Nos prochaines actions (agence → client)
     if g["positive"]:
         nxt.append(f"Nous relançons les {g['positive']} contact(s) intéressé(s) "
-                   "cette semaine pour les faire avancer vers un rendez-vous.")
+                   "cette semaine pour les faire avancer et vous les transmettre.")
     if g["timing"]:
         nxt.append(f"Nous programmons la relance des {g['timing']} contact(s) "
                    "« plus tard » au moment opportun.")
@@ -289,7 +298,7 @@ def _llm_report_sections(client: dict, g: dict) -> dict | None:
         offer = (client.get("description") or "").strip()
         stats_txt = (
             f"reponses={g['received']}, interesses={g['positive']}, "
-            f"rdv={g['meetings']}, a_recontacter={g['timing']}, "
+            f"prospects_transmis={g.get('transmis', 0)}, a_recontacter={g['timing']}, "
             f"negatifs={g['negative']} (deja_equipe={g['already']}, "
             f"budget={g['price']}, sans_besoin={g['refus']}, "
             f"desinscriptions={g['unsub'] + g['hostile']}), "
@@ -305,6 +314,8 @@ def _llm_report_sections(client: dict, g: dict) -> dict | None:
             "TOUJOURS à la 1re personne du pluriel (« Nous… »). INTERDIT : tout "
             "impératif adressé au client (« faites », « relancez », « analysez », "
             "« testez ») — le client ne doit AVOIR AUCUNE tâche à faire.\n"
+            "⚠️ NE PARLE JAMAIS de « rendez-vous » ni de « RDV » (donnée non "
+            "fiable). Parle de contacts intéressés et de prospects transmis.\n"
             "Chaque item = une phrase concrète. N'invente aucun chiffre. Réponds "
             'UNIQUEMENT en JSON : {"worked":[...],"issues":[...],"next":[...]}.'
         )
@@ -330,6 +341,10 @@ def _llm_report_sections(client: dict, g: dict) -> dict | None:
         _bad = ("faites", "relancez", "analysez", "testez", "vérifiez", "pensez",
                 "ajoutez", "envoyez", "mettez", "contactez")
         if any(i.lower().lstrip("- ").startswith(_bad) for i in out["next"]):
+            return None
+        # Aucune mention de RDV (chiffre non fiable) → sinon repli règles.
+        _all = " ".join(out["worked"] + out["issues"] + out["next"]).lower()
+        if "rendez-vous" in _all or "rendez vous" in _all or " rdv" in _all:
             return None
         return out
     except Exception:  # noqa: BLE001
@@ -357,8 +372,8 @@ def _report_text(client: dict, g: dict, sections: dict, now=None) -> str:
         f"Voici le bilan de votre campagne de prospection pour {mois}.", "",
         "LES CHIFFRES DU MOIS",
         f"- Réponses reçues : {g['received']}",
-        f"- Contacts intéressés : {g['positive']}"
-        + (f" (dont {g['meetings']} rendez-vous)" if g["meetings"] else ""),
+        f"- Contacts intéressés : {g['positive']}",
+        f"- Prospects transmis : {g.get('transmis', 0)}",
         f"- À recontacter plus tard : {g['timing']}",
         f"- Réponses négatives : {g['negative']}",
         f"- Taux d'intérêt : {tx}%", "",
@@ -401,7 +416,6 @@ def _report_html(client: dict, g: dict, sections: dict, now=None) -> str:
             f'line-height:1.5">{lis}</ul>'
         )
 
-    meeting_txt = f", dont <strong>{g['meetings']}</strong> rendez-vous" if g["meetings"] else ""
     return (
         '<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;'
         'color:#2b2823;line-height:1.55;max-width:620px">'
@@ -410,10 +424,10 @@ def _report_html(client: dict, g: dict, sections: dict, now=None) -> str:
         '<table style="border-collapse:collapse;width:100%;margin:14px 0">'
         f'<tr>{_stat("Réponses reçues", g["received"], "#b3742f")}'
         f'{_stat("Intéressés", g["positive"], "#2e7d52")}'
-        f'{_stat("À recontacter", g["timing"], "#d97706")}'
+        f'{_stat("Prospects transmis", g.get("transmis", 0), "#0d7a5f")}'
         f'{_stat("Négatives", g["negative"], "#c0392b")}</tr></table>'
         f'<p style="color:#5c574c;font-size:13.5px">Soit <strong>{tx}%</strong> '
-        f'de contacts intéressés sur les réponses reçues{meeting_txt}.</p>'
+        f'de contacts intéressés sur les réponses reçues.</p>'
         + _block("✅ Ce qui a fonctionné", sections["worked"], "#2e7d52")
         + _block("⚠️ Ce qui a moins bien marché", sections["issues"], "#c0392b")
         + _block("➡️ Nos prochaines actions", sections["next"], "#26509e")
@@ -661,7 +675,7 @@ def _render(client_filter: str | None = None) -> str:
         elif "envoyé" in status:
             sent_list.append(a)
         elif intent in ("run_now", "diagnose", "manual_reply", "monthly_report",
-                         "test_resend", "retry_alerts"):
+                         "handoff", "test_resend", "retry_alerts"):
             # actions manuelles / diagnostics (+ vieux intents Resend obsolètes
             # encore présents dans le log) → ne pas polluer les compteurs
             pass
@@ -1127,14 +1141,21 @@ def _render(client_filter: str | None = None) -> str:
                 "try{document.execCommand('copy');}catch(e){}"
                 "s.removeAllRanges();this.textContent='\\u2713 Copié (mise en forme conservée) !';"
             )
+            # Clic = ouvre le bel email ET comptabilise le transfert (+1, dédupliqué
+            # côté serveur par conversation) via un POST en arrière-plan (pas de
+            # rechargement → l'email reste affiché pour la copie).
+            _cid_js = html.escape(str(_client.get("id") or ""))
             _open_ho = (
-                "var d=this.closest('.alert-row').querySelector('.handoff');"
-                "if(d){d.open=true;}return false;"
+                "var d=this.closest('.alert-row').querySelector('.handoff');if(d){d.open=true;}"
+                f"try{{fetch('/{keyparam}',{{method:'POST',headers:{{'Content-Type':'application/x-www-form-urlencoded'}},"
+                f"body:'action=mark_handoff&client_id='+encodeURIComponent('{_cid_js}')+'&prospect_email='+encodeURIComponent('{html.escape(prospect_email)}')}});}}catch(e){{}}"
+                "return false;"
             )
             mise_en_relation = (
                 f'<a class="alert-mr alert-mr-mer" href="#" onclick="{_open_ho}" '
-                f'title="Prépare un email de transfert propre à envoyer à '
-                f'{html.escape(_contact_email)}">🤝 Mettre en relation</a>'
+                f'title="Prépare l\'email de transfert à envoyer à '
+                f'{html.escape(_contact_email)} et compte ce prospect comme transmis">'
+                f'🤝 Mettre en relation</a>'
             )
             handoff_box = (
                 '<details class="handoff">'
@@ -2049,6 +2070,22 @@ class handler(BaseHTTPRequestHandler):
                 if match and (sender_mb or camp):
                     upd = _cl.learn(match, sender_mb, camp)
                     kvstore.set_clients([upd if c.get("id") == cid else c for c in clients])
+        elif action == "mark_handoff":
+            # Clic sur "Mettre en relation" → +1 prospect transmis (1x/conversation).
+            from datetime import datetime as _dt, timezone as _tz
+            cid = (form.get("client_id") or "").strip()
+            email = (form.get("prospect_email") or "").strip().lower()
+            if cid and email and kvstore.record_handoff(f"{cid}|{email}"):
+                kvstore.log_action({
+                    "at": _dt.now(_tz.utc).isoformat(),
+                    "from": email,
+                    "subject": "🤝 Prospect transmis au client",
+                    "intent": "handoff",
+                    "status": "Prospect transmis au client (mise en relation)",
+                    "reply": "",
+                    "response": "",
+                    "client_id": cid,
+                })
         elif action == "monthly_report":
             # Génère un reporting mensuel copiable pour un client (30 j).
             from datetime import datetime as _dt, timezone as _tz

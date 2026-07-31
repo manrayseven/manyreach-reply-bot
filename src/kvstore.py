@@ -144,6 +144,21 @@ def set_clients(clients: list[dict]) -> None:
     _cmd("SET", CLIENTS_KEY, json.dumps(clients, ensure_ascii=False))
 
 
+HANDOFFS_KEY = "bot:handoffs"  # SET des transferts déjà comptés (client|email)
+
+
+def record_handoff(key: str) -> bool:
+    """Enregistre un transfert « Mettre en relation ». Dédupliqué : renvoie True
+    seulement la 1re fois pour ce (client|prospect) → 1 comptage par conversation."""
+    if not kv_available() or not key:
+        return False
+    res = _cmd("SADD", HANDOFFS_KEY, key.lower())
+    try:
+        return int(res) == 1
+    except (TypeError, ValueError):
+        return bool(res)
+
+
 TRIAGE_KEY = "bot:triage"  # HASH alert_id -> client_id (assignations manuelles)
 
 
