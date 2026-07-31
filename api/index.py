@@ -10,6 +10,7 @@ from http.server import BaseHTTPRequestHandler
 import html
 import json
 import os
+import re
 import sys
 import urllib.parse
 from datetime import datetime
@@ -177,6 +178,11 @@ def _render() -> str:
     error_list = []    # ❌ erreurs
     silent_list = []   # silencieux + ack + autre
     dismissed = kvstore.get_dismissed_alerts()  # alertes que Rudy a déjà traitées
+
+    # Multi-clients : liste des comptes + assignations manuelles (triage).
+    clients_all = kvstore.get_clients()
+    clients_by_id = {c.get("id"): c for c in clients_all if c.get("id")}
+    triage_map = kvstore.get_triage()  # {alert_id: client_id}
 
     # AUTO-RÉSOLUTION DES ALERTES : pour chaque email, on note le timestamp de la
     # dernière entrée "gérée" (réponse envoyée, action silencieuse, ou reclassée en
@@ -503,7 +509,8 @@ def _render() -> str:
         # Message COMPLET (plus de troncature à 300) — nécessaire pour répondre,
         # surtout aux orphelins traités depuis le dashboard.
         reply_txt = html.escape(str(a.get("reply", "")))[:4000]
-        alert_id = html.escape(f"{a.get('at', '')}|{(a.get('from') or '').lower()}")
+        raw_alert_id = f"{a.get('at', '')}|{(a.get('from') or '').lower()}"
+        alert_id = html.escape(raw_alert_id)
         # Lien direct vers l'Unibox ManyReach filtré sur cette conversation.
         # IMPORTANT : on laisse activestatus= VIDE (au lieu de '1') pour que
         # les prospects passés en NotInterested (cas typique des "↪️ Mauvaise
@@ -587,6 +594,64 @@ def _render() -> str:
             f'— réponds avec celui-ci">via {html.escape(sender_mailbox)}</span>'
             if sender_mailbox else ""
         )
+        # === MULTI-CLIENTS : badge client, triage manuel, mise en relation ===
+        # L'assignation manuelle (triage) prime sur le client déduit par le bot.
+        _assigned_cid = triage_map.get(raw_alert_id) or a.get("client_id")
+        _client = clients_by_id.get(_assigned_cid) if _assigned_cid else None
+        # "À trier" seulement si ça reste ambigu (2+ clients ET jamais assigné).
+        _needs_triage = (
+            bool(a.get("needs_triage"))
+            and raw_alert_id not in triage_map
+            and len(clients_all) >= 2
+        )
+        client_chip = (
+            f'<span class="alert-client" title="Compte client rattaché">'
+            f'👤 {html.escape(str(_client.get("name") or _client.get("id")))}</span>'
+            if _client else ""
+        )
+        triage_html = ""
+        if _needs_triage:
+            _opts = "".join(
+                f'<option value="{html.escape(str(c.get("id")))}">'
+                f'{html.escape(str(c.get("name") or c.get("id")))}</option>'
+                for c in clients_all if c.get("id")
+            )
+            triage_html = (
+                f'<form method="POST" action="/{keyparam}" style="display:inline" '
+                f'onsubmit="this.querySelector(\'button\').disabled=true;return true;">'
+                f'<input type="hidden" name="action" value="assign_client">'
+                f'<input type="hidden" name="alert_id" value="{alert_id}">'
+                f'<input type="hidden" name="sender_mailbox" value="{html.escape(sender_mailbox)}">'
+                f'<input type="hidden" name="campaign_id" value="{html.escape(str(mr_camp))}">'
+                f'<select name="client_id" class="alert-triage-sel">{_opts}</select>'
+                f'<button type="submit" class="alert-mr alert-mr-triage" '
+                f'title="Rattacher à ce client (le bot apprend et triera seul ensuite)">à trier ✓</button>'
+                f'</form>'
+            )
+        # "Mettre en relation" : mailto pré-rempli vers l'email du client, récap propre.
+        mise_en_relation = ""
+        if _client and (_client.get("contact_email") or "").strip():
+            _phone = str(a.get("prospect_phone") or "").strip()
+            _recap = "\n".join([
+                "Bonjour,", "",
+                "Voici un lead a reprendre :", "",
+                f"- Contact : {prospect_email}",
+                f"- Telephone : {_phone or 'non communique'}",
+                f"- Recu le : {when}", "",
+                "Son dernier message :",
+                f"\"{str(a.get('reply') or '')[:900]}\"", "",
+                "Bonne prise de contact.",
+            ])
+            _mer_href = (
+                "mailto:" + urllib.parse.quote(_client["contact_email"])
+                + "?subject=" + urllib.parse.quote(f"Lead a reprendre : {prospect_email}")
+                + "&body=" + urllib.parse.quote(_recap)
+            )
+            mise_en_relation = (
+                f'<a class="alert-mr alert-mr-mer" href="{html.escape(_mer_href)}" '
+                f'title="Ouvre ton mail avec un recap propre a envoyer a '
+                f'{html.escape(_client["contact_email"])}">🤝 Mettre en relation</a>'
+            )
         # Bouton "Réponse auto" : l'IA génère une CLÔTURE POLIE (décline en douceur)
         # et l'envoie dans le fil ManyReach, puis retire l'alerte. Pour les leads que
         # Rudy ne veut pas traiter à la main. Confirmation avant envoi (vrai email).
@@ -633,8 +698,11 @@ def _render() -> str:
           <div class="alert-head">
             <span class="alert-intent" style="color:{intent_color};background:{intent_color}1a;border:1px solid {intent_color}33">{html.escape(intent_label)}</span>
             <a class="alert-email" href="{html.escape(_mailto)}">{frm}</a>
+            {client_chip}
             {orphan_chip}
             {mr_link_html}
+            {mise_en_relation}
+            {triage_html}
             {ai_close_btn}
             {sender_chip}
             <span class="alert-when">{when}</span>
@@ -711,6 +779,63 @@ def _render() -> str:
         sent_html = '<div class="empty-section">Aucun envoi récent.</div>'
     errors_html = "".join(_error_row(a) for a in error_list[:5])
 
+    # === SECTION CLIENTS (multi-comptes) ===
+    def _client_form(c: dict | None) -> str:
+        c = c or {}
+        cid = str(c.get("id") or "")
+        is_new = not cid
+        name = html.escape(str(c.get("name") or ""))
+        cemail = html.escape(str(c.get("contact_email") or ""))
+        desc = html.escape(str(c.get("description") or ""))
+        mbx = html.escape("\n".join(c.get("mailboxes") or []))
+        cps = html.escape("\n".join(str(x) for x in (c.get("campaigns") or [])))
+        offer = html.escape(str(c.get("offer_context") or ""))
+        sig = html.escape(str(c.get("signature") or ""))
+        is_def = bool(c.get("is_default"))
+        title = (
+            f'➕ Nouveau client' if is_new
+            else f'👤 {name or cid}'
+            + (' <span class="cdefault">MOI</span>' if is_def else '')
+        )
+        # IMPORTANT : l'action est portée par le BOUTON cliqué (name=action), pas
+        # par un champ caché — le navigateur n'envoie que le submit activé, donc
+        # Enregistrer et Supprimer ne se marchent pas dessus.
+        del_btn = "" if is_new else (
+            f'<button type="submit" name="action" value="delete_client" class="cdel" '
+            f'onclick="return confirm(\'Supprimer ce client ?\')">Supprimer</button>'
+        )
+        return f"""
+      <div class="client-block">
+        <h3>{title}</h3>
+        <form method="POST" action="/{keyparam}" onsubmit="return true;">
+          <input type="hidden" name="client_id" value="{html.escape(cid)}">
+          <div class="client-grid">
+            <div class="client-field"><label>Nom du client</label>
+              <input type="text" name="name" value="{name}" placeholder="Ex. Cabinet Durand" required></div>
+            <div class="client-field"><label>Email du client <span class="fhint">(pour « Mettre en relation »)</span></label>
+              <input type="email" name="contact_email" value="{cemail}" placeholder="contact@client.com"></div>
+            <div class="client-field full"><label>Description de l'offre <span class="fhint">(sert à deviner le bon client quand aucune adresse ne matche)</span></label>
+              <textarea name="description" rows="2" placeholder="Ce que ce client vend / propose">{desc}</textarea></div>
+            <div class="client-field"><label>Adresses d'envoi <span class="fhint">(une par ligne — quelques exemples suffisent)</span></label>
+              <textarea name="mailboxes" rows="3" placeholder="contact@client.com&#10;pro@client.com">{mbx}</textarea></div>
+            <div class="client-field"><label>Campagnes <span class="fhint">(ids, une par ligne — optionnel)</span></label>
+              <textarea name="campaigns" rows="3" placeholder="98002&#10;55501">{cps}</textarea></div>
+            <div class="client-field full"><label>Réponses aux négatifs <span class="fhint">(qui est ce client, quoi pitcher, quels liens — laissé vide pour « MOI » = comportement actuel)</span></label>
+              <textarea name="offer_context" rows="3" placeholder="Ex. Tu réponds pour le Cabinet Durand (expertise comptable). En cas de refus, reste courtois et propose la newsletter conseils : https://...">{offer}</textarea></div>
+            <div class="client-field full"><label>Signature <span class="fhint">(optionnel)</span></label>
+              <textarea name="signature" rows="2" placeholder="Ex. L'équipe Durand&#10;01 23 45 67 89">{sig}</textarea></div>
+          </div>
+          <div class="client-actions">
+            <label class="client-check"><input type="checkbox" name="is_default" value="1" {'checked' if is_def else ''}> C'est mon compte (client par défaut)</label>
+            <button class="btn-save" type="submit" name="action" value="save_client">{'Créer' if is_new else 'Enregistrer'}</button>
+            {del_btn}
+          </div>
+        </form>
+      </div>"""
+
+    clients_blocks = "".join(_client_form(c) for c in clients_all)
+    clients_section_html = clients_blocks + _client_form(None)
+
     # Bloc perf 30 jours (dédupliqué par prospect)
     stats_html = f"""
     <div class="kpi-caption">Performance · 30 derniers jours</div>
@@ -786,6 +911,28 @@ def _render() -> str:
  .alert-mr-sec:hover{{background:#8c8678;color:#fff;border-color:#8c8678}}
  .alert-mr-ai{{color:#6d4aff;background:#f0ecff;border-color:#d9cefb;cursor:pointer}}
  .alert-mr-ai:hover{{background:#6d4aff;color:#fff;border-color:#6d4aff;opacity:1}}
+ .alert-client{{font-size:10px;font-weight:700;color:#0d7a5f;background:#e3f4ee;border:1px solid #bfe6da;padding:1px 7px;border-radius:6px;white-space:nowrap}}
+ .alert-mr-mer{{color:#0d7a5f;background:#e3f4ee;border-color:#bfe6da;cursor:pointer}}
+ .alert-mr-mer:hover{{background:#0d7a5f;color:#fff;border-color:#0d7a5f;opacity:1}}
+ .alert-mr-triage{{color:#a07520;background:#faefd6;border-color:#f0e2c2;cursor:pointer}}
+ .alert-mr-triage:hover{{background:#a07520;color:#fff;border-color:#a07520;opacity:1}}
+ .alert-triage-sel{{font-size:11px;padding:2px 6px;border:1px solid #e0d9cb;border-radius:6px;background:#fff;color:#2b2823;font-family:inherit;max-width:150px}}
+ /* CLIENTS */
+ .client-block{{border:1px solid #ebe6dc;border-radius:11px;padding:14px;margin-bottom:12px;background:#fcfbf8}}
+ .client-block h3{{font-size:13px;font-weight:700;color:#2b2823;margin-bottom:10px;display:flex;align-items:center;gap:8px}}
+ .client-block .cdefault{{font-size:9.5px;font-weight:700;color:#0d7a5f;background:#e3f4ee;border:1px solid #bfe6da;padding:1px 6px;border-radius:5px;letter-spacing:.04em}}
+ .client-grid{{display:grid;grid-template-columns:1fr 1fr;gap:10px}}
+ @media (max-width:640px){{.client-grid{{grid-template-columns:1fr}}}}
+ .client-field{{display:flex;flex-direction:column;gap:4px}}
+ .client-field.full{{grid-column:1 / -1}}
+ .client-field label{{font-size:10.5px;color:#8c8678;font-weight:600;text-transform:uppercase;letter-spacing:.04em}}
+ .client-field .fhint{{font-size:10.5px;color:#b8b1a2;font-weight:400;text-transform:none;letter-spacing:0}}
+ .client-field input[type=text],.client-field input[type=email],.client-field textarea{{width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #e0d9cb;border-radius:8px;font-size:12.5px;font-family:inherit;background:#fff;color:#2b2823;resize:vertical}}
+ .client-field textarea{{line-height:1.5}}
+ .client-actions{{display:flex;gap:8px;align-items:center;margin-top:10px}}
+ .client-actions .cdel{{margin-left:auto;background:#fff;color:#c0392b;border:1px solid #f0cbc6;font-size:11px;padding:7px 12px}}
+ .client-actions .cdel:hover{{background:#c0392b;color:#fff;opacity:1}}
+ .client-check{{display:flex;align-items:center;gap:6px;font-size:11.5px;color:#5c574c;font-weight:500}}
  .alert-dismiss{{background:transparent;border:1px solid #d8c79a;color:#a07520;width:24px;height:24px;border-radius:50%;padding:0;font-size:13px;font-weight:700;line-height:1;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;transition:all .12s}}
  .alert-dismiss:hover{{background:#d4493f;color:#fff;border-color:#d4493f;transform:scale(1.08)}}
  .alert-explain{{font-size:12px;color:#6e5a2a;background:#faefd6;border:1px solid #f0e2c2;padding:9px 12px;border-radius:9px;margin-bottom:2px;line-height:1.5}}
@@ -927,6 +1074,18 @@ def _render() -> str:
     Version : {html.escape((os.environ.get("VERCEL_GIT_COMMIT_SHA","local") or "local")[:7])}
     · branche {html.escape(os.environ.get("VERCEL_GIT_COMMIT_REF","-"))}
   </div>
+
+  <details>
+    <summary>Comptes clients<span class="hint">tri auto des réponses, réponses par client, mise en relation</span></summary>
+    <div class="card">
+      <div class="alert-explain" style="margin-bottom:12px">
+        Chaque client a ses <b>adresses d'envoi</b> (le bot trie les réponses dessus) et sa <b>façon de répondre aux négatifs</b>.
+        Tu ne mets que <b>quelques exemples</b> : quand une adresse ou une campagne inconnue arrive, le bot devine le bon client
+        et, s'il hésite, l'alerte passe <b>« à trier »</b> — tu choisis une fois, il retient. Le client <b>« MOI »</b> = ton compte actuel.
+      </div>
+      {clients_section_html}
+    </div>
+  </details>
 
   <details>
     <summary>Réglages avancés<span class="hint">horaires d'envoi, délai</span></summary>
@@ -1228,6 +1387,64 @@ class handler(BaseHTTPRequestHandler):
                     "reply": "",
                     "response": diag_result,
                 })
+        elif action == "save_client":
+            # Créer / mettre à jour un compte client (multi-clients).
+            from src.clients import slugify
+            name = (form.get("name") or "").strip()
+            cid = (form.get("client_id") or "").strip()
+            if name:
+                clients = kvstore.get_clients()
+
+                def _split(s: str) -> list[str]:
+                    return [x.strip() for x in re.split(r"[,\n;]+", s or "") if x.strip()]
+
+                payload = {
+                    "name": name,
+                    "contact_email": (form.get("contact_email") or "").strip(),
+                    "description": (form.get("description") or "").strip(),
+                    "mailboxes": _split(form.get("mailboxes", "")),
+                    "campaigns": _split(form.get("campaigns", "")),
+                    "offer_context": (form.get("offer_context") or "").strip(),
+                    "signature": (form.get("signature") or "").strip(),
+                    "is_default": form.get("is_default") == "1",
+                }
+                if not cid:
+                    cid = slugify(name)
+                    existing = {c.get("id") for c in clients}
+                    base, i = cid, 2
+                    while cid in existing:
+                        cid, i = f"{base}-{i}", i + 1
+                payload["id"] = cid
+                # Un seul client par défaut : si celui-ci l'est, on retire le flag ailleurs.
+                if payload["is_default"]:
+                    for c in clients:
+                        c["is_default"] = False
+                # Upsert par id.
+                idx = next((k for k, c in enumerate(clients) if c.get("id") == cid), None)
+                if idx is None:
+                    clients.append(payload)
+                else:
+                    clients[idx] = payload
+                kvstore.set_clients(clients)
+        elif action == "delete_client":
+            cid = (form.get("client_id") or "").strip()
+            if cid:
+                kvstore.set_clients([c for c in kvstore.get_clients() if c.get("id") != cid])
+        elif action == "assign_client":
+            # Triage manuel d'une alerte "à trier" → on mémorise l'assignation ET
+            # on APPREND (mailbox/campagne) pour que le bot trie seul ensuite.
+            from src import clients as _cl
+            cid = (form.get("client_id") or "").strip()
+            alert_id = (form.get("alert_id") or "").strip()
+            sender_mb = (form.get("sender_mailbox") or "").strip()
+            camp = (form.get("campaign_id") or "").strip()
+            if cid and alert_id:
+                kvstore.set_triage(alert_id, cid)
+                clients = kvstore.get_clients()
+                match = next((c for c in clients if c.get("id") == cid), None)
+                if match and (sender_mb or camp):
+                    upd = _cl.learn(match, sender_mb, camp)
+                    kvstore.set_clients([upd if c.get("id") == cid else c for c in clients])
         elif action == "save_settings":
             ov = kvstore.get_settings_overrides()
             sending = ov.get("sending", {})

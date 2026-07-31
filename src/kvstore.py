@@ -144,6 +144,30 @@ def set_clients(clients: list[dict]) -> None:
     _cmd("SET", CLIENTS_KEY, json.dumps(clients, ensure_ascii=False))
 
 
+TRIAGE_KEY = "bot:triage"  # HASH alert_id -> client_id (assignations manuelles)
+
+
+def set_triage(alert_id: str, client_id: str) -> None:
+    """Mémorise l'assignation manuelle d'une alerte 'à trier' à un client."""
+    if not kv_available() or not alert_id or not client_id:
+        return
+    _cmd("HSET", TRIAGE_KEY, alert_id, client_id)
+
+
+def get_triage() -> dict:
+    """Renvoie {alert_id: client_id} des assignations manuelles. Tolère les deux
+    formats de retour Upstash (dict ou liste plate [k, v, k, v, ...])."""
+    res = _cmd("HGETALL", TRIAGE_KEY)
+    if isinstance(res, dict):
+        return {str(k): str(v) for k, v in res.items()}
+    if isinstance(res, list):
+        out: dict = {}
+        for i in range(0, len(res) - 1, 2):
+            out[str(res[i])] = str(res[i + 1])
+        return out
+    return {}
+
+
 def set_last_run(iso: str) -> None:
     _cmd("SET", LAST_RUN_KEY, iso)
 
