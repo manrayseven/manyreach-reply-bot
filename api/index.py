@@ -860,9 +860,10 @@ def _render(client_filter: str | None = None) -> str:
     # Dernier reporting mensuel généré → bloc copiable (préfère le compte affiché).
     report_entry = None
     for a in actions_full:
-        if a.get("intent") == "monthly_report" and (
-            not sel_client or a.get("client_id") == sel_client
-        ):
+        _rid = f"{a.get('at', '')}|{(a.get('from') or '').lower()}"
+        if (a.get("intent") == "monthly_report"
+                and _rid not in dismissed   # fermé par Rudy → on ne l'affiche plus
+                and (not sel_client or a.get("client_id") == sel_client)):
             report_entry = a
             break
     report_card = ""
@@ -876,6 +877,17 @@ def _render(client_filter: str | None = None) -> str:
             _rbody = f'<pre style="white-space:pre-wrap;font-family:inherit;margin:0">{html.escape(_resp)}</pre>'
         _rwhen = html.escape(_time_fr(report_entry.get("at", "")))
         _rname = html.escape(str(report_entry.get("subject") or "Reporting mensuel").replace("📊 ", ""))
+        _rid = html.escape(f"{report_entry.get('at', '')}|{(report_entry.get('from') or '').lower()}")
+        # Bouton ✕ pour FERMER le reporting une fois copié/envoyé (sinon il reste
+        # affiché en permanence). Réutilise dismiss_alert (masque via KV).
+        _close_report = (
+            f'<form method="POST" action="/{keyparam}" style="display:inline;margin-left:auto" '
+            f'onsubmit="this.querySelector(\'button\').disabled=true;return true;">'
+            f'<input type="hidden" name="action" value="dismiss_alert">'
+            f'<input type="hidden" name="alert_id" value="{_rid}">'
+            f'<button type="submit" class="alert-dismiss" title="Fermer le reporting (le cacher)">✕</button>'
+            f'</form>'
+        )
         # Copie RICHE : on sélectionne le bloc rendu et on copie → coller dans
         # Gmail conserve la mise en forme (titres, couleurs, tableau).
         _copy_js = (
@@ -887,7 +899,7 @@ def _render(client_filter: str | None = None) -> str:
         )
         report_card = (
             '<div class="card report-card">'
-            f'<h2>📊 {_rname} <span class="report-when">généré {_rwhen}</span></h2>'
+            f'<h2>📊 {_rname} <span class="report-when">généré {_rwhen}</span>{_close_report}</h2>'
             f'<div id="reportHtml" class="report-render">{_rbody}</div>'
             '<div class="report-actions">'
             f'<button type="button" class="btn-primary" onclick="{_copy_js}">📋 Copier le rapport</button>'
