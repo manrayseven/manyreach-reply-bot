@@ -213,90 +213,74 @@ def _monthly_stats(actions: list, now=None) -> dict:
     return g
 
 
-def _rule_recos(g: dict) -> list[str]:
-    """Recommandations par défaut (règles) si l'IA n'est pas dispo."""
-    recos: list[str] = []
-    if g["received"] == 0:
-        return ["Aucune réponse enregistrée ce mois : vérifier que les campagnes "
-                "tournent bien, le volume d'envoi et la délivrabilité."]
-    if g["meetings"]:
-        recos.append(f"{g['meetings']} rendez-vous à concrétiser : le suivi rapide "
-                     "de ces contacts est la priorité.")
-    if g["received"] >= 5 and g["pos_rate"] < 0.10:
-        recos.append("Taux d'intérêt faible : affiner le ciblage (secteur/taille) "
-                     "et tester une nouvelle accroche sur les prochains envois.")
-    elif g["pos_rate"] >= 0.25:
-        recos.append("Bon taux d'intérêt : on peut augmenter le volume d'envoi "
-                     "pour capitaliser sur ce message qui fonctionne.")
+def _report_sections(g: dict) -> dict:
+    """Sections du bilan (règles) : ce qui a fonctionné / ce qui a moins marché /
+    nos prochaines actions. 'next' = actions de L'AGENCE (1re pers. pluriel),
+    jamais une to-do adressée au client. Repli si l'IA n'est pas dispo."""
+    worked: list[str] = []
+    issues: list[str] = []
+    nxt: list[str] = []
+    r = g["received"]
+    if r == 0:
+        issues.append("Aucune réponse enregistrée sur la période.")
+        nxt.append("Nous vérifions le volume d'envoi et la délivrabilité, puis "
+                   "relançons la diffusion pour générer des réponses.")
+        return {"worked": worked, "issues": issues, "next": nxt}
+    tx = int(round(g["pos_rate"] * 100))
+    # Ce qui a fonctionné
+    if g["positive"]:
+        _m = f", dont {g['meetings']} rendez-vous" if g["meetings"] else ""
+        worked.append(f"{g['positive']} contact(s) réellement intéressé(s){_m}.")
+    if g["pos_rate"] >= 0.20:
+        worked.append(f"Bon taux d'intérêt : {tx}% des réponses sont positives.")
+    elif g["positive"]:
+        worked.append(f"Un taux d'intérêt de {tx}% qui donne une base à consolider.")
     if g["timing"]:
-        recos.append(f"{g['timing']} prospect(s) « pas le bon moment » : une relance "
-                     "programmée d'ici 2 à 3 mois est recommandée.")
-    if g["already"] >= max(2, g["negative"] // 2) and g["already"]:
-        recos.append("Plusieurs « déjà équipé » : mettre en avant un angle "
-                     "différenciant face aux solutions déjà en place.")
-    if g["unsub"] + g["hostile"] >= 3:
-        recos.append("Plusieurs désinscriptions : revérifier la pertinence de la "
-                     "liste pour préserver la délivrabilité.")
-    if not recos:
-        recos.append("Rythme correct : maintenir le volume et relancer les contacts "
-                     "tièdes pour transformer davantage.")
-    return recos
-
-
-def _format_monthly_report(client: dict, g: dict, recos: list[str], now=None) -> str:
-    """Rapport email-ready (texte simple, copiable) pour un client."""
-    from datetime import datetime as _dt, timezone as _tz
-    now = now or _dt.now(_tz.utc)
-    try:
-        from zoneinfo import ZoneInfo
-        now = now.astimezone(ZoneInfo("Europe/Paris"))
-    except Exception:  # noqa: BLE001
-        pass
-    mois = f"{_MONTHS_FR[now.month - 1]} {now.year}"
-    cname = str(client.get("name") or "").strip() or "votre entreprise"
-    lignes = [
-        f"Objet : Reporting prospection - {mois}",
-        "",
-        "Bonjour,",
-        "",
-        f"Voici le bilan de votre campagne de prospection pour {mois}.",
-        "",
-        "LES CHIFFRES DU MOIS",
-        f"- Réponses reçues : {g['received']}",
-    ]
-    _pos = f"- Contacts intéressés : {g['positive']}"
-    if g["meetings"]:
-        _pos += f" (dont {g['meetings']} rendez-vous)"
-    lignes.append(_pos)
+        worked.append(f"{g['timing']} contact(s) « à recontacter plus tard » : un "
+                      "potentiel à réactiver au bon moment.")
+    if not worked:
+        worked.append("Des réponses reçues qui permettent d'affiner la cible.")
+    # Ce qui a moins bien marché (détail des négatifs)
+    negbits = []
+    if g["already"]:
+        negbits.append(f"{g['already']} « déjà équipé »")
+    if g["price"]:
+        negbits.append(f"{g['price']} frein budget")
+    if g["refus"]:
+        negbits.append(f"{g['refus']} sans besoin exprimé")
+    if g["unsub"] + g["hostile"]:
+        negbits.append(f"{g['unsub'] + g['hostile']} désinscription(s)")
+    if negbits:
+        issues.append("Réponses négatives : " + ", ".join(negbits) + ".")
+    if g["already"] and g["already"] >= max(2, g["negative"] // 2):
+        issues.append("L'objection « déjà équipé » domine : une partie de la cible "
+                      "est déjà pourvue sur ce besoin.")
+    if r >= 5 and g["pos_rate"] < 0.15:
+        issues.append("Le taux d'intérêt reste à améliorer sur cette cible.")
+    if not issues:
+        issues.append("Pas de point bloquant marquant ce mois-ci.")
+    # Nos prochaines actions (agence → client)
+    if g["positive"]:
+        nxt.append(f"Nous relançons les {g['positive']} contact(s) intéressé(s) "
+                   "cette semaine pour les faire avancer vers un rendez-vous.")
     if g["timing"]:
-        lignes.append(f"- À recontacter plus tard : {g['timing']}")
-    lignes.append(f"- Pas intéressés / déjà équipés : {g['negative']}")
-    if g["wrong"]:
-        lignes.append(f"- Mauvais interlocuteur (à réorienter) : {g['wrong']}")
-    lignes.append("")
-    lignes.append("EN BREF")
-    if g["received"] == 0:
-        lignes.append("Pas encore de réponses sur la période.")
-    else:
-        _tx = int(round(g["pos_rate"] * 100))
-        lignes.append(f"Sur {g['received']} réponses, {g['positive']} sont "
-                      f"positives, soit {_tx}% de contacts intéressés.")
-    lignes += ["", "RECOMMANDATIONS"]
-    lignes += [f"- {r}" for r in recos]
-    lignes += [
-        "",
-        "Je reste à votre disposition pour en discuter.",
-        "",
-        "Bien à vous,",
-        "Rudy Viard",
-        "Webmarketing Conseil",
-    ]
-    return "\n".join(lignes)
+        nxt.append(f"Nous programmons la relance des {g['timing']} contact(s) "
+                   "« plus tard » au moment opportun.")
+    if g["already"] and g["already"] >= max(2, g["negative"] // 2):
+        nxt.append("Nous ajustons le ciblage et l'accroche pour réduire les "
+                   "« déjà équipé » et toucher des comptes plus en demande.")
+    elif r >= 5 and g["pos_rate"] < 0.15:
+        nxt.append("Nous testons une nouvelle accroche pour améliorer le taux "
+                   "d'intérêt le mois prochain.")
+    if not nxt:
+        nxt.append("Nous poursuivons la diffusion et le suivi des contacts engagés.")
+    return {"worked": worked, "issues": issues, "next": nxt}
 
 
-def _llm_recos(client: dict, g: dict) -> list[str] | None:
-    """Recommandations contextualisées par l'IA (Haiku). None si indispo/échec
-    → l'appelant retombe sur _rule_recos. Court + tolérant aux pannes."""
+def _llm_report_sections(client: dict, g: dict) -> dict | None:
+    """Version IA (Haiku) des 3 sections, mieux contextualisée. None si indispo →
+    repli sur _report_sections. Cadrage STRICT : bilan d'une agence à SON client,
+    'next' à la 1re personne du pluriel, jamais d'impératif adressé au client."""
     try:
         import anthropic
         key = os.environ.get("ANTHROPIC_API_KEY")
@@ -305,23 +289,30 @@ def _llm_recos(client: dict, g: dict) -> list[str] | None:
         offer = (client.get("description") or "").strip()
         stats_txt = (
             f"reponses={g['received']}, interesses={g['positive']}, "
-            f"rdv={g['meetings']}, pas_le_moment={g['timing']}, "
-            f"negatifs={g['negative']} (dont deja_equipe={g['already']}, "
-            f"prix={g['price']}, desinscriptions={g['unsub']}), "
-            f"taux_positif={int(round(g['pos_rate']*100))}%"
+            f"rdv={g['meetings']}, a_recontacter={g['timing']}, "
+            f"negatifs={g['negative']} (deja_equipe={g['already']}, "
+            f"budget={g['price']}, sans_besoin={g['refus']}, "
+            f"desinscriptions={g['unsub'] + g['hostile']}), "
+            f"taux_interet={int(round(g['pos_rate']*100))}%"
         )
         sys = (
-            "Tu es un consultant en prospection B2B. À partir des chiffres du mois "
-            "d'un client, écris 2 à 4 recommandations ACTIONNABLES, concrètes et "
-            "courtes (une phrase chacune), en français, pour le mois suivant. Pas de "
-            "blabla, pas de chiffres réinventés. Réponds UNIQUEMENT en JSON: "
-            '{"recos": ["...", "..."]}'
+            "Tu rédiges le BILAN MENSUEL qu'une agence de prospection envoie à SON "
+            "client. À partir des chiffres, produis 3 listes courtes en français :\n"
+            "- worked : ce qui a FONCTIONNÉ (factuel, valorisant, sans exagérer).\n"
+            "- issues : ce qui a MOINS bien marché (lucide, jamais alarmiste, "
+            "explique le motif des négatifs).\n"
+            "- next : les prochaines actions que NOUS, l'agence, mettons en place. "
+            "TOUJOURS à la 1re personne du pluriel (« Nous… »). INTERDIT : tout "
+            "impératif adressé au client (« faites », « relancez », « analysez », "
+            "« testez ») — le client ne doit AVOIR AUCUNE tâche à faire.\n"
+            "Chaque item = une phrase concrète. N'invente aucun chiffre. Réponds "
+            'UNIQUEMENT en JSON : {"worked":[...],"issues":[...],"next":[...]}.'
         )
         user = f"Offre du client : {offer or 'non precisee'}\nChiffres du mois : {stats_txt}"
-        client_a = anthropic.Anthropic(api_key=key, max_retries=2)
-        msg = client_a.messages.create(
+        ca = anthropic.Anthropic(api_key=key, max_retries=2)
+        msg = ca.messages.create(
             model="claude-haiku-4-5-20251001",
-            max_tokens=350,
+            max_tokens=600,
             system=sys,
             messages=[{"role": "user", "content": user}],
         )
@@ -329,10 +320,107 @@ def _llm_recos(client: dict, g: dict) -> list[str] | None:
         raw = re.sub(r"^```(?:json)?\s*", "", raw)
         raw = re.sub(r"\s*```\s*$", "", raw)
         data = json.loads(raw)
-        recos = [str(x).strip() for x in (data.get("recos") or []) if str(x).strip()]
-        return recos or None
+        out = {}
+        for k in ("worked", "issues", "next"):
+            out[k] = [str(x).strip() for x in (data.get(k) or []) if str(x).strip()]
+        if not any(out.values()):
+            return None
+        # Filet anti-impératif : si un item de 'next' commence par un impératif
+        # adressé au client, on jette la version IA (repli règles plus sûr).
+        _bad = ("faites", "relancez", "analysez", "testez", "vérifiez", "pensez",
+                "ajoutez", "envoyez", "mettez", "contactez")
+        if any(i.lower().lstrip("- ").startswith(_bad) for i in out["next"]):
+            return None
+        return out
     except Exception:  # noqa: BLE001
         return None
+
+
+def _report_month_label(now=None) -> str:
+    from datetime import datetime as _dt, timezone as _tz
+    now = now or _dt.now(_tz.utc)
+    try:
+        from zoneinfo import ZoneInfo
+        now = now.astimezone(ZoneInfo("Europe/Paris"))
+    except Exception:  # noqa: BLE001
+        pass
+    return f"{_MONTHS_FR[now.month - 1]} {now.year}"
+
+
+def _report_text(client: dict, g: dict, sections: dict, now=None) -> str:
+    """Version TEXTE simple (repli si le HTML riche ne colle pas / mailto)."""
+    mois = _report_month_label(now)
+    tx = int(round(g["pos_rate"] * 100))
+    L = [
+        f"Objet : Bilan de votre prospection - {mois}", "",
+        "Bonjour,", "",
+        f"Voici le bilan de votre campagne de prospection pour {mois}.", "",
+        "LES CHIFFRES DU MOIS",
+        f"- Réponses reçues : {g['received']}",
+        f"- Contacts intéressés : {g['positive']}"
+        + (f" (dont {g['meetings']} rendez-vous)" if g["meetings"] else ""),
+        f"- À recontacter plus tard : {g['timing']}",
+        f"- Réponses négatives : {g['negative']}",
+        f"- Taux d'intérêt : {tx}%", "",
+        "CE QUI A FONCTIONNÉ",
+    ]
+    L += [f"- {x}" for x in sections["worked"]]
+    L += ["", "CE QUI A MOINS BIEN MARCHÉ"]
+    L += [f"- {x}" for x in sections["issues"]]
+    L += ["", "NOS PROCHAINES ACTIONS"]
+    L += [f"- {x}" for x in sections["next"]]
+    L += ["", "Je reste à votre disposition pour en discuter.", "",
+          "Bien à vous,", "Rudy Viard", "Webmarketing Conseil"]
+    return "\n".join(L)
+
+
+def _report_html(client: dict, g: dict, sections: dict, now=None) -> str:
+    """Version HTML « jolie », styles INLINE (survit au copier-coller Gmail)."""
+    mois = html.escape(_report_month_label(now))
+    e = html.escape
+    tx = int(round(g["pos_rate"] * 100))
+
+    def _stat(label, val, color):
+        return (
+            '<td style="padding:12px 10px;border:1px solid #e8e3d8;'
+            'background:#fff;text-align:center;width:25%">'
+            f'<div style="font-size:26px;font-weight:700;color:{color};'
+            f'font-family:Georgia,serif;line-height:1">{val}</div>'
+            f'<div style="font-size:10px;color:#8c8678;text-transform:uppercase;'
+            f'letter-spacing:.05em;margin-top:5px">{e(label)}</div></td>'
+        )
+
+    def _block(title, items, color):
+        lis = "".join(
+            f'<li style="margin:5px 0;color:#333">{e(x)}</li>' for x in items
+        )
+        return (
+            f'<h3 style="font-size:14px;color:{color};margin:20px 0 6px;'
+            f'font-family:Arial,sans-serif">{title}</h3>'
+            f'<ul style="margin:0;padding-left:20px;font-size:13.5px;'
+            f'line-height:1.5">{lis}</ul>'
+        )
+
+    meeting_txt = f", dont <strong>{g['meetings']}</strong> rendez-vous" if g["meetings"] else ""
+    return (
+        '<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;'
+        'color:#2b2823;line-height:1.55;max-width:620px">'
+        '<p>Bonjour,</p>'
+        f'<p>Voici le bilan de votre campagne de prospection pour <strong>{mois}</strong>.</p>'
+        '<table style="border-collapse:collapse;width:100%;margin:14px 0">'
+        f'<tr>{_stat("Réponses reçues", g["received"], "#b3742f")}'
+        f'{_stat("Intéressés", g["positive"], "#2e7d52")}'
+        f'{_stat("À recontacter", g["timing"], "#d97706")}'
+        f'{_stat("Négatives", g["negative"], "#c0392b")}</tr></table>'
+        f'<p style="color:#5c574c;font-size:13.5px">Soit <strong>{tx}%</strong> '
+        f'de contacts intéressés sur les réponses reçues{meeting_txt}.</p>'
+        + _block("✅ Ce qui a fonctionné", sections["worked"], "#2e7d52")
+        + _block("⚠️ Ce qui a moins bien marché", sections["issues"], "#c0392b")
+        + _block("➡️ Nos prochaines actions", sections["next"], "#26509e")
+        + '<p style="margin-top:18px">Je reste à votre disposition pour en discuter.</p>'
+        '<p style="margin-top:12px">Bien à vous,<br><strong>Rudy Viard</strong>'
+        '<br>Webmarketing Conseil</p></div>'
+    )
 
 
 def _render(client_filter: str | None = None) -> str:
@@ -738,20 +826,31 @@ def _render(client_filter: str | None = None) -> str:
             break
     report_card = ""
     if report_entry:
-        _rtxt = html.escape(str(report_entry.get("response") or ""))
+        _resp = str(report_entry.get("response") or "")
+        # Nouveau format = HTML (commence par "<div"). Ancien = texte simple → on
+        # l'échappe dans un <pre> pour ne pas casser l'affichage.
+        if _resp.lstrip().startswith("<"):
+            _rbody = _resp
+        else:
+            _rbody = f'<pre style="white-space:pre-wrap;font-family:inherit;margin:0">{html.escape(_resp)}</pre>'
         _rwhen = html.escape(_time_fr(report_entry.get("at", "")))
         _rname = html.escape(str(report_entry.get("subject") or "Reporting mensuel").replace("📊 ", ""))
+        # Copie RICHE : on sélectionne le bloc rendu et on copie → coller dans
+        # Gmail conserve la mise en forme (titres, couleurs, tableau).
+        _copy_js = (
+            "var el=document.getElementById('reportHtml');"
+            "var r=document.createRange();r.selectNodeContents(el);"
+            "var s=window.getSelection();s.removeAllRanges();s.addRange(r);"
+            "try{document.execCommand('copy');}catch(e){}"
+            "s.removeAllRanges();this.textContent='\\u2713 Copié (mise en forme conservée) !';"
+        )
         report_card = (
             '<div class="card report-card">'
             f'<h2>📊 {_rname} <span class="report-when">généré {_rwhen}</span></h2>'
-            f'<textarea id="reportBox" class="report-box" readonly rows="18">{_rtxt}</textarea>'
+            f'<div id="reportHtml" class="report-render">{_rbody}</div>'
             '<div class="report-actions">'
-            '<button type="button" class="btn-primary" onclick="'
-            "var t=document.getElementById('reportBox');t.focus();t.select();"
-            "try{navigator.clipboard.writeText(t.value);}catch(e){document.execCommand('copy');}"
-            "this.textContent='\\u2713 Copié !';"
-            '">📋 Copier le rapport</button>'
-            '<span class="report-hint">Colle-le directement dans un email à ton client, puis ajuste si besoin.</span>'
+            f'<button type="button" class="btn-primary" onclick="{_copy_js}">📋 Copier le rapport</button>'
+            '<span class="report-hint">Colle-le dans un email à ton client (Gmail garde la mise en forme). Tu peux ajuster avant d\'envoyer.</span>'
             '</div></div>'
         )
 
@@ -1305,7 +1404,9 @@ def _render(client_filter: str | None = None) -> str:
  .report-card{{background:#f3f9f6;border:1px solid #cfe8dd}}
  .report-card h2{{color:#0d7a5f}}
  .report-when{{font-size:10.5px;font-weight:600;color:#6a9c8c;text-transform:none;letter-spacing:0;margin-left:2px}}
- .report-box{{width:100%;box-sizing:border-box;border:1px solid #cfe8dd;border-radius:10px;padding:12px 14px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;line-height:1.6;color:#2b3a34;background:#fff;resize:vertical}}
+ .report-render{{width:100%;box-sizing:border-box;border:1px solid #cfe8dd;border-radius:10px;padding:18px 20px;background:#fff;overflow-x:auto}}
+ .report-render h3{{font-weight:700}}
+ .report-render table{{max-width:100%}}
  .report-actions{{display:flex;align-items:center;gap:12px;margin-top:10px}}
  .report-hint{{font-size:11.5px;color:#6a9c8c}}
  .report-sel{{padding:9px 10px;border:1px solid #e0d9cb;border-radius:9px;font-size:13px;font-family:inherit;background:#fff;color:#2b2823;min-width:0}}
@@ -1866,18 +1967,23 @@ class handler(BaseHTTPRequestHandler):
                 client = clients[0]
             if client is not None:
                 _post_client = client.get("id")
-                # Filtre les actions sur ce client (triage manuel prioritaire).
+                # Filtre les actions sur ce client. Le compte PAR DÉFAUT est le
+                # fourre-tout : il récupère tout ce qui n'est pas rattaché à un
+                # autre client (indispensable pour l'historique sans client_id).
                 triage = kvstore.get_triage()
+                _def_cid = next((c.get("id") for c in clients if c.get("is_default")),
+                                (clients[0].get("id") if clients else None))
 
                 def _eff(a: dict) -> str | None:
                     aid = f"{a.get('at', '')}|{(a.get('from') or '').lower()}"
-                    return triage.get(aid) or a.get("client_id")
+                    return triage.get(aid) or a.get("client_id") or _def_cid
 
                 acts = kvstore.recent_actions(kvstore.MAX_LOG_ENTRIES)
                 acts_c = [a for a in acts if _eff(a) == client.get("id")]
                 g = _monthly_stats(acts_c)
-                recos = _llm_recos(client, g) or _rule_recos(g)
-                report = _format_monthly_report(client, g, recos)
+                sections = _llm_report_sections(client, g) or _report_sections(g)
+                report_html = _report_html(client, g, sections)
+                report_txt = _report_text(client, g, sections)
                 kvstore.log_action({
                     "at": _dt.now(_tz.utc).isoformat(),
                     "from": "(reporting)",
@@ -1885,8 +1991,8 @@ class handler(BaseHTTPRequestHandler):
                     "intent": "monthly_report",
                     "status": f"Reporting généré pour {client.get('name', '')} "
                               f"({g['received']} réponses, {g['positive']} positives)",
-                    "reply": "",
-                    "response": report,
+                    "reply": report_txt,          # version texte (repli)
+                    "response": report_html,      # version HTML jolie (affichée)
                     "client_id": client.get("id"),
                 })
         elif action == "save_settings":
