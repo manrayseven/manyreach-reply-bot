@@ -125,6 +125,25 @@ def set_settings_overrides(overrides: dict) -> None:
     _cmd("SET", SETTINGS_KEY, json.dumps(overrides, ensure_ascii=False))
 
 
+CLIENTS_KEY = "bot:clients"
+
+
+def get_clients() -> list[dict]:
+    """Liste des comptes clients (multi-clients). [] si non configuré/KV indispo."""
+    raw = _cmd("GET", CLIENTS_KEY)
+    if not raw:
+        return []
+    try:
+        data = json.loads(raw)
+        return data if isinstance(data, list) else []
+    except (json.JSONDecodeError, TypeError):
+        return []
+
+
+def set_clients(clients: list[dict]) -> None:
+    _cmd("SET", CLIENTS_KEY, json.dumps(clients, ensure_ascii=False))
+
+
 def set_last_run(iso: str) -> None:
     _cmd("SET", LAST_RUN_KEY, iso)
 
