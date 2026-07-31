@@ -437,6 +437,80 @@ def _report_html(client: dict, g: dict, sections: dict, now=None) -> str:
     )
 
 
+def _internal_tips(g: dict) -> list[str]:
+    """Conseils TACTIQUES pour Rudy (opérateur) — jamais envoyés au client.
+    Impératifs OK. Repli si l'IA n'est pas dispo."""
+    r = g["received"]
+    if r == 0:
+        return ["Vérifie que les campagnes tournent, le warmup des adresses et la "
+                "délivrabilité (SPF/DKIM/DMARC) avant de conclure sur les résultats."]
+    tips: list[str] = []
+    if r < 20:
+        tips.append("Volume de réponses faible : augmente les envois pour des "
+                    "conclusions plus fiables.")
+    if g["pos_rate"] < 0.15:
+        tips.append("Teste un objet plus court et une 1re ligne centrée sur un "
+                    "bénéfice concret (évite de te présenter en ouverture).")
+    if g["already"] and g["already"] >= max(2, g["negative"] // 2):
+        tips.append("Resserre le ciblage vers des comptes moins matures / en "
+                    "structuration pour réduire les « déjà équipé ».")
+    if g["refus"] and g["refus"] >= max(3, g["negative"] // 2):
+        tips.append("Reformule la proposition de valeur autour d'un problème "
+                    "précis et douloureux du secteur visé.")
+    if g["unsub"] + g["hostile"] >= 3:
+        tips.append("Espace les relances et nettoie la liste : le taux de "
+                    "désinscription pèse sur la délivrabilité.")
+    if g["timing"]:
+        tips.append("Mets en place une relance douce automatique pour les "
+                    "« plus tard » (J+60 / J+90).")
+    if g["positive"]:
+        tips.append("Ajoute un cas client chiffré dans la relance des intéressés "
+                    "pour accélérer la transformation.")
+    if not tips:
+        tips.append("Duplique l'angle des messages qui génèrent le plus d'intérêt "
+                    "et documente ce qui marche.")
+    return tips
+
+
+def _llm_internal_tips(client: dict, g: dict) -> list[str] | None:
+    """Conseils tactiques par l'IA (Haiku) pour l'opérateur. None si indispo."""
+    try:
+        import anthropic
+        key = os.environ.get("ANTHROPIC_API_KEY")
+        if not key:
+            return None
+        offer = (client.get("description") or "").strip()
+        stats_txt = (
+            f"reponses={g['received']}, interesses={g['positive']}, "
+            f"transmis={g.get('transmis', 0)}, a_recontacter={g['timing']}, "
+            f"negatifs={g['negative']} (deja_equipe={g['already']}, budget={g['price']}, "
+            f"sans_besoin={g['refus']}, desinscriptions={g['unsub'] + g['hostile']}), "
+            f"taux_interet={int(round(g['pos_rate']*100))}%"
+        )
+        sys = (
+            "Tu es un expert du cold email B2B. À partir des chiffres du mois d'une "
+            "campagne, donne 3 à 5 CONSEILS TACTIQUES concrets à l'OPÉRATEUR de la "
+            "campagne (pas au client final) pour améliorer les résultats le mois "
+            "prochain : ciblage/ICP, objet, accroche, structure de séquence, "
+            "délivrabilité, formulation de l'offre. Impératif accepté, une phrase "
+            "actionnable par conseil, en français. N'invente aucun chiffre. Réponds "
+            'UNIQUEMENT en JSON : {"tips": ["...", "..."]}.'
+        )
+        user = f"Offre pitchée : {offer or 'non precisee'}\nChiffres du mois : {stats_txt}"
+        ca = anthropic.Anthropic(api_key=key, max_retries=2)
+        msg = ca.messages.create(
+            model="claude-haiku-4-5-20251001", max_tokens=500,
+            system=sys, messages=[{"role": "user", "content": user}],
+        )
+        raw = msg.content[0].text.strip()
+        raw = re.sub(r"^```(?:json)?\s*", "", raw)
+        raw = re.sub(r"\s*```\s*$", "", raw)
+        tips = [str(x).strip() for x in (json.loads(raw).get("tips") or []) if str(x).strip()]
+        return tips or None
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def _handoff_email_html(company: str, detail_line: str, contact_line: str,
                         campaign: str, message: str) -> str:
     """Bel email de TRANSFERT client (styles inline, survit au copier-coller
@@ -911,6 +985,21 @@ def _render(client_filter: str | None = None) -> str:
             "try{document.execCommand('copy');}catch(e){}"
             "s.removeAllRanges();this.textContent='\\u2713 Copié (mise en forme conservée) !';"
         )
+        # Conseils POUR RUDY — affichés dans le dashboard mais HORS du bloc
+        # #reportHtml → jamais copiés dans l'email envoyé au client.
+        _tips = report_entry.get("tips") or []
+        _tips_block = ""
+        if _tips:
+            _lis = "".join(
+                f'<li style="margin:5px 0">{html.escape(str(t))}</li>' for t in _tips
+            )
+            _tips_block = (
+                '<div class="report-tips">'
+                '<div class="report-tips-h">💡 Conseils pour améliorer '
+                '<span class="report-tips-tag">pour toi — NON envoyé au client</span></div>'
+                f'<ul class="report-tips-ul">{_lis}</ul>'
+                '</div>'
+            )
         report_card = (
             '<div class="card report-card">'
             f'<h2>📊 {_rname} <span class="report-when">généré {_rwhen}</span>{_close_report}</h2>'
@@ -918,7 +1007,9 @@ def _render(client_filter: str | None = None) -> str:
             '<div class="report-actions">'
             f'<button type="button" class="btn-primary" onclick="{_copy_js}">📋 Copier le rapport</button>'
             '<span class="report-hint">Colle-le dans un email à ton client (Gmail garde la mise en forme). Tu peux ajuster avant d\'envoyer.</span>'
-            '</div></div>'
+            '</div>'
+            f'{_tips_block}'
+            '</div>'
         )
 
     # Options du sélecteur de compte pour le bouton "Reporting mensuel".
@@ -1518,6 +1609,10 @@ def _render(client_filter: str | None = None) -> str:
  .report-card h2{{color:#0d7a5f}}
  .report-when{{font-size:10.5px;font-weight:600;color:#6a9c8c;text-transform:none;letter-spacing:0;margin-left:2px}}
  .report-render{{width:100%;box-sizing:border-box;border:1px solid #cfe8dd;border-radius:10px;padding:18px 20px;background:#fff;overflow-x:auto}}
+ .report-tips{{margin-top:14px;background:#fdf6e9;border:1px solid #f0e2c2;border-radius:10px;padding:12px 16px}}
+ .report-tips-h{{font-size:12.5px;font-weight:700;color:#a07520;display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px}}
+ .report-tips-tag{{font-size:9.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#a07520;background:#faefd6;border:1px solid #f0e2c2;padding:1px 7px;border-radius:20px}}
+ .report-tips-ul{{margin:4px 0 0;padding-left:20px;font-size:13px;line-height:1.5;color:#5c4a1e}}
  .report-render h3{{font-weight:700}}
  .report-render table{{max-width:100%}}
  .report-actions{{display:flex;align-items:center;gap:12px;margin-top:10px}}
@@ -2113,6 +2208,7 @@ class handler(BaseHTTPRequestHandler):
                 sections = _llm_report_sections(client, g) or _report_sections(g)
                 report_html = _report_html(client, g, sections)
                 report_txt = _report_text(client, g, sections)
+                tips = _llm_internal_tips(client, g) or _internal_tips(g)
                 kvstore.log_action({
                     "at": _dt.now(_tz.utc).isoformat(),
                     "from": "(reporting)",
@@ -2121,7 +2217,8 @@ class handler(BaseHTTPRequestHandler):
                     "status": f"Reporting généré pour {client.get('name', '')} "
                               f"({g['received']} réponses, {g['positive']} positives)",
                     "reply": report_txt,          # version texte (repli)
-                    "response": report_html,      # version HTML jolie (affichée)
+                    "response": report_html,      # version HTML jolie (email client)
+                    "tips": tips,                 # conseils POUR RUDY (hors email client)
                     "client_id": client.get("id"),
                 })
         elif action == "save_settings":
