@@ -46,6 +46,30 @@ _INTENT_FR = {
 }
 
 
+# Compte par défaut "MOI" (Rudy) auto-créé au 1er chargement si aucun client
+# n'existe. offer_context et signature VIDES = drafting historique 100% inchangé
+# (draft.md / training_examples / contexte GrowPulser restent la voie par défaut).
+# Rudy peut tout éditer ensuite dans la section "Comptes clients".
+DEFAULT_CLIENT_SEED = {
+    "id": "moi",
+    "name": "Webmarketing Conseil",
+    "contact_email": "contact@webmarketing-conseil.fr",
+    "description": (
+        "Rudy Viard, Webmarketing Conseil : conseil webmarketing, cold email, "
+        "audits SEO/digital, et ses outils GrowPulser (publication automatique de "
+        "contenus sur les reseaux sociaux avec IA) et GrowPoster. Campagnes "
+        "envoyees en son nom propre, pas pour un client tiers."
+    ),
+    # Adresses d'envoi connues (vues dans les threads). Le bot en apprend d'autres
+    # tout seul + tu peux en ajouter. C'est le signal de tri quand tu auras 2+ comptes.
+    "mailboxes": ["rviard@hiwebmarketing.fr", "rudy@x-webmarketing.fr"],
+    "campaigns": ["98002", "13754"],
+    "offer_context": "",   # VIDE volontairement → réponses aux négatifs inchangées
+    "signature": "",
+    "is_default": True,
+}
+
+
 def _time_fr(iso: str) -> str:
     """Affiche les timestamps en HEURE DE PARIS (le KV stocke en UTC mais Rudy
     lit en local). Évite la confusion 'rien depuis 12h' alors qu'en UTC c'est OK."""
@@ -181,6 +205,15 @@ def _render() -> str:
 
     # Multi-clients : liste des comptes + assignations manuelles (triage).
     clients_all = kvstore.get_clients()
+    if not clients_all:
+        # Bootstrap serveur : crée le compte par défaut "MOI" (Rudy) pré-rempli.
+        # S'exécute côté Vercel (le KV y est accessible, contrairement au local).
+        # One-shot : dès qu'un client existe, on ne re-seed plus.
+        try:
+            kvstore.set_clients([DEFAULT_CLIENT_SEED])
+            clients_all = [DEFAULT_CLIENT_SEED]
+        except Exception:  # noqa: BLE001
+            pass
     clients_by_id = {c.get("id"): c for c in clients_all if c.get("id")}
     triage_map = kvstore.get_triage()  # {alert_id: client_id}
 
