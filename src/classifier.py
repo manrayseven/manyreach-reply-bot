@@ -110,6 +110,11 @@ def _strip_html(html: str) -> str:
 # réponse auto (cas proramonage45, gpharmaciese — 17/06).
 _QUOTE_END_RE = re.compile(
     r"a\s+écrit\s*:|wrote\s*:|-{2,}\s*Original Message|_{10,}"
+    # Séparateur de citation FR (Outlook/webmail Orange…) : "----- Message
+    # d'origine -----" / "Message original" / "Le message d'origine". CRUCIAL :
+    # cas contact@remialgis (refus court + pitch cité "disponible pour un appel"
+    # → sinon classé à tort meeting_confirmed → faux MeetingBooked).
+    r"|-{0,}\s*Message\s+d['’]origine|-{0,}\s*Message\s+original"
     # En-têtes de citation Outlook (FR/EN) + Allemand : "De : X Envoyé/Objet : ..."
     # / "From: X Sent/Subject: ..." / "Von: X Gesendet/Betreff: ...". Non ambigus
     # (un vrai message n'a jamais cette paire) → coupe même tôt. CRUCIAL pour les

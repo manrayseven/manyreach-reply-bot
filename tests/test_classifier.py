@@ -74,6 +74,18 @@ def test_trim_outlook_german_header():
     assert out == "Bonjour, en ce moment pas un sujet pour nous. Merci.", out
 
 
+def test_trim_fr_message_dorigine_separator():
+    # Refus court + citation FR "------ Message d'origine ------" (cas remialgis) :
+    # sans coupe, l'override lit "disponible pour un appel" cité → faux meeting.
+    raw = ("Bonjour, je ne suis pas intéressé. Merci et bel été. "
+           "------ Message d'origine ------ De \"Rudy Viard\" <r@x.fr> À "
+           "contact@remialgis.com Date 17/07/2026 Objet RE: Fiche Google "
+           "Seriez-vous disponible pour un appel de 15 minutes ?")
+    out = _trim_quoted_history(raw)
+    assert out == "Bonjour, je ne suis pas intéressé. Merci et bel été.", out
+    assert "appel" not in out and "disponible" not in out
+
+
 def test_strip_html_basic():
     html = "<div>Bonjour,</div><div><br></div><div>Je ne suis pas int&#233;ress&#233;e.</div>"
     out = _strip_html(html)

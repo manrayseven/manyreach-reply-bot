@@ -16,7 +16,15 @@ from .manyreach import ManyReachClient, Message, Prospect
 # Map intent -> (sendingStatus | None, sendingActive | None, [tags to add])
 # A None status/active means "do NOT change the prospect's status" — only tag.
 INTENT_PROSPECT_UPDATE: dict[str, tuple[str | None, bool | None, list[str]]] = {
-    "meeting_confirmed":               ("MeetingBooked",  True,  ["bot:meeting-booked"]),
+    # meeting_confirmed : le bot NE POSE PLUS "MeetingBooked" lui-même. Il ne
+    # détecte qu'un SIGNAL de RDV (le prospect propose/accepte un créneau) — ce
+    # n'est pas un RDV confirmé, et Rudy cale/valide les RDV à la main. Poser
+    # MeetingBooked automatiquement était dangereux : une mauvaise classif (refus
+    # avec pitch cité en dessous → faux meeting) verrouillait le prospect en
+    # "booké" ET le sortait du traitement du bot (cas antedi, remialgis, racine,
+    # 31/07). On le traite donc comme un LEAD CHAUD (Interested) + alerte ; Rudy
+    # passe en MeetingBooked lui-même quand le RDV est réellement calé.
+    "meeting_confirmed":               ("Interested",     True,  ["bot:meeting-signal"]),
     "interested_warm":                 ("Interested",     True,  ["bot:hot-lead"]),
     "interested_lukewarm":             ("Neutral",        True,  ["bot:lukewarm"]),
     "objection_price":                 ("MaybeLater",     True,  ["bot:price-objection"]),

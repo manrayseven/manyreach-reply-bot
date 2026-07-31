@@ -45,6 +45,14 @@ def test_not_interested_maps_to_terminal_status():
     assert status == "NotInterested" and active is False
 
 
+def test_meeting_confirmed_never_auto_books():
+    # Le bot ne doit JAMAIS poser MeetingBooked lui-même (Rudy cale les RDV à la
+    # main ; un faux positif verrouillait le prospect). Signal RDV = lead chaud.
+    status, active, _tags = INTENT_PROSPECT_UPDATE["meeting_confirmed"]
+    assert status != "MeetingBooked", status
+    assert status == "Interested" and active is True
+
+
 def test_every_valid_intent_has_a_mapping():
     # Tout intent que le classifier peut produire doit avoir une action mappée
     # (sinon plan_actions le renvoie en needs_review).
