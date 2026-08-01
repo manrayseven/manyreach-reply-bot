@@ -178,13 +178,13 @@ def is_stop_signal(body: str, subject: str = "") -> bool:
     b = (body or "").strip()
     if not b:
         return False
-    low = b.lower()
+    low = b.lower().lstrip(" \t.!?,:;\"'()-*>•")
     if _UNSUB_PHRASE_RE.search(low):
         return True
-    # Corps dont la 1re ligne réelle EST « stop » (+ éventuelle politesse courte).
-    first = low.split("\n", 1)[0].strip(" .!?,:;\"'()-*>•")
-    if first in ("stop", "stop merci", "merci stop", "stop svp", "stop s'il vous plait",
-                 "stop please", "please stop", "stop.", "stoppp"):
+    # Le message COMMENCE par « stop ». Rudy intègre « dites stop si… » dans ses
+    # cold mails → un « stop » en tête est une réponse À CETTE consigne = arrêt,
+    # quelle que soit la suite ("stop", "stop merci", "stop je ne suis pas concerné").
+    if re.match(r"stop\b", low):
         return True
     # « stop » comme mot isolé dans un message court (< 40 car) → intention d'arrêt.
     if len(b) < 40 and re.search(r"\bstop\b", low):
