@@ -98,6 +98,11 @@ def test_is_stop_signal_positive():
     # Message qui COMMENCE par "stop" (macro "dites stop si..."), même long.
     assert is_stop_signal("Stop, je ne suis pas concerné par ce service, merci beaucoup.")
     assert is_stop_signal("STOP - merci de ne rien envoyer")
+    # Plainte spam → désinscription (cas lescanonniers).
+    assert is_stop_signal("No spam")
+    assert is_stop_signal("stop spam")
+    assert is_stop_signal("C'est du spam, merci d'arrêter")
+    assert is_stop_signal("Pourriel")
 
 
 def test_is_stop_signal_negative():

@@ -155,7 +155,7 @@ def _perf_30d(actions: list, now=None) -> dict:
 
 ALERT_INTENTS = {
     "interested_warm", "interested_lukewarm", "ask_more_info",
-    "meeting_confirmed", "objection_timing",
+    "meeting_confirmed", "objection_timing", "objection_price",
 }
 
 _MONTHS_FR = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet",
@@ -638,8 +638,11 @@ def _render(client_filter: str | None = None) -> str:
     # cache. Évite que de vieilles alertes (misclassif corrigée ensuite, ou cas déjà
     # traité auto) restent affichées maintenant qu'on lit TOUT le log (cas
     # sante-o-centre : alerté par un cron buggé, puis correctement passé NotInterested).
+    # objection_price N'EST PLUS ici : c'est désormais une ALERTE (lead à
+    # convaincre, Rudy reprend la main), pas une résolution auto → il ne doit pas
+    # masquer d'autres alertes ni se marquer "traité" tout seul.
     _RESOLVED_INTENTS = {
-        "not_interested_polite", "objection_already_have_solution", "objection_price",
+        "not_interested_polite", "objection_already_have_solution",
         "unsubscribe", "hostile", "bounce_or_auto", "wrong_person_redirect", "ack_only",
     }
     _resolved_at: dict[str, str] = {}

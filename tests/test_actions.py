@@ -32,9 +32,12 @@ def test_key_intents_route_as_expected():
     # Refus polis / déjà-équipé → réponse AUTO (jamais alerte).
     assert "not_interested_polite" in AUTOSEND_ELIGIBLE
     assert "objection_already_have_solution" in AUTOSEND_ELIGIBLE
-    # Leads / RDV / "plus tard" → alerte (Rudy gère).
-    for i in ("interested_warm", "meeting_confirmed", "ask_more_info", "objection_timing"):
+    # Leads / RDV / "plus tard" / objection PRIX → alerte (Rudy gère / convainc).
+    for i in ("interested_warm", "meeting_confirmed", "ask_more_info",
+              "objection_timing", "objection_price"):
         assert i in ALERT_ONLY, i
+    # objection_price ne doit PAS être en auto-envoi (Rudy reprend la main).
+    assert "objection_price" not in AUTOSEND_ELIGIBLE
     # Silencieux.
     for i in ("unsubscribe", "hostile", "bounce_or_auto"):
         assert i in ALWAYS_SILENT, i

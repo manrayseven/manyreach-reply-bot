@@ -158,7 +158,10 @@ def _trim_quoted_history(body: str, max_len: int = 4000) -> str:
 _UNSUB_PHRASE_RE = re.compile(
     r"d[eé]sinscri\w*|d[eé]sabonn\w*|unsubscribe|remove\s+me\b"
     r"|ne\s+plus\s+(?:me\s+|nous\s+)?(?:contacter|recevoir|[eé]crire|solliciter)"
-    r"|retire[z]?[-\s]?(?:moi|nous)\b|opt[-\s]?out",
+    r"|retire[z]?[-\s]?(?:moi|nous)\b|opt[-\s]?out"
+    # Plainte "spam" = demande d'arrêt (cas lescanonniers "No spam"). "stop spam"
+    # est déjà pris par la règle "commence par stop".
+    r"|no\s*spam|\bspam\b|pourriel",
     re.IGNORECASE,
 )
 

@@ -60,7 +60,6 @@ INTENT_PROSPECT_UPDATE: dict[str, tuple[str | None, bool | None, list[str]]] = {
 AUTOSEND_ELIGIBLE = frozenset({
     "not_interested_polite",
     "objection_already_have_solution",
-    "objection_price",  # objection à travailler / convaincre
 })
 
 # Intents qui DÉCLENCHENT UNE ALERTE EMAIL à Rudy (pas de réponse auto).
@@ -72,6 +71,10 @@ ALERT_ONLY = frozenset({
     "ask_more_info",
     "meeting_confirmed",
     "objection_timing",
+    # objection_price : "pas le budget" = lead à convaincre, PAS à clôturer. Rudy
+    # (31/07) veut reprendre la main (montrer que c'est réaliste) plutôt qu'une
+    # réponse auto qui ferme la conversation. → alerte, pas d'auto-send.
+    "objection_price",
 })
 
 # Intents that NEVER send a reply (silent action only).
