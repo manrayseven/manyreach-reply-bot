@@ -698,9 +698,15 @@ def _render(client_filter: str | None = None) -> str:
             _st_low = str(status).lower()
             _transient = ("timed out" in _st_low or "timeout" in _st_low
                           or "connection error" in _st_low or "connection aborted" in _st_low)
+            # TIMEOUT D'ENVOI (réponse manuelle / clôture IA) : désormais géré
+            # proprement (l'envoi part souvent quand même, et le LEAD reste
+            # visible en alerte s'il n'est pas parti). Ces vieilles entrées
+            # d'erreur sont du bruit → on les masque rétroactivement, sans
+            # attendre le seuil de 4h. Le prospect reste actionnable via son alerte.
+            _send_timeout = _transient and ("échou" in _st_low or "echou" in _st_low)
             _cutoff = _err_transient_cutoff if _transient else _err_stale_cutoff
             too_old = bool(_cutoff and err_at and err_at < _cutoff)
-            if not resolved and not too_old and alert_id not in dismissed:
+            if not resolved and not too_old and not _send_timeout and alert_id not in dismissed:
                 error_list.append(a)
         elif intent == "wrong_person_redirect":
             # Plus jamais d'alerte pour ces cas (changement d'adresse / personne
