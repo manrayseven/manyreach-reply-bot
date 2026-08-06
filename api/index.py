@@ -1868,7 +1868,9 @@ class handler(BaseHTTPRequestHandler):
                 body_html = html.escape(body_txt).replace("\n", "<br>")
                 try:
                     from src.manyreach import ManyReachClient
-                    with ManyReachClient(timeout=12.0) as _mr:
+                    # 40s (budget Vercel = 60s) : un envoi ManyReach dépasse
+                    # souvent 20s. À 12s ça timeoutait alors que l'email PARTAIT.
+                    with ManyReachClient(timeout=40.0) as _mr:
                         _mr.send_reply(
                             message_id=mid,
                             body_html=body_html,
@@ -1883,8 +1885,23 @@ class handler(BaseHTTPRequestHandler):
                         except Exception:  # noqa: BLE001
                             pass
                 except Exception as e:  # noqa: BLE001
-                    log_status = f"❌ Réponse ManyReach échouée : {str(e)[:200]}"
+                    _es = str(e).lower()
+                    _transient = any(k in _es for k in (
+                        "timed out", "timeout", "read operation",
+                        "connection", "temporarily",
+                    ))
+                    if _transient:
+                        # AMBIGU : ManyReach a probablement reçu l'envoi mais a
+                        # répondu trop lentement. On NE marque PAS erreur rouge et
+                        # on NE masque PAS l'alerte : Rudy vérifie le fil et ne
+                        # renvoie que si besoin (évite un doublon).
+                        log_status = ("⏳ Envoi lancé mais confirmation ManyReach lente "
+                                      "(timeout) — l'email est probablement parti, vérifie "
+                                      "le fil avant de renvoyer.")
+                    else:
+                        log_status = f"❌ Réponse ManyReach échouée : {str(e)[:200]}"
             _ok = log_status.startswith("✉️")
+            _soft = log_status.startswith("⏳")
             if kvstore.kv_available():
                 # 'from' = l'email du prospect (extrait de l'alert_id "at|email")
                 _pemail = alert_id.split("|", 1)[1] if "|" in alert_id else ""
@@ -1892,9 +1909,11 @@ class handler(BaseHTTPRequestHandler):
                     "at": _dt.now(_tz.utc).isoformat(),
                     "from": _pemail,
                     "subject": "✍ Réponse manuelle (dashboard)",
-                    # succès → 'manual_reply' (apparaît en envoi) ; échec → 'error'
-                    # pour être bien visible dans la carte Erreurs du dashboard.
-                    "intent": "manual_reply" if _ok else "error",
+                    # succès → 'manual_reply' (apparaît en envoi). Timeout transitoire
+                    # → 'manual_reply' aussi (PAS d'erreur rouge : l'envoi est
+                    # probablement parti, l'alerte se masquera seule via le supersede
+                    # si un Sent apparaît dans le fil). Vraie erreur → 'error'.
+                    "intent": "error" if (not _ok and not _soft) else "manual_reply",
                     "status": log_status,
                     "reply": "",
                     "response": body_txt[:1000],
