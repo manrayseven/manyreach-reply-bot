@@ -609,6 +609,7 @@ def _render(client_filter: str | None = None) -> str:
             pass
     clients_by_id = {c.get("id"): c for c in clients_all if c.get("id")}
     triage_map = kvstore.get_triage()  # {alert_id: client_id}
+    camp_names: dict[str, str] = {}  # {campaign_id: nom} pour l'email de transfert
 
     # Compte par défaut (is_default) = FOURRE-TOUT : toute réponse non rattachée
     # explicitement à un autre client lui revient. Indispensable pour l'historique
@@ -1187,7 +1188,9 @@ def _render(client_filter: str | None = None) -> str:
             _size = str(a.get("_size") or "").strip()
             _job = str(a.get("_job") or "").strip()
             _pname = str(a.get("_pname") or "").strip()
-            _camp = str(mr_camp or origin_camp or "").strip()
+            _camp_id = str(mr_camp or origin_camp or "").strip()
+            # Nom lisible de la campagne (résolu via ManyReach), sinon l'ID en repli.
+            _camp = camp_names.get(_camp_id, _camp_id)
             # Société : "Nom - secteur, N salariés, ville" (on omet ce qui manque).
             _detail = ", ".join(x for x in [
                 _industry, (f"{_size} salariés" if _size else ""), _city
@@ -1388,6 +1391,35 @@ def _render(client_filter: str | None = None) -> str:
     if sel_client:
         alerts = [a for a in alerts if _eff_client_id(a) == sel_client]
         sent_list = [a for a in sent_list if _eff_client_id(a) == sel_client]
+
+    # NOMS DE CAMPAGNE pour l'email de transfert (ID → nom lisible). Résolus via
+    # ManyReach get_campaign, mis en cache KV 7 j (les noms bougent peu). Rudy veut
+    # le vrai nom ("Peintres en Bâtiment v2"), pas l'ID (102336).
+    _camp_ids = {str(a.get("campaign_id") or a.get("origin_campaign_id") or "").strip()
+                 for a in alerts[:25]}
+    _camp_ids.discard("")
+    _camp_todo = []
+    for _cid in _camp_ids:
+        _cn = kvstore.cache_get(f"mrcamp:v1:{_cid}")
+        if _cn:
+            camp_names[_cid] = _cn
+        else:
+            _camp_todo.append(_cid)
+    if _camp_todo:
+        try:
+            from src.manyreach import ManyReachClient
+            with ManyReachClient(timeout=8.0) as _cc:
+                for _cid in _camp_todo:
+                    try:
+                        _data = _cc.get_campaign(int(_cid))
+                        _nm = (_data.get("name") if isinstance(_data, dict) else "") or ""
+                        if _nm:
+                            camp_names[_cid] = _nm
+                            kvstore.cache_set(f"mrcamp:v1:{_cid}", _nm, 7 * 24 * 3600)
+                    except Exception:  # noqa: BLE001
+                        pass  # fail-open : on gardera l'ID
+        except Exception:  # noqa: BLE001
+            pass
 
     # Sections HTML
     alerts_html = "".join(_alert_row(a) for a in alerts[:25])
