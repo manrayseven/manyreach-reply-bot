@@ -709,14 +709,16 @@ def main() -> int:
                 # auto-répondus au lieu d'alertés.
                 _meeting_signals = (
                     "quelles sont vos disponibilit", "vos disponibilit",
+                    "de la disponibilit", "des disponibilit", "j'ai de la dispo",
                     "on peut s'appeler", "on peut se voir", "on peut échanger",
-                    "peut-on s'appeler", "peut on s'appeler", "rappelez-moi",
-                    "rappelez moi", "me rappeler", "un créneau", "un creneau",
-                    "caler un", "fixer un rendez", "prendre rendez", "un rdv",
-                    "passer un appel", "un call", "par téléphone", "par telephone",
-                    "mon numéro", "mon numero", "joignable au", "disponible mardi",
-                    "disponible lundi", "disponible mercredi", "disponible jeudi",
-                    "disponible vendredi",
+                    "on peut se parler", "peut-on s'appeler", "peut on s'appeler",
+                    "rappelez-moi", "rappelez moi", "me rappeler", "un créneau",
+                    "un creneau", "caler un", "fixer un rendez", "prendre rendez",
+                    "un rdv", "passer un appel", "un call", "par téléphone",
+                    "par telephone", "mon numéro", "mon numero", "joignable au",
+                    "disponible lundi", "disponible mardi", "disponible mercredi",
+                    "disponible jeudi", "disponible vendredi", "lundi matin",
+                    "quand êtes-vous", "quand seriez-vous",
                 )
                 _info_signals = (
                     "j'aimerais des précisions", "j'aimerais des precisions",
@@ -725,7 +727,21 @@ def main() -> int:
                     "plus d'infos", "plus de détails", "plus de details",
                     "envoyez-moi", "envoyez moi", "votre plaquette", "une plaquette",
                     "vos tarifs", "votre tarif", "combien", "votre offre",
-                    "comment ça marche", "comment ca marche",
+                    "comment ça marche", "comment ca marche", "c'est quoi",
+                    "c'est payant", "vous faites quoi", "de quoi s'agit",
+                    "qui êtes-vous", "vous êtes qui", "j'ai reçu votre mail",
+                )
+                _contact_signals = (
+                    "pourriez-vous me contacter", "pouvez-vous me contacter",
+                    "me contacter", "qu'on discute", "qu'on échange", "qu'on en discute",
+                    "on discute", "on en discute", "je veux bien", "ça m'intéresserait",
+                )
+                # Marqueurs de REFUS net : si présents, on NE force PAS ask_more_info
+                # sur un simple "?" (une question rhétorique dans un refus reste refus).
+                _refusal_markers = (
+                    "pas intéress", "pas interess", "non merci", "aucun besoin",
+                    "pas de besoin", "rien besoin", "déjà équipé", "deja equipe",
+                    "pas concerné", "pas concerne", "ne souhaite pas", "pas un sujet",
                 )
                 # ⚠️ NE garder QUE les vraies demandes de recontact EXPLICITES.
                 # Les soft-no ("plus tard", "pas pour le moment", "pas pour
@@ -744,19 +760,32 @@ def main() -> int:
                     "ça nous intéresse", "ca nous interesse", "je suis intéressé",
                     "nous sommes intéressé", "ce qui m'intéresse",
                 )
+                _has_refusal = any(r in _body_full_low for r in _refusal_markers)
                 _forced = None
                 if any(s in _body_full_low for s in _meeting_signals):
                     _forced = "meeting_confirmed"
-                elif any(s in _body_full_low for s in _interest_signals):
+                elif any(s in _body_full_low for s in _interest_signals) or \
+                        any(s in _body_full_low for s in _contact_signals):
                     _forced = "interested_warm"
                 elif any(s in _body_full_low for s in _info_signals):
                     _forced = "ask_more_info"
                 elif any(s in _body_full_low for s in _timing_signals):
                     _forced = "objection_timing"
-                if (
-                    _forced
-                    and classification.intent in AUTOSEND_ELIGIBLE
-                ):
+                # FILET : une QUESTION courte non-refus ("Localnord ?", "c'est
+                # quoi ?", "vous êtes qui ?") = demande d'info → ALERTE. Évite
+                # qu'un point d'interrogation isolé finisse en silence/refus.
+                elif ("?" in _clean_body and len(_clean_body) < 220 and not _has_refusal):
+                    _forced = "ask_more_info"
+                # On force l'ALERTE si le classifier avait choisi une voie qui NE
+                # remonte PAS à Rudy : auto-envoi (refus/objection) OU silence
+                # "mauvaise personne". Le coût d'une fausse alerte est faible ; le
+                # coût d'un lead auto-clôturé/silencié est ÉNORME (feedback Rudy
+                # 08/08 : willy, pascal, anne, lv-drone auto-clôturés à tort).
+                _overridable = (
+                    classification.intent in AUTOSEND_ELIGIBLE
+                    or classification.intent == "wrong_person_redirect"
+                )
+                if _forced and _overridable and not _has_refusal:
                     print(f"  ⚠️ Override classifier ({classification.intent} → {_forced}) : signal d'opportunité détecté → ALERTE (biais sécurité)")
                     # dataclass FROZEN → recrée l'instance (pas de mutation in-place)
                     classification = _dc_replace(
