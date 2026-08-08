@@ -572,10 +572,11 @@ def _handoff_email_html(company: str, detail_line: str, contact_line: str,
         '</tr></table>'
         '<table style="width:100%;table-layout:fixed;border-collapse:collapse;background:#fff">'
         f'{rows}</table>'
-        + history_html +
         '<div style="padding:14px 16px;background:#faf5e9;font-size:13.5px;color:#4a4438;'
-        f'{_wrap}"><strong>À faire de votre côté :</strong> rappeler ou répondre sous '
-        '48 h ouvrées. Le prospect sait qui vous êtes et attend votre retour.</div>'
+        f'border-bottom:1px solid #eee4d0;{_wrap}"><strong>À faire de votre côté :</strong> '
+        'rappeler ou répondre sous 48 h ouvrées. Le prospect sait qui vous êtes et '
+        'attend votre retour.</div>'
+        + history_html +
         '</div>'
     )
 
