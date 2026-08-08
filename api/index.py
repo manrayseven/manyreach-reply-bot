@@ -512,16 +512,18 @@ def _llm_internal_tips(client: dict, g: dict) -> list[str] | None:
 
 
 def _handoff_email_html(company: str, detail_line: str, contact_line: str,
-                        campaign: str, message: str) -> str:
+                        campaign: str, message: str, history: list | None = None) -> str:
     """Bel email de TRANSFERT client (styles inline, survit au copier-coller
-    Gmail/Thunderbird). Reprend la maquette : en-tête, Société/Contact/Campagne,
-    citation du message, « à faire de votre côté »."""
+    Gmail/Thunderbird). En-tête, Société/Contact/Campagne, HISTORIQUE COMPLET des
+    échanges, puis « à faire de votre côté » en bloc beige. Tout wrappe dans le
+    cadre (word-break) → plus de débordement."""
     e = html.escape
-    _lab = ("padding:11px 16px;border-bottom:1px solid #eee4d0;"
-            "font-family:Arial,sans-serif;font-size:10px;letter-spacing:.08em;"
-            "text-transform:uppercase;color:#a89066;vertical-align:top;width:96px")
-    _val = ("padding:11px 16px;border-bottom:1px solid #eee4d0;"
-            "font-family:Georgia,'Times New Roman',serif;font-size:15px;color:#2b2823")
+    _wrap = "word-break:break-word;overflow-wrap:anywhere"
+    _lab = ("padding:11px 16px;border-bottom:1px solid #eee4d0;font-family:Arial,sans-serif;"
+            "font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:#a89066;"
+            "vertical-align:top;width:92px")
+    _val = ("padding:11px 16px;border-bottom:1px solid #eee4d0;font-family:Georgia,"
+            f"'Times New Roman',serif;font-size:15px;color:#2b2823;{_wrap}")
     soc = e(company or "(société non renseignée)")
     if detail_line:
         soc += f' <span style="color:#8c8678;font-size:13px">- {e(detail_line)}</span>'
@@ -531,23 +533,49 @@ def _handoff_email_html(company: str, detail_line: str, contact_line: str,
     )
     if campaign:
         rows += f'<tr><td style="{_lab}">Campagne</td><td style="{_val}">{e(campaign)}</td></tr>'
-    quote = e(message) if message else "(message non disponible)"
+
+    # Historique COMPLET des échanges (repli : le dernier message seul).
+    hist = history or []
+    if not hist and message:
+        hist = [{"who": "Prospect", "when": "", "text": message}]
+    _items = []
+    for h in hist:
+        who = e(str(h.get("who") or ""))
+        when = e(str(h.get("when") or ""))
+        txt = e(str(h.get("text") or "")).replace("\n", "<br>")
+        _mine = who.lower() == "vous"
+        _color = "#8c8678" if _mine else "#0d7a5f"  # Prospect vert, Vous gris
+        _bg = "#f4f1ea" if _mine else "#f3f9f6"
+        _items.append(
+            f'<div style="margin:0 0 8px;padding:8px 12px;background:{_bg};'
+            f'border-left:3px solid {_color};border-radius:0 6px 6px 0;{_wrap}">'
+            f'<div style="font-size:10px;text-transform:uppercase;letter-spacing:.04em;'
+            f'color:{_color};font-weight:bold;margin-bottom:3px">{who}'
+            + (f' &middot; {when}' if when else '') + '</div>'
+            f'<div style="font-size:13.5px;color:#3a352c;line-height:1.5;{_wrap}">{txt}</div>'
+            '</div>'
+        )
+    history_html = (
+        '<div style="padding:14px 16px;background:#fff;border-bottom:1px solid #eee4d0">'
+        '<div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;'
+        'color:#a89066;font-weight:bold;margin-bottom:8px">Historique des échanges</div>'
+        + "".join(_items) + '</div>'
+    )
     return (
         '<div style="max-width:600px;border:1px solid #e7ddc4;border-radius:10px;'
-        'overflow:hidden;font-family:Arial,Helvetica,sans-serif">'
-        '<table style="width:100%;border-collapse:collapse;background:#faf5e9">'
+        f'overflow:hidden;font-family:Arial,Helvetica,sans-serif;{_wrap}">'
+        '<table style="width:100%;table-layout:fixed;border-collapse:collapse;background:#faf5e9">'
         '<tr><td style="padding:12px 16px;font-size:11px;letter-spacing:.1em;'
         'text-transform:uppercase;color:#a07520;font-weight:bold">Prospect intéressé</td>'
         '<td style="padding:12px 16px;font-size:11px;letter-spacing:.1em;'
         'text-transform:uppercase;color:#c0ad82;text-align:right">Transfert automatique</td>'
         '</tr></table>'
-        f'<table style="width:100%;border-collapse:collapse;background:#fff">{rows}</table>'
-        '<div style="padding:16px;background:#fff;border-bottom:1px solid #eee4d0">'
-        '<div style="border-left:3px solid #d8b56a;padding:2px 0 2px 14px;color:#4a4438;'
-        f'font-style:italic;font-size:14px;line-height:1.55">« {quote} »</div></div>'
-        '<div style="padding:14px 16px;background:#faf5e9;font-size:13.5px;color:#4a4438">'
-        '<strong>À faire de votre côté :</strong> rappeler ou répondre sous 48 h ouvrées. '
-        'Le prospect sait qui vous êtes et attend votre retour.</div>'
+        '<table style="width:100%;table-layout:fixed;border-collapse:collapse;background:#fff">'
+        f'{rows}</table>'
+        + history_html +
+        '<div style="padding:14px 16px;background:#faf5e9;font-size:13.5px;color:#4a4438;'
+        f'{_wrap}"><strong>À faire de votre côté :</strong> rappeler ou répondre sous '
+        '48 h ouvrées. Le prospect sait qui vous êtes et attend votre retour.</div>'
         '</div>'
     )
 
@@ -782,7 +810,7 @@ def _render(client_filter: str | None = None) -> str:
     }
     if alerts:
         def _ck(em: str) -> str:
-            return "mrenrich:v3:" + em  # v3 = blob inclut we_spoke_last_at (supersede)
+            return "mrenrich:v4:" + em  # v4 = blob inclut history (transfert client)
 
         # 1) Charge le cache pour chaque email ; collecte les emails à interroger
         #    en live (cache froid). Dédup par email (plusieurs alertes même prospect).
@@ -850,6 +878,28 @@ def _render(client_filter: str | None = None) -> str:
                         # Comparée à l'heure de l'alerte en étape 3 pour masquer.
                         if thr and thr[-1].type in ("Sent", "SentManual"):
                             data["we_spoke_last_at"] = thr[-1].created_at.isoformat()
+                        # HISTORIQUE COMPLET des échanges (pour l'email de transfert).
+                        # ManyReach renvoie chaque envoi du bot 2x (Sent + SentManual,
+                        # même msgId) → on dédoublonne par msgId.
+                        try:
+                            from src.classifier import _strip_html as _sh, _trim_quoted_history as _tq
+                            _hist, _seen = [], set()
+                            for _m in thr:
+                                if _m.message_id in _seen:
+                                    continue
+                                _seen.add(_m.message_id)
+                                _tx = _tq(_sh(_m.body or ""), 700).strip()
+                                if not _tx:
+                                    continue
+                                _hist.append({
+                                    "who": "Prospect" if _m.type == "Reply" else "Vous",
+                                    "when": (_m.created_at.strftime("%d/%m %H:%M")
+                                             if _m.created_at else ""),
+                                    "text": _tx,
+                                })
+                            data["history"] = _hist[-16:]
+                        except Exception:  # noqa: BLE001
+                            pass
                         # Champs in-app (réponse via API) : UNIQUEMENT pour les
                         # orphelins (hors campagne) — les classiques gardent le lien.
                         if not has_camp:
@@ -935,6 +985,8 @@ def _render(client_filter: str | None = None) -> str:
                            "size", "phone_live", "pname"):
                     if data.get(_k) and not a.get("_" + _k):
                         a["_" + _k] = data[_k]
+                if data.get("history") and not a.get("_history"):
+                    a["_history"] = data["history"]
             _kept.append(a)
         alerts = _kept
 
@@ -1235,7 +1287,8 @@ def _render(client_filter: str | None = None) -> str:
             _contact_email = str(_client.get("contact_email") or "")
             # Bel email de transfert (HTML) + copie qui garde la mise en forme →
             # plus fiable que le mailto (qui n'ouvre pas toujours Thunderbird).
-            _card = _handoff_email_html(_company, _detail, _contact, _camp, _msg)
+            _card = _handoff_email_html(_company, _detail, _contact, _camp, _msg,
+                                        history=a.get("_history"))
             _uid = "ho" + str(abs(hash(raw_alert_id)) % (10 ** 9))
             _copy_ho = (
                 f"var el=document.getElementById('{_uid}');"
