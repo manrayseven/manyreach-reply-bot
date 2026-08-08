@@ -534,8 +534,9 @@ def _handoff_email_html(company: str, detail_line: str, contact_line: str,
     if campaign:
         rows += f'<tr><td style="{_lab}">Campagne</td><td style="{_val}">{e(campaign)}</td></tr>'
 
-    # Historique COMPLET des échanges (repli : le dernier message seul).
-    hist = history or []
+    # Historique : UNIQUEMENT les réponses du PROSPECT (on retire les envois de
+    # Rudy — le client n'a pas besoin de voir nos emails). Repli : dernier message.
+    hist = [h for h in (history or []) if str(h.get("who") or "").lower() != "vous"]
     if not hist and message:
         hist = [{"who": "Prospect", "when": "", "text": message}]
     _items = []
@@ -558,7 +559,7 @@ def _handoff_email_html(company: str, detail_line: str, contact_line: str,
     history_html = (
         '<div style="padding:14px 16px;background:#fff;border-bottom:1px solid #eee4d0">'
         '<div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;'
-        'color:#a89066;font-weight:bold;margin-bottom:8px">Historique des échanges</div>'
+        'color:#a89066;font-weight:bold;margin-bottom:8px">Ses réponses</div>'
         + "".join(_items) + '</div>'
     )
     return (
