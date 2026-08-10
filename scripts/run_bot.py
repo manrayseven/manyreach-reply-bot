@@ -56,6 +56,20 @@ from src.manyreach import (  # noqa: E402
     is_bounce_or_auto,
 )
 
+# Marqueurs de REFUS CLAIR : on n'auto-répond (not_interested_polite) QUE si l'un
+# d'eux est présent. Sinon = message ambigu/vide/pas compris → ALERTE (Rudy
+# tranche), jamais une réponse auto au pif (feedback Rudy 10/08).
+_CLEAR_NO_MARKERS = (
+    "non merci", "non,", "non.", "pas intéress", "pas interess",
+    "ne suis pas intéress", "ne sommes pas intéress", "ça ne m'intéresse pas",
+    "ne m'intéresse pas", "pas de besoin", "aucun besoin", "rien besoin",
+    "pas concerné", "pas concerne", "pas pour nous", "pas un sujet",
+    "ne souhaite pas", "ne souhaitons pas", "sans suite", "ne donnerai pas suite",
+    "ne donnerons pas suite", "bonne continuation", "merci mais non",
+    "not interested", "no thanks", "no thank", "pas d'intérêt", "pas d'interet",
+    "stop", "désabonn", "desabonn", "désinscri", "desinscri",
+)
+
 
 def load_settings(path: Path) -> dict:
     with path.open("r", encoding="utf-8") as f:
@@ -671,6 +685,20 @@ def main() -> int:
                         skipped_count += 1
                         continue
 
+                # RÉCUPÉRATION CORPS COMPLET si la preview est vide/illisible.
+                # L'API ManyReach tronque le corps (preview) → parfois vide alors
+                # que le vrai message existe (cas Visoanska 10/08 : "message vide"
+                # deviné → réponse auto bidon à un lead intéressé). On refetch en
+                # fullBodies pour VRAIMENT lire le message avant de classifier.
+                if len(_trim_quoted_history(_strip_html(reply.body)).strip()) < 6:
+                    try:
+                        _full = mr.fetch_full_body(reply.from_email, reply.subject, reply.message_id)
+                        if _full and len(_trim_quoted_history(_strip_html(_full)).strip()) > 5:
+                            reply = _dc_replace(reply, body=_full)
+                            print("  >> Corps vide en preview → récupéré via fullBodies")
+                    except Exception as _e:  # noqa: BLE001
+                        print(f"  !! fetch_full_body: {_e}")
+
                 # Classify
                 classification = classifier.classify(
                     reply,
@@ -829,6 +857,23 @@ def main() -> int:
                         intent=_forced,
                         confidence=max(classification.confidence, 0.80),
                     )
+
+                # GARDE-FOU ANTI-DEVINETTE (feedback Rudy 10/08) : on N'AUTO-RÉPOND
+                # (not_interested_polite = seul intent auto-envoi) QUE si le message
+                # est un REFUS CLAIR (non / pas intéressé / pas de besoin / stop /
+                # bonne continuation…). Si le bot a mis "pas intéressé" SANS refus
+                # net (message vide, ambigu, pas compris) → il DEVINE → on bascule
+                # en ALERTE (ask_more_info) pour que Rudy tranche, plutôt qu'une
+                # réponse auto au pif (cas Visoanska : msg "vide" → réponse bidon).
+                if classification.intent == "not_interested_polite":
+                    _cl = _clean_body.lower()
+                    _clear_no = len(_clean_body) >= 4 and any(m in _cl for m in _CLEAR_NO_MARKERS)
+                    if not _clear_no:
+                        print("  ⚠️ not_interested SANS refus clair (msg ambigu/vide) → ALERTE (pas de réponse auto au pif)")
+                        classification = _dc_replace(
+                            classification, intent="ask_more_info",
+                            confidence=max(classification.confidence, 0.6),
+                        )
                 print(f"    key_phrase: {_short(classification.key_phrase, 120)}")
                 if classification.redirected_to:
                     print(f"    redirected_to: {classification.redirected_to}")

@@ -426,6 +426,27 @@ class ManyReachClient:
     def get_campaign(self, campaign_id: int) -> dict:
         return self._request("GET", f"/campaigns/{campaign_id}")
 
+    def fetch_full_body(self, from_email: str, subject: str,
+                        message_id: str | None = None) -> str:
+        """Récupère le CORPS COMPLET d'un reply (fullBodies=true). L'API tronque
+        le corps par défaut (preview 1500 car) → parfois vide/coupé pour un
+        message avec beaucoup de HTML. Utile quand la preview est vide/illisible.
+        Renvoie le body du message qui matche message_id, sinon le plus récent."""
+        try:
+            params = {
+                "type": "Reply", "emailFrom": from_email,
+                "subject": (subject or "")[:120], "fullBodies": "true", "limit": 5,
+            }
+            data = self._request("GET", "/messages", params=params)
+            items = (data or {}).get("items", []) or []
+            if message_id:
+                for it in items:
+                    if str(it.get("messageId")) == str(message_id):
+                        return it.get("body") or ""
+            return (items[0].get("body") or "") if items else ""
+        except Exception:  # noqa: BLE001
+            return ""
+
     def fetch_challenge_url(self, from_email: str, subject: str) -> str | None:
         """Récupère le LIEN DE VALIDATION d'un challenge antispam en refetchant le
         message avec fullBodies=true (l'API tronque le corps par défaut → le lien
