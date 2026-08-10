@@ -687,24 +687,41 @@ def main() -> int:
 
                 # RÉCUPÉRATION CORPS COMPLET si la preview est vide/illisible.
                 # L'API ManyReach tronque le corps (preview) → parfois vide alors
-                # que le vrai message existe (cas Visoanska 10/08 : "message vide"
-                # deviné → réponse auto bidon à un lead intéressé). On refetch en
+                # que le vrai message existe (cas Visoanska 10/08). On refetch en
                 # fullBodies pour VRAIMENT lire le message avant de classifier.
-                if len(_trim_quoted_history(_strip_html(reply.body)).strip()) < 6:
+                _clean_check = _trim_quoted_history(_strip_html(reply.body)).strip()
+                if len(_clean_check) < 6:
                     try:
                         _full = mr.fetch_full_body(reply.from_email, reply.subject, reply.message_id)
                         if _full and len(_trim_quoted_history(_strip_html(_full)).strip()) > 5:
                             reply = _dc_replace(reply, body=_full)
+                            _clean_check = _trim_quoted_history(_strip_html(reply.body)).strip()
                             print("  >> Corps vide en preview → récupéré via fullBodies")
                     except Exception as _e:  # noqa: BLE001
                         print(f"  !! fetch_full_body: {_e}")
 
-                # Classify
-                classification = classifier.classify(
-                    reply,
-                    original_outreach=original_outreach,
-                    previous_message=previous_sent_text,
-                )
+                # MESSAGE VIDE / ILLISIBLE (contenu non exposé par l'API, ex.
+                # certains emails iPhone — cas metaphase 10/08) : on ne DEVINE PAS.
+                # C'est un vrai reply d'un prospect non-terminal → ALERTE forcée
+                # (Rudy lit le message dans ManyReach). Placeholder non vide pour
+                # ne pas être masqué par le filtre "pas de contenu" du dashboard.
+                _empty_body = len(_clean_check) < 6
+                if _empty_body:
+                    print("  >> Message vide/illisible via l'API → ALERTE (Rudy lit dans ManyReach)")
+                    from src.classifier import Classification as _ClsEmpty
+                    classification = _ClsEmpty(
+                        intent="ask_more_info", confidence=0.5,
+                        key_phrase="(message reçu mais illisible via l'API)",
+                        redirected_email=None, redirected_to=None, language="fr",
+                        reasoning="corps vide/non récupérable → alerte, jamais de réponse auto",
+                    )
+                else:
+                    # Classify
+                    classification = classifier.classify(
+                        reply,
+                        original_outreach=original_outreach,
+                        previous_message=previous_sent_text,
+                    )
                 print(
                     f"  CLASSIFIED  intent={classification.intent}  "
                     f"conf={classification.confidence:.2f}  "
@@ -1012,7 +1029,9 @@ def main() -> int:
                             "subject": reply.subject,
                             "intent": classification.intent,
                             "status": "🔔 ALERTE — à traiter dashboard",
-                            "reply": _trim_quoted_history(_strip_html(reply.body))[:2000],
+                            "reply": (_trim_quoted_history(_strip_html(reply.body))[:2000]
+                                      or "(message reçu mais illisible via l'API ManyReach "
+                                         "— ouvre la conversation pour le lire et répondre)"),
                             "response": alert_line,
                             "prospect_id": (prospect.prospect_id if prospect else None),
                             "campaign_id": reply.campaign_id,   # None si orphelin → mailto
