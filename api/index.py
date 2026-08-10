@@ -1470,24 +1470,34 @@ def _render(client_filter: str | None = None) -> str:
     _camp_ids.discard("")
     _camp_todo = []
     for _cid in _camp_ids:
-        _cn = kvstore.cache_get(f"mrcamp:v1:{_cid}")
-        if _cn:
-            camp_names[_cid] = _cn
+        _cn = kvstore.cache_get(f"mrcamp:v2:{_cid}")
+        if _cn is not None:  # HIT (nom ou "-" = introuvable) → pas de refetch
+            if _cn and _cn != "-":
+                camp_names[_cid] = _cn
         else:
             _camp_todo.append(_cid)
+    _camp_todo = _camp_todo[:10]  # plafond dur par render
     if _camp_todo:
         try:
+            from concurrent.futures import ThreadPoolExecutor
             from src.manyreach import ManyReachClient
-            with ManyReachClient(timeout=8.0) as _cc:
-                for _cid in _camp_todo:
-                    try:
-                        _data = _cc.get_campaign(int(_cid))
-                        _nm = (_data.get("name") if isinstance(_data, dict) else "") or ""
-                        if _nm:
-                            camp_names[_cid] = _nm
-                            kvstore.cache_set(f"mrcamp:v1:{_cid}", _nm, 7 * 24 * 3600)
-                    except Exception:  # noqa: BLE001
-                        pass  # fail-open : on gardera l'ID
+            _cc = ManyReachClient(timeout=6.0)
+
+            def _resolve_camp(cid):
+                try:
+                    _data = _cc.get_campaign(int(cid))
+                    _nm = (_data.get("name") if isinstance(_data, dict) else "") or ""
+                except Exception:  # noqa: BLE001
+                    _nm = ""
+                kvstore.cache_set(f"mrcamp:v2:{cid}", _nm or "-", 7 * 24 * 3600)
+                if _nm:
+                    camp_names[cid] = _nm
+
+            try:
+                with ThreadPoolExecutor(max_workers=6) as _ex:
+                    list(_ex.map(_resolve_camp, _camp_todo))
+            finally:
+                _cc.close()
         except Exception:  # noqa: BLE001
             pass
 
@@ -1503,38 +1513,61 @@ def _render(client_filter: str | None = None) -> str:
     # === CHALLENGES ANTISPAM (MailInBlack & co) — section bas de page ===
     # Dédup par expéditeur du challenge (le même portail peut relancer à chaque
     # cron tant que Rudy n'a pas cliqué) : on garde l'entrée la plus récente.
+    # Vieilles entrées qui étaient en réalité des BOUNCES (loguées comme challenge
+    # avant le fix de détection) : on les écarte à l'affichage via leur sujet.
+    _bounce_subj = ("undelivered", "returned to sender", "delivery status",
+                    "mail delivery", "delivery failure", "mailer-daemon")
     _chal_seen: set[str] = set()
     _chal_dedup = []
     for a in challenge_list:  # challenge_list est déjà du plus récent au plus ancien
         k = (a.get("from") or "").lower().strip()
         if not k or k in _chal_seen:
             continue
+        if any(b in str(a.get("subject") or "").lower() for b in _bounce_subj):
+            continue  # c'était un bounce, pas un challenge
         _chal_seen.add(k)
         _chal_dedup.append(a)
 
-    # RÉSOLUTION DU LIEN DE VALIDATION : le bot stocke souvent validation_url vide
-    # (l'API tronque le corps → lien perdu). On refetch le corps COMPLET
-    # (fullBodies=true) et on extrait le lien. Mis en cache KV 6 h.
-    _chal_todo = [a for a in _chal_dedup[:30] if not str(a.get("validation_url") or "").strip()]
+    # RÉSOLUTION DU LIEN DE VALIDATION (le bot stocke souvent validation_url vide).
+    # ⚠️ PERF : appels ManyReach EN PARALLÈLE, PLAFONNÉS, avec CACHE NÉGATIF —
+    # sinon les captchas sans lien récupérable étaient refetchés à CHAQUE render
+    # (jusqu'à 30 appels série de 10s) → timeout Vercel → page blanche.
+    _chal_todo = []
+    import hashlib as _hl
+    for a in _chal_dedup[:20]:
+        if str(a.get("validation_url") or "").strip():
+            continue
+        _fr, _su = str(a.get("from") or ""), str(a.get("subject") or "")
+        _hk = "mrchallenge:v2:" + _hl.md5((_fr + "|" + _su).encode()).hexdigest()[:16]
+        _cu = kvstore.cache_get(_hk)
+        if _cu is not None:  # cache HIT (URL ou "-" = pas de lien) → pas de refetch
+            if _cu and _cu != "-":
+                a["validation_url"] = _cu
+            continue
+        _chal_todo.append((a, _fr, _su, _hk))
+    _chal_todo = _chal_todo[:6]  # plafond dur par render
     if _chal_todo:
-        import hashlib as _hl
         try:
+            from concurrent.futures import ThreadPoolExecutor
             from src.manyreach import ManyReachClient
-            with ManyReachClient(timeout=10.0) as _mc:
-                for a in _chal_todo:
-                    _fr, _su = str(a.get("from") or ""), str(a.get("subject") or "")
-                    _hk = "mrchallenge:v1:" + _hl.md5((_fr + "|" + _su).encode()).hexdigest()[:16]
-                    _cu = kvstore.cache_get(_hk)
-                    if _cu:
-                        a["validation_url"] = _cu
-                        continue
-                    try:
-                        _u = _mc.fetch_challenge_url(_fr, _su)
-                        if _u:
-                            a["validation_url"] = _u
-                            kvstore.cache_set(_hk, _u, 6 * 3600)
-                    except Exception:  # noqa: BLE001
-                        pass
+            _mc = ManyReachClient(timeout=6.0)
+
+            def _resolve(item):
+                a, fr, su, hk = item
+                try:
+                    u = _mc.fetch_challenge_url(fr, su)
+                except Exception:  # noqa: BLE001
+                    u = None
+                # Cache positif 6h, NÉGATIF 6h ("-") → plus de refetch inutile.
+                kvstore.cache_set(hk, u or "-", 6 * 3600)
+                if u:
+                    a["validation_url"] = u
+
+            try:
+                with ThreadPoolExecutor(max_workers=6) as _ex:
+                    list(_ex.map(_resolve, _chal_todo))
+            finally:
+                _mc.close()
         except Exception:  # noqa: BLE001
             pass
 
