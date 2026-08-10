@@ -1538,7 +1538,7 @@ def _render(client_filter: str | None = None) -> str:
         if str(a.get("validation_url") or "").strip():
             continue
         _fr, _su = str(a.get("from") or ""), str(a.get("subject") or "")
-        _hk = "mrchallenge:v2:" + _hl.md5((_fr + "|" + _su).encode()).hexdigest()[:16]
+        _hk = "mrchallenge:v3:" + _hl.md5((_fr + "|" + _su).encode()).hexdigest()[:16]
         _cu = kvstore.cache_get(_hk)
         if _cu is not None:  # cache HIT (URL ou "-" = pas de lien) → pas de refetch
             if _cu and _cu != "-":

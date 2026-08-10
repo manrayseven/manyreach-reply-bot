@@ -139,6 +139,11 @@ def test_extract_challenge_url_skips_scanner_and_pixel():
     assert extract_challenge_url(_msg(
         body="clique https://mibc-fr-11.mailinblack.com/protect/securelink?url="
              "https%3A%2F%2Fwww.webmarketing-conseil.fr&key=abc")) is None
+    # Namespaces XML Outlook (xmlns:...) → jamais retournés (cas autocars-groussin :
+    # renvoyait schemas.microsoft.com → page morte).
+    assert extract_challenge_url(_msg(
+        body='<html xmlns:m="http://schemas.microsoft.com/office/2004/12/omml">'
+             'contenu sans vrai lien http://schemas.openxmlformats.org/x</html>')) is None
     # Vrai lien de validation en texte brut → extrait.
     assert extract_challenge_url(_msg(
         body="Pour valider : https://web-production-5a23a.up.railway.app/verify/XZHMT")

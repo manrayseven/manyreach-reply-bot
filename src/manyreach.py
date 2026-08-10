@@ -808,29 +808,38 @@ def extract_challenge_url(msg: Message) -> str | None:
     urls = [u.rstrip(".,;)\"'") for u in _URL_RE.findall(body)]
     if not urls:
         return None
-    _junk = (".png", ".jpg", ".jpeg", ".gif", ".css", "unsubscribe", "desinscription",
-             "/tr/op/", "mailto:",
+    _junk = (".png", ".jpg", ".jpeg", ".gif", ".css", ".js", "unsubscribe",
+             "desinscription", "/tr/op/", "mailto:",
              # SCANNERS DE LIENS (pas des validations d'expéditeur) : MailInBlack
              # "Secure Link" réécrit les liens DE TON email pour les analyser
              # (/protect/securelink?url=...) → cliquer ça ne valide RIEN (erreur).
              "/protect/securelink", "securelink", "?url=", "&url=", "/urlscan",
-             "/link-protection", "safelinks.protection", "/scan?")
+             "/link-protection", "safelinks.protection", "/scan?",
+             # NAMESPACES / SCHÉMAS XML des emails Outlook/Word (xmlns:...) — ce ne
+             # sont PAS des liens cliquables (cas autocars-groussin : renvoyait
+             # schemas.microsoft.com/office/2004/12/omml → page morte).
+             "schemas.microsoft.com", "schemas.openxmlformats.org", "www.w3.org",
+             "purl.org", "schemas.xmlsoap.org", "/tr/vc/", "/wf/open")
     clean = [u for u in urls if not any(x in u.lower() for x in _junk)]
     # 1) Domaine de validation connu (mailinblack.com, …).
     for u in clean:
         if any(d in u.lower() for d in CHALLENGE_URL_DOMAINS):
             return u
-    # 2) Chemin explicitement "validation".
-    _kw = ("verify", "valid", "confirm", "unlock", "release", "activate", "challenge")
+    # 2) Chemin explicitement "validation" (verify/valider/confirm/authentif/libérer…).
+    _kw = ("verify", "valid", "confirm", "unlock", "release", "activate",
+           "challenge", "authentif", "liberer", "captcha", "delivery")
     for u in clean:
         if any(k in u.lower() for k in _kw):
             return u
     # 3) Lien de clic tracké (bouton "Valider" → redirige vers la validation).
     for u in clean:
-        if "/tr/cl/" in u.lower() or "/click" in u.lower() or "/c/" in u.lower():
+        if "/tr/cl/" in u.lower() or "/click" in u.lower():
             return u
-    # 4) Repli : première URL propre restante.
-    return clean[0] if clean else None
+    # 4) SINON → None. On ne retourne JAMAIS une URL "au hasard" (footer,
+    #    namespace, réseau social…) : mieux vaut "lien dans la boîte" que
+    #    d'envoyer Rudy sur une page morte. Le lien de validation est souvent
+    #    strippé par ManyReach → réellement absent, on l'assume.
+    return None
 
 
 def is_mailinblack(msg: Message) -> bool:
