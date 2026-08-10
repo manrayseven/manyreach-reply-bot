@@ -1573,9 +1573,20 @@ def _render(client_filter: str | None = None) -> str:
         </div>"""
 
     challenges_html = "".join(_challenge_row(a) for a in _chal_dedup[:30])
-    challenges_card = ""
-    if challenges_html:
-        challenges_card = f"""
+    # Bouton de rattrapage (toujours visible, même sans challenge en attente) :
+    # scanne les réponses récentes CÔTÉ VERCEL et importe les challenges ici. Le
+    # backfill ne peut pas tourner en local (token KV d'écriture jamais exporté).
+    _backfill_form = (
+        f'<form method="POST" action="/{keyparam}" style="display:inline-flex;gap:6px;align-items:center" '
+        f'onsubmit="var b=this.querySelector(\'button\');b.disabled=true;b.textContent=\'Import en cours…\';return true;">'
+        f'<input type="hidden" name="action" value="backfill_challenges">'
+        f'<label style="font-size:12px;color:#8c8678">Importer les challenges des '
+        f'<input type="number" name="days" value="14" min="1" max="30" style="width:52px;padding:3px 6px;border:1px solid #ddd;border-radius:6px"> derniers jours</label>'
+        f'<button type="submit" class="btn-save" style="background:#a855f7">🛡 Importer</button>'
+        f'</form>'
+    )
+    _chal_rows = challenges_html or '<div class="empty-section">Aucun challenge en attente. Clique « Importer » pour rattraper les récents.</div>'
+    challenges_card = f"""
   <div class="card">
     <h2>🛡 Challenges antispam à valider <span class="badge">{len(_chal_dedup)}</span></h2>
     <div class="alert-explain">
@@ -1584,7 +1595,8 @@ def _render(client_filter: str | None = None) -> str:
       <b>🔓 Valider</b> ouvre directement la page du filtre · quand le lien n'est pas récupérable,
       ouvre la boîte d'envoi indiquée et clique le lien dans l'email du portail · <b>✕</b> une fois validé.
     </div>
-    {challenges_html}
+    <div style="margin:6px 0 12px">{_backfill_form}</div>
+    {_chal_rows}
   </div>"""
 
     # === SECTION CLIENTS (multi-comptes) ===
@@ -2433,6 +2445,69 @@ class handler(BaseHTTPRequestHandler):
                     "response": report_html,      # version HTML jolie (email client)
                     "tips": tips,                 # conseils POUR RUDY (hors email client)
                     "client_id": client.get("id"),
+                })
+        elif action == "backfill_challenges":
+            # Rattrapage : scanne les réponses récentes, détecte les challenges
+            # antispam (MailInBlack & co) et les logue au KV → ils apparaissent
+            # dans la section « Challenges antispam à valider ». Tourne CÔTÉ
+            # VERCEL (le token KV d'écriture n'est jamais exporté en local).
+            from datetime import datetime as _dt, timezone as _tz, timedelta as _td
+            try:
+                days = int(form.get("days", "14"))
+            except ValueError:
+                days = 14
+            days = max(1, min(days, 30))
+            n_found = 0
+            status = "exécuté"
+            try:
+                from src.manyreach import (
+                    ManyReachClient, detect_antispam_challenge, extract_challenge_url,
+                )
+                cutoff = _dt.now(_tz.utc) - _td(days=days)
+                os.environ["LIST_MAX_PAGES"] = "80"  # backfill : on remonte plus loin
+                seen_ch: set[str] = set()
+                with ManyReachClient(timeout=8.0) as _mc:
+                    for msg in _mc.list_replies(since=cutoff):
+                        filt = detect_antispam_challenge(msg)
+                        if not filt:
+                            continue
+                        key = (msg.from_email or "").lower().strip()
+                        if not key or key in seen_ch:
+                            continue
+                        seen_ch.add(key)
+                        url = ""
+                        try:
+                            url = extract_challenge_url(msg) or ""
+                        except Exception:  # noqa: BLE001
+                            pass
+                        kvstore.log_action({
+                            "at": msg.created_at.isoformat(),
+                            "from": msg.from_email,
+                            "subject": msg.subject,
+                            "intent": "mailinblack_pending",
+                            "status": f"challenge {filt} — validation à cliquer (backfill {days}j)",
+                            "challenge_filter": filt,
+                            "validation_url": url,
+                            "destination_mailbox": msg.to_email,
+                            "campaign_id": msg.campaign_id,
+                            "reply": "",
+                            "response": "",
+                        })
+                        n_found += 1
+                status = f"{n_found} challenge(s) importé(s) sur {days} j"
+            except Exception as e:  # noqa: BLE001
+                import traceback
+                status = f"erreur backfill ({e})"
+                traceback.print_exc()
+            if kvstore.kv_available():
+                kvstore.log_action({
+                    "at": _dt.now(_tz.utc).isoformat(),
+                    "from": "(manuel)",
+                    "subject": "🛡 Importer les challenges",
+                    "intent": "run_now",
+                    "status": status,
+                    "reply": "",
+                    "response": "",
                 })
         elif action == "save_settings":
             ov = kvstore.get_settings_overrides()
