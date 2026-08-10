@@ -126,24 +126,26 @@ def plan_mailinblack_actions(
     *,
     reply: Message,
     prospect: Prospect | None,
+    filter_name: str = "MailInBlack",
+    validation_url: str | None = None,
 ) -> ActionPlan:
-    """Special-case handler for MailInBlack validation challenges.
+    """Special-case handler for anti-spam challenge emails (MailInBlack & co).
 
-    Until we have IMAP/Gmail access to extract the validation URL, we just tag
-    the prospect for a manual click and log clearly which mailbox Rudy needs to
-    visit. The prospect status is NOT changed to BounceHard (their mailbox is
-    fine — they're just behind a MailInBlack gate).
+    Tag the prospect for a manual click and flag the challenge for the
+    dashboard (bottom section, with the direct validation link when the URL
+    survived ManyReach's HTML stripping). The prospect status is NOT changed
+    to BounceHard (their mailbox is fine — they're just behind a gate).
     """
     from .classifier import Classification
 
     fake_cls = Classification(
         intent="mailinblack_pending",
         confidence=1.0,
-        key_phrase="MailInBlack validation requise",
+        key_phrase=f"{filter_name} : validation requise",
         redirected_email=None,
         redirected_to=None,
         language="fr",
-        reasoning="Pre-filtered as MailInBlack challenge — needs manual click validation",
+        reasoning=f"Pre-filtered as {filter_name} challenge — needs manual click validation",
     )
     plan = ActionPlan(classification=fake_cls, draft=None)
     if prospect is not None:
@@ -164,10 +166,13 @@ def plan_mailinblack_actions(
                 "challenge_sender": reply.from_email,
                 "destination_mailbox": reply.to_email,
                 "subject": reply.subject,
+                "filter_name": filter_name,
+                "validation_url": validation_url or "",
             },
             description=(
-                f"MAILINBLACK: clic manuel requis dans la boîte {reply.to_email} "
+                f"{filter_name.upper()}: clic manuel requis dans la boîte {reply.to_email} "
                 f"(challenge envoyé par {reply.from_email})"
+                + (f" — lien: {validation_url}" if validation_url else "")
             ),
         )
     )

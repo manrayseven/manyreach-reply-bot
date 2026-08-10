@@ -17,7 +17,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from src.manyreach import Message, is_bounce_or_auto, is_mailinblack  # noqa: E402
+from src.manyreach import (  # noqa: E402
+    Message,
+    detect_antispam_challenge,
+    extract_challenge_url,
+    is_bounce_or_auto,
+    is_mailinblack,
+)
 
 
 def _msg(body="", subject="Re: Question", from_email="x@y.fr"):
@@ -87,6 +93,54 @@ def test_mailinblack_detection():
     assert is_mailinblack(_msg(from_email="noreply@invitations.mailinblack.com")) is True
     assert is_mailinblack(_msg(body="un clic pour délivrer votre email")) is True
     assert is_mailinblack(_msg(body="message normal")) is False
+
+
+def test_challenge_filter_names():
+    # MailInBlack : par expéditeur (invitations + passerelles revendeur mib.*).
+    assert detect_antispam_challenge(
+        _msg(from_email="gegos@invitations.mailinblack.com")) == "MailInBlack"
+    assert detect_antispam_challenge(
+        _msg(from_email="ardrom@mib.ipgarde.com")) == "MailInBlack"
+    # MailInBlack : par corps (challenge relayé depuis une autre adresse).
+    assert detect_antispam_challenge(
+        _msg(body="Un clic pour délivrer votre email !")) == "MailInBlack"
+    # Autres filtres challenge-réponse connus.
+    assert detect_antispam_challenge(
+        _msg(from_email="verify@spamenmoins.com")) == "SpamEnMoins"
+    assert detect_antispam_challenge(
+        _msg(from_email="noreply@boxbe.com")) == "Boxbe"
+    # Générique (filtre inconnu, phrase type challenge).
+    assert detect_antispam_challenge(
+        _msg(body="Votre message est en attente de validation.")) == "Challenge"
+    assert detect_antispam_challenge(
+        _msg(body="Please verify that you are a real person to deliver your email.")) == "Challenge"
+    # Sujet seul (corps vide/strippé).
+    assert detect_antispam_challenge(
+        _msg(body="", subject="Votre email : validation requise")) == "Challenge"
+    # Négatifs : vrai reply humain et bounce classique.
+    assert detect_antispam_challenge(_msg(body="Bonjour, pas intéressé merci.")) is None
+    assert detect_antispam_challenge(
+        _msg(body="This is the mail system. Your message could not be delivered.")) is None
+
+
+def test_challenge_url_extraction():
+    # URL de validation en texte brut → extraite (priorité aux domaines connus).
+    m = _msg(body="Cliquez ici pour valider : https://app.mailinblack.com/v/abc123 merci")
+    assert extract_challenge_url(m) == "https://app.mailinblack.com/v/abc123"
+    # Repli : première URL non-image/désinscription.
+    m2 = _msg(body="Validez sur https://portail-filtre.fr/confirm?id=42.")
+    assert extract_challenge_url(m2) == "https://portail-filtre.fr/confirm?id=42"
+    # Corps strippé sans URL (cas MailInBlack via API ManyReach) → None.
+    assert extract_challenge_url(_msg(body="Un clic pour délivrer votre email !")) is None
+
+
+def test_challenge_is_not_bounce_shadowed():
+    # Un challenge doit être détecté AVANT le filtre bounce (l'ordre est géré
+    # dans run_bot) mais ne doit pas non plus être avalé par is_bounce_or_auto
+    # à cause d'un pattern trop large.
+    m = _msg(from_email="prospect@invitations.mailinblack.com",
+             body="Un clic pour délivrer votre email !")
+    assert detect_antispam_challenge(m) == "MailInBlack"
 
 
 if __name__ == "__main__":

@@ -49,7 +49,12 @@ from src.actions import (  # noqa: E402
 )
 from src.classifier import Classifier, _strip_html, _trim_quoted_history, is_stop_signal  # noqa: E402
 from src.drafter import Drafter  # noqa: E402
-from src.manyreach import ManyReachClient, is_bounce_or_auto, is_mailinblack  # noqa: E402
+from src.manyreach import (  # noqa: E402
+    ManyReachClient,
+    detect_antispam_challenge,
+    extract_challenge_url,
+    is_bounce_or_auto,
+)
 
 
 def load_settings(path: Path) -> dict:
@@ -431,15 +436,22 @@ def main() -> int:
                 continue
 
             try:
-                # Pre-filter 1: MailInBlack (must come BEFORE bounce check)
-                if is_mailinblack(reply):
-                    print("  >> Pre-filter: MailInBlack challenge — manual click needed")
+                # Pre-filter 1: challenge antispam MailInBlack & co (AVANT le
+                # check bounce — un challenge n'est PAS un bounce, le prospect
+                # est joignable dès que Rudy clique la validation).
+                challenge_filter = detect_antispam_challenge(reply)
+                if challenge_filter:
+                    print(f"  >> Pre-filter: challenge {challenge_filter} — clic manuel requis")
+                    validation_url = extract_challenge_url(reply)
                     prospect = None
                     try:
                         prospect = mr.find_prospect_by_email(reply.from_email)
                     except Exception:
-                        pass  # MailInBlack 'from' is the gateway, not the prospect
-                    plan = plan_mailinblack_actions(reply=reply, prospect=prospect)
+                        pass  # le 'from' du challenge est la passerelle, pas le prospect
+                    plan = plan_mailinblack_actions(
+                        reply=reply, prospect=prospect,
+                        filter_name=challenge_filter, validation_url=validation_url,
+                    )
                     results = execute_plan(plan, reply, mr, dry_run=dry_run, tag_cache=tag_cache)
                     for line in results:
                         print(f"    {line}")
@@ -448,12 +460,36 @@ def main() -> int:
                         "destination_mailbox": reply.to_email,
                         "subject": reply.subject,
                         "createdAt": reply.created_at.isoformat(),
+                        "filter": challenge_filter,
+                        "validation_url": validation_url or "",
                     })
                     log_entry["intent"] = "mailinblack_pending"
                     log_entry["confidence"] = 1.0
                     log_entry["actions"] = results
                     log_entry["mailinblack_destination"] = reply.to_email
+                    log_entry["challenge_filter"] = challenge_filter
+                    log_entry["validation_url"] = validation_url or ""
                     logf.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
+                    # → Dashboard (section « Challenges antispam » en bas de page).
+                    # Sans ce log_action KV, les challenges n'apparaissaient
+                    # JAMAIS sur Vercel (seulement dans le JSONL local).
+                    if kvstore is not None and kvstore.kv_available():
+                        try:
+                            kvstore.log_action({
+                                "at": now_utc.isoformat(),
+                                "from": reply.from_email,
+                                "subject": reply.subject,
+                                "intent": "mailinblack_pending",
+                                "status": f"challenge {challenge_filter} — validation à cliquer",
+                                "challenge_filter": challenge_filter,
+                                "validation_url": validation_url or "",
+                                "destination_mailbox": reply.to_email,
+                                "campaign_id": reply.campaign_id,
+                                "reply": "",
+                                "response": "",
+                            })
+                        except Exception:  # noqa: BLE001
+                            pass
                     if not dry_run:
                         _mark_done(reply.message_id)
                     processed_count += 1

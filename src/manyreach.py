@@ -6,6 +6,7 @@ Full OpenAPI spec is in manyreach_openapi.json at repo root.
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Iterable
@@ -625,39 +626,125 @@ def is_bounce_or_auto(msg: Message) -> bool:
     return False
 
 
-# ----- MailInBlack detection (anti-spam validation gate) -----
+# ----- Anti-spam challenge detection (MailInBlack & friendes) -----
 #
-# MailInBlack intercepts incoming mail and sends a "click to validate" challenge
-# back to the sender. Until the validation is clicked, the original email never
-# reaches the prospect. ManyReach strips the HTML of these challenge mails so we
-# CANNOT auto-click the validation URL from the API alone — we'd need IMAP/Gmail
-# API access to the sending mailbox to recover the URL.
+# Les filtres "challenge-réponse" (MailInBlack en tête chez les mairies/TPE
+# françaises) interceptent l'email et renvoient un défi "cliquez pour délivrer
+# votre message" (+ captcha). Tant que personne ne clique, l'email d'origine
+# n'arrive JAMAIS. Le clic valide aussi l'adresse d'envoi définitivement
+# (whitelist) → chaque défi est un prospect joignable à coup sûr si Rudy clique.
 #
-# For now: detect properly, tag the prospect for manual click, DO NOT mark as
-# bounce (the prospect's mailbox is healthy, just protected by MailInBlack).
+# ManyReach strippe le HTML de ces emails : le lien de validation (un <a href>)
+# est PERDU côté API pour MailInBlack (vérifié en live le 09/08/2026 avec
+# fullBodies=true). Certains filtres mettent l'URL en texte brut → dans ce cas
+# on la récupère et le dashboard affiche un lien direct. Détecter ≠ bounce :
+# la boîte du prospect est saine, juste derrière un portail.
 
-MAILINBLACK_SENDER_PATTERNS = (
-    "@invitations.mailinblack.com",
-    "@mailinblack.com",
-    "@mail-in-black.com",
+# (nom affiché, patterns d'expéditeur) — expéditeurs connus de challenges.
+CHALLENGE_SENDER_FILTERS = (
+    ("MailInBlack", (
+        "@invitations.mailinblack.com",
+        "@mailinblack.com",
+        "@mail-in-black.com",
+        "@mib.ipgarde.com",   # passerelle revendeur observée (ex. ardrom@mib.ipgarde.com)
+        "mib-daemon",         # moteur MailInBlack (message-id / relais)
+    )),
+    ("SpamEnMoins", ("@spamenmoins.com", "spamenmoins")),
+    ("Boxbe", ("@boxbe.com",)),
+    ("Altospam", ("@altospam.com",)),
 )
-MAILINBLACK_BODY_HINTS = (
+
+# Indices dans le corps/sujet (tous filtres confondus, FR + EN). Un seul suffit.
+CHALLENGE_BODY_HINTS = (
+    # MailInBlack
     "mailinblack",
     "mail in black",
     "un clic pour délivrer",
     "un clic pour delivrer",
     "click to deliver",
+    # Génériques FR
     "validez votre envoi",
+    "valider votre envoi",
+    "votre message est en attente de validation",
+    "message est en attente de livraison",
+    "pour que votre message soit délivré",
+    "pour que votre message soit delivre",
+    "confirmez votre adresse pour que votre message",
+    "prouvez que vous n'êtes pas un robot",
+    "prouver que vous n'êtes pas un robot",
+    "je ne suis pas un robot",
+    "expéditeur inconnu, merci de valider",
+    "anti-spam vous demande de confirmer",
+    "antispam vous demande de confirmer",
+    # Génériques EN
+    "waiting for your confirmation",
+    "confirm your email address so your message",
+    "sender verification",
+    "verify that you are a real person",
+    "prove you are human",
+    "your message is waiting for approval",
+    "message is held for approval",
 )
+
+# Sujets typiques de challenge quand le corps est vide/strippé.
+CHALLENGE_SUBJECT_HINTS = (
+    "en attente de validation",
+    "validation requise",
+    "confirmez votre envoi",
+    "confirm your message",
+    "sender verification",
+)
+
+# Domaines de validation connus → priorité lors de l'extraction d'URL.
+CHALLENGE_URL_DOMAINS = (
+    "mailinblack.com",
+    "spamenmoins.com",
+    "boxbe.com",
+    "altospam.com",
+)
+
+_URL_RE = re.compile(r"https?://[^\s\"'<>)\]]+", re.IGNORECASE)
+
+
+def detect_antispam_challenge(msg: Message) -> str | None:
+    """Nom du filtre challenge-réponse détecté ('MailInBlack', …, 'Challenge'
+    pour un filtre non identifié), ou None si ce n'est pas un challenge."""
+    sender = (msg.from_email or "").lower()
+    subject = (msg.subject or "").lower()
+    body = (msg.body or "").lower()
+    for name, patterns in CHALLENGE_SENDER_FILTERS:
+        if any(p in sender for p in patterns):
+            return name
+    for hint in CHALLENGE_BODY_HINTS:
+        if hint in body:
+            if "mailinblack" in hint or "mail in black" in hint or "clic pour d" in hint:
+                return "MailInBlack"
+            return "Challenge"
+    for hint in CHALLENGE_SUBJECT_HINTS:
+        if hint in subject:
+            return "Challenge"
+    return None
+
+
+def extract_challenge_url(msg: Message) -> str | None:
+    """Meilleure URL de validation trouvable dans le corps (souvent absente :
+    ManyReach strippe le HTML — MailInBlack n'y survit pas, les filtres qui
+    mettent l'URL en texte brut si)."""
+    body = msg.body or ""
+    urls = _URL_RE.findall(body)
+    if not urls:
+        return None
+    for u in urls:
+        if any(d in u.lower() for d in CHALLENGE_URL_DOMAINS):
+            return u.rstrip(".,;")
+    # Repli : première URL qui n'est pas une image/désinscription.
+    for u in urls:
+        low = u.lower()
+        if not any(x in low for x in (".png", ".jpg", ".gif", "unsubscribe", "desinscription")):
+            return u.rstrip(".,;")
+    return None
 
 
 def is_mailinblack(msg: Message) -> bool:
-    """Return True if this looks like a MailInBlack validation challenge."""
-    sender = (msg.from_email or "").lower()
-    for pat in MAILINBLACK_SENDER_PATTERNS:
-        if pat in sender:
-            return True
-    body = (msg.body or "").lower()
-    sender_hit = "mailinblack" in sender
-    body_hit = any(h in body for h in MAILINBLACK_BODY_HINTS)
-    return sender_hit or body_hit
+    """Compat : True si le message est un challenge antispam (tous filtres)."""
+    return detect_antispam_challenge(msg) is not None

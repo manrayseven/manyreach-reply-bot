@@ -627,6 +627,7 @@ def _render(client_filter: str | None = None) -> str:
     sent_list = []     # envois auto du bot
     error_list = []    # ❌ erreurs
     silent_list = []   # silencieux + ack + autre
+    challenge_list = []  # 🛡 challenges antispam (MailInBlack & co) à valider
     dismissed = kvstore.get_dismissed_alerts()  # alertes que Rudy a déjà traitées
 
     # Multi-clients : liste des comptes + assignations manuelles (triage).
@@ -789,6 +790,11 @@ def _render(client_filter: str | None = None) -> str:
             if (alert_id not in dismissed and not superseded
                     and not _is_refusal and not _is_ooo and not _no_content):
                 alerts.append(a)
+        elif intent == "mailinblack_pending":
+            # Challenge antispam (MailInBlack & co) → section dédiée en bas de
+            # page, avec le lien de validation direct quand on l'a. ✕ = traité.
+            if alert_id not in dismissed:
+                challenge_list.append(a)
         elif "envoyé" in status:
             sent_list.append(a)
         elif intent in ("run_now", "diagnose", "manual_reply", "monthly_report",
@@ -1494,6 +1500,67 @@ def _render(client_filter: str | None = None) -> str:
         sent_html = '<div class="empty-section">Aucun envoi récent.</div>'
     errors_html = "".join(_error_row(a) for a in error_list[:5])
 
+    # === CHALLENGES ANTISPAM (MailInBlack & co) — section bas de page ===
+    # Dédup par expéditeur du challenge (le même portail peut relancer à chaque
+    # cron tant que Rudy n'a pas cliqué) : on garde l'entrée la plus récente.
+    _chal_seen: set[str] = set()
+    _chal_dedup = []
+    for a in challenge_list:  # challenge_list est déjà du plus récent au plus ancien
+        k = (a.get("from") or "").lower().strip()
+        if not k or k in _chal_seen:
+            continue
+        _chal_seen.add(k)
+        _chal_dedup.append(a)
+
+    def _challenge_row(a: dict) -> str:
+        when = _time_fr(a.get("at", ""))
+        frm = html.escape(str(a.get("from", "")))
+        dest = html.escape(str(a.get("destination_mailbox") or a.get("mailinblack_destination") or ""))
+        filt = html.escape(str(a.get("challenge_filter") or "MailInBlack"))
+        vurl = str(a.get("validation_url") or "").strip()
+        chal_id = html.escape(f"{a.get('at', '')}|{(a.get('from') or '').lower()}")
+        if vurl and vurl.lower().startswith(("http://", "https://")):
+            action_html = (
+                f'<a class="sent-mr" style="background:#a855f7;color:#fff;border-radius:6px;'
+                f'padding:4px 12px;font-size:12px;font-weight:600;text-decoration:none" '
+                f'href="{html.escape(vurl)}" target="_blank" rel="noopener" '
+                f'title="Ouvre la page de validation du filtre — passe le captcha et ton email est délivré">'
+                f'🔓 Valider</a>'
+            )
+        else:
+            action_html = (
+                f'<span style="font-size:11.5px;color:#8c8678" '
+                f'title="Le filtre n\'a pas laissé le lien dans le texte du message — '
+                f'ouvre la boîte d\'envoi et clique le lien du dernier email de ce portail">'
+                f'lien dans la boîte <b>{dest}</b></span>'
+            )
+        return f"""<div class="sent-row">
+          <span class="sent-when">{when}</span>
+          <span class="sent-pill" style="color:#a855f7;border:1px solid #a855f740">{filt}</span>
+          <span class="sent-email" title="Portail qui bloque ton email — le préfixe indique le prospect">{frm}</span>
+          {action_html}
+          <form method="POST" action="/{keyparam}" style="display:inline" onsubmit="this.querySelector('button').disabled=true;return true;">
+            <input type="hidden" name="action" value="dismiss_alert">
+            <input type="hidden" name="alert_id" value="{chal_id}">
+            <button type="submit" class="alert-dismiss" title="Marquer comme validé / ignoré">✕</button>
+          </form>
+        </div>"""
+
+    challenges_html = "".join(_challenge_row(a) for a in _chal_dedup[:30])
+    challenges_card = ""
+    if challenges_html:
+        challenges_card = f"""
+  <div class="card">
+    <h2>🛡 Challenges antispam à valider <span class="badge">{len(_chal_dedup)}</span></h2>
+    <div class="alert-explain">
+      Ces filtres (MailInBlack…) <b>bloquent ton email tant que tu n'as pas cliqué leur lien de validation</b> (captcha).
+      Un clic = email délivré + ton adresse whitelistée pour toujours chez ce prospect.<br>
+      <b>🔓 Valider</b> ouvre directement la page du filtre · quand le lien n'est pas récupérable,
+      ouvre la boîte d'envoi indiquée et clique le lien dans l'email du portail · <b>✕</b> une fois validé.
+    </div>
+    {challenges_html}
+  </div>"""
+
     # === SECTION CLIENTS (multi-comptes) ===
     def _client_form(c: dict | None) -> str:
         c = c or {}
@@ -1882,6 +1949,8 @@ def _render(client_filter: str | None = None) -> str:
     <h2>✈ Envois automatiques récents <span class="badge">{len(sent_list)}</span></h2>
     {sent_html}
   </div>
+
+  {challenges_card}
 
   <div style="text-align:right;font-size:11px;color:#94a3b8;margin-bottom:8px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">
     Version : {html.escape((os.environ.get("VERCEL_GIT_COMMIT_SHA","local") or "local")[:7])}
