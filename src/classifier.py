@@ -22,6 +22,7 @@ VALID_INTENTS = frozenset(
         "objection_price",
         "objection_timing",
         "objection_already_have_solution",
+        "objection_reasoned",  # décline en ARGUMENTANT → alerte (Rudy convainc)
         "wrong_person_redirect",
         "ask_more_info",
         "not_interested_polite",

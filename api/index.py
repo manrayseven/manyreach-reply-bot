@@ -37,6 +37,7 @@ _INTENT_FR = {
     "objection_price": ("Objection prix", "#d97706"),
     "objection_timing": ("Pas le moment", "#d97706"),
     "objection_already_have_solution": ("Déjà équipé", "#b45309"),
+    "objection_reasoned": ("Objection argumentée", "#9a3412"),
     "wrong_person_redirect": ("Mauvaise personne", "#7c3aed"),
     "not_interested_polite": ("Pas intéressé", "#dc2626"),
     "unsubscribe": ("Désinscription", "#991b1b"),
@@ -94,9 +95,10 @@ _NEG_INTENTS = {
 _POS_INTENTS = {
     "interested_warm", "interested_lukewarm", "ask_more_info", "meeting_confirmed",
 }
-# objection_timing ("plus tard") et wrong_person_redirect = ni positif ni négatif,
-# mais comptent comme une réponse reçue.
-_REAL_REPLY_INTENTS = _NEG_INTENTS | _POS_INTENTS | {"objection_timing", "wrong_person_redirect"}
+# objection_timing ("plus tard"), objection_reasoned (décline en argumentant) et
+# wrong_person_redirect = ni positif ni négatif, mais comptent comme réponse reçue.
+_REAL_REPLY_INTENTS = _NEG_INTENTS | _POS_INTENTS | {
+    "objection_timing", "objection_reasoned", "wrong_person_redirect"}
 
 
 def _perf_30d(actions: list, now=None) -> dict:
@@ -156,6 +158,7 @@ def _perf_30d(actions: list, now=None) -> dict:
 ALERT_INTENTS = {
     "interested_warm", "interested_lukewarm", "ask_more_info",
     "meeting_confirmed", "objection_timing", "objection_price",
+    "objection_already_have_solution", "objection_reasoned",
 }
 
 _MONTHS_FR = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet",
@@ -669,11 +672,11 @@ def _render(client_filter: str | None = None) -> str:
     # cache. Évite que de vieilles alertes (misclassif corrigée ensuite, ou cas déjà
     # traité auto) restent affichées maintenant qu'on lit TOUT le log (cas
     # sante-o-centre : alerté par un cron buggé, puis correctement passé NotInterested).
-    # objection_price N'EST PLUS ici : c'est désormais une ALERTE (lead à
-    # convaincre, Rudy reprend la main), pas une résolution auto → il ne doit pas
-    # masquer d'autres alertes ni se marquer "traité" tout seul.
+    # Les objection_* (price, already_have_solution, timing, reasoned) NE SONT PLUS
+    # ici : ce sont désormais des ALERTES (leads à convaincre, Rudy reprend la
+    # main), pas des résolutions auto → ne doivent pas se masquer tout seuls.
     _RESOLVED_INTENTS = {
-        "not_interested_polite", "objection_already_have_solution",
+        "not_interested_polite",
         "unsubscribe", "hostile", "bounce_or_auto", "wrong_person_redirect", "ack_only",
     }
     _resolved_at: dict[str, str] = {}
