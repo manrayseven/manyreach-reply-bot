@@ -117,8 +117,32 @@ def test_challenge_filter_names():
     # Sujet seul (corps vide/strippé).
     assert detect_antispam_challenge(
         _msg(body="", subject="Votre email : validation requise")) == "Challenge"
+    # Vrai challenge captcha "authentification" (poitiers.cci.fr / security-mail).
+    assert detect_antispam_challenge(_msg(
+        subject="Votre email a été bloqué pour authentification",
+        body="Votre email n'a pas été délivré car le destinataire a souhaité "
+             "mettre en place un Captcha pour valider l'existance de l'expéditeur. "
+             "Pour libérer l'email, merci de remplir le formulaire accessible ici :",
+        from_email="humail@poitiers.cci.fr")) == "Challenge"
     # Négatifs : vrai reply humain et bounce classique.
     assert detect_antispam_challenge(_msg(body="Bonjour, pas intéressé merci.")) is None
+    # ⚠️ BOUNCE relayé via un serveur MailInBlack : contient "mailinblack" mais
+    # c'est un rejet de remise (adresse inexistante) → PAS un challenge.
+    assert detect_antispam_challenge(_msg(
+        subject="Undelivered Mail Returned to Sender",
+        body="The mail system: host mx-mibc-fr-04.mailinblack.com said: "
+             "550 5.1.1: Recipient address rejected: User unknown in relay recipient table")) is None
+
+
+def test_extract_challenge_url_skips_scanner_and_pixel():
+    # /protect/securelink = scanner de liens MailInBlack (pas une validation) → ignoré.
+    assert extract_challenge_url(_msg(
+        body="clique https://mibc-fr-11.mailinblack.com/protect/securelink?url="
+             "https%3A%2F%2Fwww.webmarketing-conseil.fr&key=abc")) is None
+    # Vrai lien de validation en texte brut → extrait.
+    assert extract_challenge_url(_msg(
+        body="Pour valider : https://web-production-5a23a.up.railway.app/verify/XZHMT")
+    ) == "https://web-production-5a23a.up.railway.app/verify/XZHMT"
     assert detect_antispam_challenge(
         _msg(body="This is the mail system. Your message could not be delivered.")) is None
 

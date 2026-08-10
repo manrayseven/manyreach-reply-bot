@@ -704,6 +704,17 @@ CHALLENGE_BODY_HINTS = (
     "un clic pour délivrer",
     "un clic pour delivrer",
     "click to deliver",
+    # Captcha "authentification" (security-mail.net, poitiers.cci.fr, APM…) :
+    # "n'a pas été délivré car le destinataire a souhaité mettre en place un
+    # Captcha pour valider l'existance de l'expéditeur. Pour libérer l'email…"
+    "captcha pour valider",
+    "valider l'existance de l'expéditeur",
+    "valider l'existence de l'expéditeur",
+    "pour libérer l'email",
+    "pour libérer votre email",
+    "remplir le formulaire accessible ici",
+    "access to the delivery page",
+    "enhanced protection against email threats",
     # Génériques FR
     "validez votre envoi",
     "valider votre envoi",
@@ -735,6 +746,9 @@ CHALLENGE_SUBJECT_HINTS = (
     "confirmez votre envoi",
     "confirm your message",
     "sender verification",
+    "bloqué pour authentification",
+    "bloque pour authentification",
+    "authentification mail",
 )
 
 # Domaines de validation connus → priorité lors de l'extraction d'URL.
@@ -748,12 +762,29 @@ CHALLENGE_URL_DOMAINS = (
 _URL_RE = re.compile(r"https?://[^\s\"'<>)\]]+", re.IGNORECASE)
 
 
+# Un BOUNCE relayé via un serveur MailInBlack ("host mx-...mailinblack.com said:
+# 550 User unknown") contient "mailinblack" → il était pris à tort pour un
+# challenge. Ces marqueurs de rejet de remise priment : ce n'est PAS un challenge.
+_BOUNCE_NOT_CHALLENGE = (
+    "undelivered mail", "returned to sender", "delivery status notification",
+    "mail delivery failed", "could not be delivered", "delivery has failed",
+    "mailer-daemon", "the mail system", "mail delivery subsystem",
+    "recipient address rejected", "user unknown", "no such user",
+    "550 5.1.1", "550 5.4", "550-5.1.1", "does not exist", "adresse inexistante",
+)
+
+
 def detect_antispam_challenge(msg: Message) -> str | None:
     """Nom du filtre challenge-réponse détecté ('MailInBlack', …, 'Challenge'
-    pour un filtre non identifié), ou None si ce n'est pas un challenge."""
+    pour un filtre non identifié), ou None si ce n'est pas un challenge.
+
+    ⚠️ Un BOUNCE (adresse inexistante) relayé par un serveur MailInBlack contient
+    "mailinblack" mais N'EST PAS un challenge → on le laisse au filtre bounce."""
     sender = (msg.from_email or "").lower()
     subject = (msg.subject or "").lower()
     body = (msg.body or "").lower()
+    if any(b in subject or b in body for b in _BOUNCE_NOT_CHALLENGE):
+        return None  # c'est un bounce, pas un challenge
     for name, patterns in CHALLENGE_SENDER_FILTERS:
         if any(p in sender for p in patterns):
             return name
@@ -778,7 +809,12 @@ def extract_challenge_url(msg: Message) -> str | None:
     if not urls:
         return None
     _junk = (".png", ".jpg", ".jpeg", ".gif", ".css", "unsubscribe", "desinscription",
-             "/tr/op/", "mailto:")  # /tr/op/ = pixel de tracking d'OUVERTURE
+             "/tr/op/", "mailto:",
+             # SCANNERS DE LIENS (pas des validations d'expéditeur) : MailInBlack
+             # "Secure Link" réécrit les liens DE TON email pour les analyser
+             # (/protect/securelink?url=...) → cliquer ça ne valide RIEN (erreur).
+             "/protect/securelink", "securelink", "?url=", "&url=", "/urlscan",
+             "/link-protection", "safelinks.protection", "/scan?")
     clean = [u for u in urls if not any(x in u.lower() for x in _junk)]
     # 1) Domaine de validation connu (mailinblack.com, …).
     for u in clean:
