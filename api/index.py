@@ -1512,6 +1512,32 @@ def _render(client_filter: str | None = None) -> str:
         _chal_seen.add(k)
         _chal_dedup.append(a)
 
+    # RÉSOLUTION DU LIEN DE VALIDATION : le bot stocke souvent validation_url vide
+    # (l'API tronque le corps → lien perdu). On refetch le corps COMPLET
+    # (fullBodies=true) et on extrait le lien. Mis en cache KV 6 h.
+    _chal_todo = [a for a in _chal_dedup[:30] if not str(a.get("validation_url") or "").strip()]
+    if _chal_todo:
+        import hashlib as _hl
+        try:
+            from src.manyreach import ManyReachClient
+            with ManyReachClient(timeout=10.0) as _mc:
+                for a in _chal_todo:
+                    _fr, _su = str(a.get("from") or ""), str(a.get("subject") or "")
+                    _hk = "mrchallenge:v1:" + _hl.md5((_fr + "|" + _su).encode()).hexdigest()[:16]
+                    _cu = kvstore.cache_get(_hk)
+                    if _cu:
+                        a["validation_url"] = _cu
+                        continue
+                    try:
+                        _u = _mc.fetch_challenge_url(_fr, _su)
+                        if _u:
+                            a["validation_url"] = _u
+                            kvstore.cache_set(_hk, _u, 6 * 3600)
+                    except Exception:  # noqa: BLE001
+                        pass
+        except Exception:  # noqa: BLE001
+            pass
+
     def _challenge_row(a: dict) -> str:
         when = _time_fr(a.get("at", ""))
         frm = html.escape(str(a.get("from", "")))

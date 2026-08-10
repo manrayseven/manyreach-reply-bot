@@ -426,6 +426,27 @@ class ManyReachClient:
     def get_campaign(self, campaign_id: int) -> dict:
         return self._request("GET", f"/campaigns/{campaign_id}")
 
+    def fetch_challenge_url(self, from_email: str, subject: str) -> str | None:
+        """Récupère le LIEN DE VALIDATION d'un challenge antispam en refetchant le
+        message avec fullBodies=true (l'API tronque le corps par défaut → le lien
+        est perdu ; avec fullBodies il est présent). Renvoie l'URL ou None."""
+        try:
+            params = {
+                "type": "Reply",
+                "emailFrom": from_email,
+                "subject": subject[:120],
+                "fullBodies": "true",
+                "limit": 5,
+            }
+            data = self._request("GET", "/messages", params=params)
+            for item in (data or {}).get("items", []):
+                url = extract_challenge_url(Message.from_api(item))
+                if url:
+                    return url
+        except Exception:  # noqa: BLE001
+            return None
+        return None
+
 
 # ----- Bounce / auto-reply detection -----
 
@@ -727,22 +748,32 @@ def detect_antispam_challenge(msg: Message) -> str | None:
 
 
 def extract_challenge_url(msg: Message) -> str | None:
-    """Meilleure URL de validation trouvable dans le corps (souvent absente :
-    ManyReach strippe le HTML — MailInBlack n'y survit pas, les filtres qui
-    mettent l'URL en texte brut si)."""
+    """Meilleure URL de VALIDATION dans le corps. ⚠️ Le corps doit être le HTML
+    COMPLET (fetch avec fullBodies=true) : la preview tronquée de l'API n'a pas le
+    lien. On IGNORE les pixels de tracking d'ouverture (/tr/op/) et les images, et
+    on PRÉFÈRE les chemins de validation (verify/valider/confirm/unlock)."""
     body = msg.body or ""
-    urls = _URL_RE.findall(body)
+    urls = [u.rstrip(".,;)\"'") for u in _URL_RE.findall(body)]
     if not urls:
         return None
-    for u in urls:
+    _junk = (".png", ".jpg", ".jpeg", ".gif", ".css", "unsubscribe", "desinscription",
+             "/tr/op/", "mailto:")  # /tr/op/ = pixel de tracking d'OUVERTURE
+    clean = [u for u in urls if not any(x in u.lower() for x in _junk)]
+    # 1) Domaine de validation connu (mailinblack.com, …).
+    for u in clean:
         if any(d in u.lower() for d in CHALLENGE_URL_DOMAINS):
-            return u.rstrip(".,;")
-    # Repli : première URL qui n'est pas une image/désinscription.
-    for u in urls:
-        low = u.lower()
-        if not any(x in low for x in (".png", ".jpg", ".gif", "unsubscribe", "desinscription")):
-            return u.rstrip(".,;")
-    return None
+            return u
+    # 2) Chemin explicitement "validation".
+    _kw = ("verify", "valid", "confirm", "unlock", "release", "activate", "challenge")
+    for u in clean:
+        if any(k in u.lower() for k in _kw):
+            return u
+    # 3) Lien de clic tracké (bouton "Valider" → redirige vers la validation).
+    for u in clean:
+        if "/tr/cl/" in u.lower() or "/click" in u.lower() or "/c/" in u.lower():
+            return u
+    # 4) Repli : première URL propre restante.
+    return clean[0] if clean else None
 
 
 def is_mailinblack(msg: Message) -> bool:
