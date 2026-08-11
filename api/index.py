@@ -586,6 +586,18 @@ def _handoff_email_html(company: str, detail_line: str, contact_line: str,
 
 
 def _render(client_filter: str | None = None) -> str:
+    # BUDGET DE TEMPS : Vercel coupe à 60s. Les enrichissements live ManyReach
+    # (threads, noms de campagne, liens de challenge) peuvent cumuler trop de
+    # latence sur cache froid → page blanche (504). On borne le temps passé sur
+    # ces appels : au-delà du budget, on SAUTE les résolutions non-critiques et la
+    # page s'affiche quand même (infos en cache/repli). Le cron suivant / render
+    # suivant complétera (le cache se remplit progressivement).
+    import time as _time
+    _t0 = _time.time()
+
+    def _budget_left() -> float:
+        return 45.0 - (_time.time() - _t0)
+
     enabled = kvstore.is_enabled()
     last_run = kvstore.get_last_run()
     last_run_fr = _time_fr(last_run) if last_run else "jamais"
@@ -842,11 +854,16 @@ def _render(client_filter: str | None = None) -> str:
 
         # 2) Interroge ManyReach EN PARALLÈLE (httpx.Client est thread-safe). Évite
         #    le N×latence séquentiel sur cache froid. Fail-open par email.
+        # Plafond dur : au plus 18 enrichissements live par render (le reste garde
+        # ses valeurs stockées) → borne la latence, le cache se remplit au fil des
+        # renders. Les non-cachés restants seront traités au prochain affichage.
+        if len(to_fetch) > 18:
+            to_fetch = dict(list(to_fetch.items())[:18])
         _client = None
         if to_fetch:
             try:
                 from src.manyreach import ManyReachClient
-                _client = ManyReachClient(timeout=8.0)
+                _client = ManyReachClient(timeout=6.0)
             except Exception:  # noqa: BLE001
                 _client = None  # fail-open : pas d'enrichissement (ex. clé absente)
         if _client is not None:
@@ -1477,7 +1494,7 @@ def _render(client_filter: str | None = None) -> str:
         else:
             _camp_todo.append(_cid)
     _camp_todo = _camp_todo[:10]  # plafond dur par render
-    if _camp_todo:
+    if _camp_todo and _budget_left() > 12:  # skip si le render traîne déjà
         try:
             from concurrent.futures import ThreadPoolExecutor
             from src.manyreach import ManyReachClient
@@ -1546,7 +1563,7 @@ def _render(client_filter: str | None = None) -> str:
             continue
         _chal_todo.append((a, _fr, _su, _hk))
     _chal_todo = _chal_todo[:6]  # plafond dur par render
-    if _chal_todo:
+    if _chal_todo and _budget_left() > 10:  # skip si le render traîne déjà
         try:
             from concurrent.futures import ThreadPoolExecutor
             from src.manyreach import ManyReachClient
