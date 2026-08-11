@@ -29,20 +29,21 @@ def test_categories_are_disjoint():
 
 
 def test_key_intents_route_as_expected():
-    # Réponse AUTO : refus plat + objection PRIX (pitch GrowPulser pas cher +
-    # essai gratuit, feedback Rudy 11/08).
-    assert "not_interested_polite" in AUTOSEND_ELIGIBLE
-    assert "objection_price" in AUTOSEND_ELIGIBLE
-    # Leads / RDV / demandes d'info + objections À TRAVAILLER (déjà équipé,
-    # argumentée, timing) → alerte (Rudy convainc lui-même).
+    # Réponse AUTO : refus plat + objection prix + "déjà équipé" PLAT (feedback
+    # Rudy 11/08). Ces objections ont une réponse standard efficace.
+    for i in ("not_interested_polite", "objection_price",
+              "objection_already_have_solution"):
+        assert i in AUTOSEND_ELIGIBLE, i
+    # Leads / RDV / demandes d'info / "plus tard" + objection ARGUMENTÉE → alerte.
     for i in ("interested_warm", "meeting_confirmed", "ask_more_info",
-              "objection_timing",
-              "objection_already_have_solution", "objection_reasoned"):
+              "objection_timing", "objection_reasoned"):
         assert i in ALERT_ONLY, i
-    # objection_price N'est PLUS en alerte (retour en auto).
-    assert "objection_price" not in ALERT_ONLY
-    for i in ("objection_already_have_solution", "objection_reasoned"):
-        assert i not in AUTOSEND_ELIGIBLE, i
+    # objection_price et already_have_solution NE sont PLUS en alerte.
+    for i in ("objection_price", "objection_already_have_solution"):
+        assert i not in ALERT_ONLY, i
+    # SEULE l'objection argumentée reste en alerte parmi les objections.
+    assert "objection_reasoned" in ALERT_ONLY
+    assert "objection_reasoned" not in AUTOSEND_ELIGIBLE
     # Silencieux.
     for i in ("unsubscribe", "hostile", "bounce_or_auto"):
         assert i in ALWAYS_SILENT, i

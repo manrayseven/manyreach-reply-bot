@@ -63,11 +63,14 @@ INTENT_PROSPECT_UPDATE: dict[str, tuple[str | None, bool | None, list[str]]] = {
 #  - ALWAYS_SILENT : action silencieuse (blacklist/tag) sans email.
 AUTOSEND_ELIGIBLE = frozenset({
     "not_interested_polite",
-    # objection_price : réponse AUTO avec un contre-argument PRÉ-CADRÉ — proposer
-    # GrowPulser en mettant en avant que c'est peu cher + essai gratuit (feedback
-    # Rudy 11/08). L'angle "budget" a une réponse standard efficace → pas besoin
-    # d'alerter Rudy pour ça, contrairement aux objections argumentées.
+    # objection_price : réponse AUTO — pitch GrowPulser abordable + essai gratuit.
     "objection_price",
+    # objection_already_have_solution ("j'ai déjà une société / un prestataire qui
+    # s'en occupe") : réponse AUTO — on engage/pivote (angle complémentaire +
+    # GrowPulser), on ne concède pas (feedback Rudy 11/08 : ces "déjà équipé"
+    # PLATS doivent être auto-gérés ; SEULES les objections ARGUMENTÉES/malines
+    # (objection_reasoned) remontent en alerte).
+    "objection_already_have_solution",
 })
 
 # Intents qui DÉCLENCHENT UNE ALERTE EMAIL à Rudy (pas de réponse auto).
@@ -79,12 +82,11 @@ ALERT_ONLY = frozenset({
     "ask_more_info",
     "meeting_confirmed",
     "objection_timing",
-    # Objections TRAVAILLABLES → alerte (Rudy reprend la main pour convaincre)
-    # plutôt qu'une réponse auto qui concède/clôture (feedback Rudy 10/08) :
-    # ⚠️ objection_price N'EST PLUS ici (11/08) → réponse auto avec pitch GrowPulser
-    # pas cher + essai gratuit (voir AUTOSEND_ELIGIBLE).
-    "objection_already_have_solution",  # "j'ai déjà quelqu'un / une agence"
-    "objection_reasoned",               # décline en argumentant (lead engagé)
+    # SEULE l'objection ARGUMENTÉE / maligne (le prospect décline avec un
+    # raisonnement, un pushback) remonte en alerte → Rudy convainc lui-même.
+    # objection_price et objection_already_have_solution PLATS sont désormais en
+    # réponse auto (feedback Rudy 11/08).
+    "objection_reasoned",
 })
 
 # Intents that NEVER send a reply (silent action only).
