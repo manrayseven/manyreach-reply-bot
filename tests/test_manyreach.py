@@ -145,6 +145,26 @@ def test_challenge_filter_names():
              "550 5.1.1: Recipient address rejected: User unknown in relay recipient table")) is None
 
 
+def test_securelink_email_is_not_a_challenge():
+    # Email NORMAL dont MailInBlack a réécrit les liens (securelink) : "mailinblack"
+    # apparaît dans les URLs mais ce n'est PAS un challenge (cas autocars-groussin).
+    assert detect_antispam_challenge(_msg(
+        from_email="contact@autocars-groussin.com", subject="RE: Fiche Google",
+        body="<html>bonjour <a href='https://mibc-fr-11.mailinblack.com/securelink/"
+             "?url=https://www.webmarketing-conseil.fr&key=abc'>lien</a></html>")) is None
+
+
+def test_boxtrapper_comquoi_is_challenge_with_link():
+    # Challenge BoxTrapper/cPanel (cas comquoi) : détecté + lien bxd.cgi extrait.
+    body = ("The message you sent requires that you verify that you are a real live "
+            "human being and not a spam source. Or, you can click the following link: "
+            "http://mail.comquoi.fr/cgi-sys/bxd.cgi?a=contact@comquoi.fr&id=abc123")
+    m = _msg(from_email="contact@comquoi.fr",
+             subject="[SPAM] Your email requires verification verify#abc123", body=body)
+    assert detect_antispam_challenge(m) == "Challenge"
+    assert extract_challenge_url(m) == "http://mail.comquoi.fr/cgi-sys/bxd.cgi?a=contact@comquoi.fr&id=abc123"
+
+
 def test_extract_challenge_url_skips_scanner_and_pixel():
     # /protect/securelink = scanner de liens MailInBlack (pas une validation) → ignoré.
     assert extract_challenge_url(_msg(

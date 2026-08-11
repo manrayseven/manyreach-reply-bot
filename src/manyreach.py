@@ -717,9 +717,12 @@ CHALLENGE_SENDER_FILTERS = (
 
 # Indices dans le corps/sujet (tous filtres confondus, FR + EN). Un seul suffit.
 CHALLENGE_BODY_HINTS = (
-    # MailInBlack
-    "mailinblack",
-    "mail in black",
+    # MailInBlack — ⚠️ PAS le simple mot "mailinblack" : il apparaît dans TOUT
+    # email envoyé à un destinataire protégé (MailInBlack "Secure Link" réécrit
+    # les liens en mibc-*.mailinblack.com/securelink/...) → ça flaggait des emails
+    # NORMAUX comme des challenges (cas autocars-groussin : pas un challenge, juste
+    # des liens réécrits). On ne détecte MailInBlack que par l'EXPÉDITEUR
+    # (@mailinblack.com, via CHALLENGE_SENDER_FILTERS) ou une VRAIE phrase de défi :
     "un clic pour délivrer",
     "un clic pour delivrer",
     "click to deliver",
@@ -756,6 +759,14 @@ CHALLENGE_BODY_HINTS = (
     "prove you are human",
     "your message is waiting for approval",
     "message is held for approval",
+    # BoxTrapper / cPanel "verify you are a real live human" (cas comquoi.fr :
+    # "The message you sent requires that you verify that you are a real live
+    # human being and not a spam source... click the following link: .../bxd.cgi")
+    "real live human being",
+    "not a spam source",
+    "leave the subject line intact",
+    "requires that you verify",
+    "requires verification",
 )
 
 # Sujets typiques de challenge quand le corps est vide/strippé.
@@ -768,6 +779,8 @@ CHALLENGE_SUBJECT_HINTS = (
     "bloqué pour authentification",
     "bloque pour authentification",
     "authentification mail",
+    "requires verification",
+    "requires that you verify",
 )
 
 # Domaines de validation connus → priorité lors de l'extraction d'URL.
@@ -846,7 +859,9 @@ def extract_challenge_url(msg: Message) -> str | None:
             return u
     # 2) Chemin explicitement "validation" (verify/valider/confirm/authentif/libérer…).
     _kw = ("verify", "valid", "confirm", "unlock", "release", "activate",
-           "challenge", "authentif", "liberer", "captcha", "delivery")
+           "challenge", "authentif", "liberer", "captcha", "delivery",
+           # BoxTrapper / cPanel : lien type .../cgi-sys/bxd.cgi?a=...&id=...
+           "bxd.cgi", "cgi-sys", "boxtrapper")
     for u in clean:
         if any(k in u.lower() for k in _kw):
             return u
