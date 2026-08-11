@@ -1483,6 +1483,17 @@ def _render(client_filter: str | None = None) -> str:
         alerts = [a for a in alerts if _eff_client_id(a) == sel_client]
         sent_list = [a for a in sent_list if _eff_client_id(a) == sel_client]
 
+    # RÉPONSES ILLISIBLES : ManyReach ne renvoie pas le texte de certains replies
+    # (bug côté ManyReach, replies formatés Gmail → body vide via l'API, même en
+    # fullBodies). Le bot ne peut pas les lire → il les alerte (jamais deviner),
+    # mais elles encombrent les vraies alertes. On les SÉPARE dans une section
+    # compacte "à lire dans ManyReach". Détection via le texte placeholder.
+    _UNREADABLE = "message reçu mais illisible via l'api"
+    unreadable_alerts = [a for a in alerts
+                         if _UNREADABLE in str(a.get("reply") or "").lower()]
+    alerts = [a for a in alerts
+              if _UNREADABLE not in str(a.get("reply") or "").lower()]
+
     # NOMS DE CAMPAGNE pour l'email de transfert (ID → nom lisible). Résolus via
     # ManyReach get_campaign, mis en cache KV 7 j (les noms bougent peu). Rudy veut
     # le vrai nom ("Peintres en Bâtiment v2"), pas l'ID (102336).
@@ -1521,6 +1532,47 @@ def _render(client_filter: str | None = None) -> str:
                 _cc.close()
         except Exception:  # noqa: BLE001
             pass
+
+    # Section compacte "réponses illisibles" (texte non transmis par ManyReach).
+    def _unreadable_row(a: dict) -> str:
+        frm = html.escape(str(a.get("prospect_email") or a.get("from") or ""))
+        when = html.escape(_time_fr(a.get("at", "")))
+        _pe = urllib.parse.quote(str(a.get("prospect_email") or a.get("from") or ""))
+        _camp = a.get("campaign_id") or a.get("campaignId") or ""
+        _scope = f"&campaign={_camp}&type=campaign" if _camp else "&campaign=&type="
+        _org = os.environ.get("MANYREACH_ORG_ID", "7288")
+        _mru = (f"https://app.manyreach.com/e/inbox?sender=-1&status=&leadstatus=&"
+                f"autostatus=&list=-1&search=from:{_pe}{_scope}&activestatus=&"
+                f"pagesize=25&currentpage=1&o={_org}")
+        _cid = html.escape(f"{a.get('at', '')}|{(a.get('from') or '').lower()}")
+        return (
+            '<div class="sent-row">'
+            f'<span class="sent-when">{when}</span>'
+            f'<span class="sent-email">{frm}</span>'
+            f'<a class="sent-mr" style="background:#8c8678;color:#fff;border-radius:6px;'
+            f'padding:4px 12px;font-size:12px;font-weight:600;text-decoration:none" '
+            f'href="{_mru}" target="_blank" rel="noopener">↗ Lire dans ManyReach</a>'
+            f'<form method="POST" action="/{keyparam}" style="display:inline" '
+            f'onsubmit="this.querySelector(\'button\').disabled=true;return true;">'
+            f'<input type="hidden" name="action" value="dismiss_alert">'
+            f'<input type="hidden" name="alert_id" value="{_cid}">'
+            f'<button type="submit" class="alert-dismiss" title="Retirer">✕</button>'
+            '</form></div>'
+        )
+
+    unreadable_html = "".join(_unreadable_row(a) for a in unreadable_alerts[:40])
+    unreadable_card = ""
+    if unreadable_alerts:
+        unreadable_card = (
+            '<div class="card">'
+            '<h2>📭 Réponses à lire dans ManyReach '
+            f'<span class="badge">{len(unreadable_alerts)}</span></h2>'
+            '<div class="alert-explain">ManyReach ne transmet PAS le texte de ces '
+            'réponses via son API (bug côté ManyReach → corps vide). Le bot ne peut '
+            'donc pas les lire ni les trier. Clique <b>↗ Lire dans ManyReach</b> '
+            'pour voir le message et répondre · <b>✕</b> une fois traité.</div>'
+            + unreadable_html + '</div>'
+        )
 
     # Sections HTML
     alerts_html = "".join(_alert_row(a) for a in alerts[:25])
@@ -2034,6 +2086,8 @@ def _render(client_filter: str | None = None) -> str:
     </div>
     {alerts_html}
   </div>
+
+  {unreadable_card}
 
   {"<div class='card errors'><h2>❌ Erreurs récentes <span class='badge'>" + str(len(error_list)) + "</span></h2>" + errors_html + "</div>" if error_list else ""}
 
