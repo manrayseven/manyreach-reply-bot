@@ -697,6 +697,19 @@ def main() -> int:
                             reply = _dc_replace(reply, body=_full)
                             _clean_check = _trim_quoted_history(_strip_html(reply.body)).strip()
                             print("  >> Corps vide en preview → récupéré via fullBodies")
+                            # Re-check bounce/auto sur le corps RÉCUPÉRÉ : si la
+                            # preview était vide, le pré-filtre bounce n'avait rien
+                            # vu → un auto-reply (OOO) aurait fini en alerte. On le
+                            # silence maintenant (cas joliebibi "Auto Reply" OOO).
+                            if is_bounce_or_auto(reply):
+                                print("  >> Auto-reply/OOO détecté après récupération — silencieux")
+                                log_entry["intent"] = "bounce_or_auto"
+                                log_entry["actions"] = ["skip (auto-reply après fullBodies)"]
+                                logf.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
+                                if not dry_run:
+                                    _mark_done(reply.message_id)
+                                processed_count += 1
+                                continue
                     except Exception as _e:  # noqa: BLE001
                         print(f"  !! fetch_full_body: {_e}")
 

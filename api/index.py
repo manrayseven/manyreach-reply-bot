@@ -794,6 +794,11 @@ def _render(client_filter: str | None = None) -> str:
                     "fermé du ", "ferme du ", "fermée du ", "fermee du ",
                     "nous répondrons", "nous repondrons",
                     "répondrons à vos demandes", "repondrons a vos demandes",
+                    # OOO "vacances d'équipe" (cas joliebibi) :
+                    "à notre retour", "a notre retour", "à mon retour", "a mon retour",
+                    "dès notre retour", "répondrons à vos mails", "repondrons a vos mails",
+                    "répondrons à vos messages", "sera absent", "serons absent",
+                    "traiterons vos", "sera absente du", "absente du",
                 ))
             )
             # Reply SANS contenu lisible (corps vide / "[No Body Detail]") : non

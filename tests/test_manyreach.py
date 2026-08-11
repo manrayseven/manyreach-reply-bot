@@ -45,6 +45,17 @@ def test_maternity_subject_empty_body_is_bounce():
     assert is_bounce_or_auto(_msg(body="", subject="Congé maternite")) is True
 
 
+def test_team_vacation_ooo_is_bounce():
+    # Auto-reply "vacances d'équipe" (cas joliebibi) : ne doit PAS finir en alerte.
+    body = ("Le team Jolie Bibi & son Mini sera absente du 24 juillet au 24 août "
+            "inclus. Nous traiterons vos jolies commandes et répondrons à vos mails "
+            "à notre retour. Passez un très bel été :)")
+    assert is_bounce_or_auto(_msg(body=body)) is True
+    # Négatif : un vrai lead intéressé ne matche pas.
+    assert is_bounce_or_auto(_msg(
+        body="Bonjour, ça m'intéresse, pouvez-vous me rappeler ? Merci")) is False
+
+
 def test_parental_and_maternity_variants():
     assert is_bounce_or_auto(_msg(subject="Maternity leave - back in Sept")) is True
     assert is_bounce_or_auto(_msg(subject="Absence congé parental")) is True
