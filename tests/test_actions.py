@@ -29,16 +29,19 @@ def test_categories_are_disjoint():
 
 
 def test_key_intents_route_as_expected():
-    # SEUL le refus plat part en réponse AUTO.
+    # Réponse AUTO : refus plat + objection PRIX (pitch GrowPulser pas cher +
+    # essai gratuit, feedback Rudy 11/08).
     assert "not_interested_polite" in AUTOSEND_ELIGIBLE
-    # Leads / RDV / demandes d'info + TOUTES les objections travaillables (prix,
-    # déjà équipé, argumentée, timing) → alerte (Rudy convainc).
+    assert "objection_price" in AUTOSEND_ELIGIBLE
+    # Leads / RDV / demandes d'info + objections À TRAVAILLER (déjà équipé,
+    # argumentée, timing) → alerte (Rudy convainc lui-même).
     for i in ("interested_warm", "meeting_confirmed", "ask_more_info",
-              "objection_timing", "objection_price",
+              "objection_timing",
               "objection_already_have_solution", "objection_reasoned"):
         assert i in ALERT_ONLY, i
-    # Les objections travaillables ne doivent PAS être en auto-envoi.
-    for i in ("objection_price", "objection_already_have_solution", "objection_reasoned"):
+    # objection_price N'est PLUS en alerte (retour en auto).
+    assert "objection_price" not in ALERT_ONLY
+    for i in ("objection_already_have_solution", "objection_reasoned"):
         assert i not in AUTOSEND_ELIGIBLE, i
     # Silencieux.
     for i in ("unsubscribe", "hostile", "bounce_or_auto"):

@@ -157,7 +157,7 @@ def _perf_30d(actions: list, now=None) -> dict:
 
 ALERT_INTENTS = {
     "interested_warm", "interested_lukewarm", "ask_more_info",
-    "meeting_confirmed", "objection_timing", "objection_price",
+    "meeting_confirmed", "objection_timing",
     "objection_already_have_solution", "objection_reasoned",
 }
 
@@ -689,7 +689,7 @@ def _render(client_filter: str | None = None) -> str:
     # ici : ce sont désormais des ALERTES (leads à convaincre, Rudy reprend la
     # main), pas des résolutions auto → ne doivent pas se masquer tout seuls.
     _RESOLVED_INTENTS = {
-        "not_interested_polite",
+        "not_interested_polite", "objection_price",
         "unsubscribe", "hostile", "bounce_or_auto", "wrong_person_redirect", "ack_only",
     }
     _resolved_at: dict[str, str] = {}

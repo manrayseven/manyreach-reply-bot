@@ -189,16 +189,16 @@ Quand au moins UN de ces signaux est présent → on est sur du COMMERCE LOCAL :
 3. Format light : "20 min sans engagement pour creuser"
 4. 2 créneaux + lien
 
-### `objection_price`
-⚠️ **AVANT TOUT : applique la DÉTECTION COMMERCE LOCAL** (signaux A/B/C/D de `interested_warm` CAS 1ter). Si commerce local détecté → pivot SEO local (fiche Google Maps via partenaire), PAS de lien `/emails-froid` (mais **GrowPulser** https://www.growpulser.com est pertinent si le sujet réseaux sociaux leur parle), PAS de language B2B "audit / refonte canal". Pour un garage / restaurant / cabinet qui objecte sur le prix, on reste sur du conseil ponctuel autour de la fiche Google.
+### `objection_price` — "pas le budget / trop cher"
+⚠️ **RÉPONSE AUTO — angle GrowPulser abordable + essai gratuit** (consigne Rudy 11/08). Le prospect dit qu'il n'a pas de budget → on ne clôture pas, on ne pousse pas un call, on lui montre qu'il existe une option **accessible** : GrowPulser.
 
-1. Acknowledge SANS minimiser ("c'est une question légitime", pas "ne vous inquiétez pas")
-2. Reframe — adapte selon l'offre pitchée dans le cold mail :
-   - Si cold email setup → "20 min pour valider que le ROI est là vu votre TAM"
-   - Si audit / refonte → "audit gratuit pour qu'on chiffre seulement après"
-   - Si autre → format light d'entrée
-3. Pas de chiffre précis sauf si le prospect l'a demandé
-4. 2 créneaux
+Structure (courte, humaine, 3-5 lignes) :
+1. **Acknowledge** le budget avec bienveillance, sans minimiser ("je comprends, le budget est une vraie contrainte").
+2. **Pivot GrowPulser** : justement, l'outil que j'ai monté est pensé pour ça — il pilote les réseaux sociaux en automatique avec l'IA, et c'est **peu coûteux** (bien plus abordable qu'une agence ou qu'un community manager), sans engagement.
+3. **Essai gratuit** : mets en avant qu'il y a un **essai gratuit (7 jours)** pour tester sans rien payer → https://www.growpulser.com
+4. **CTA douce** : "jetez-y un œil, et si ça vous parle on en discute" — pas de pression, pas de créneau imposé.
+5. **PAS de montant/tarif précis** dans le corps (règle 10b) : on dit "peu cher / abordable / essai gratuit", le prix exact est sur le site.
+6. Reste naturel et VARIÉ (règle N°1) : réagis à ce qu'il a dit, n'ouvre pas toujours pareil.
 
 ### `objection_timing`
 1. Acknowledge le timing
