@@ -217,6 +217,44 @@ def test_challenge_url_extraction():
     assert extract_challenge_url(_msg(body="Un clic pour délivrer votre email !")) is None
 
 
+def test_revalidate_challenge_purges_false_positive():
+    # Re-contrôle d'un challenge STOCKÉ : on refetch le vrai corps et on relance
+    # la détection. Cas autocars-groussin : vrai refus poli dont la signature
+    # contenait des liens 'mailinblack.com/securelink' → loggé à tort en
+    # MailInBlack. revalidate doit renvoyer ('', None) = purge.
+    from src.manyreach import ManyReachClient
+
+    mr = ManyReachClient.__new__(ManyReachClient)  # pas d'I/O réseau au __init__
+    real_reply_body = (
+        "<html xmlns:m=\"http://schemas.microsoft.com/office/2004/12/omml\">"
+        "<body><p>Bonjour, merci pour votre proposition, mais nous ne sommes pas "
+        "intéressés.</p><p>Cordialement</p>"
+        "<a href=\"https://mibc-fr-11.mailinblack.com/securelink/?url="
+        "https://www.webmarketing-conseil.fr&key=abc\">site</a></body></html>"
+    )
+    mr._request = lambda method, path, params=None, **kw: {"items": [{
+        "messageId": "m1", "createdAt": "2026-08-05T12:40:21+00:00", "type": "Reply",
+        "campaignId": 1, "followupId": 1, "fromEmail": "contact@autocars-groussin.com",
+        "toEmail": "rudy@k-webmarketing.fr", "subject": "RE: Fiche Google",
+        "body": real_reply_body,
+    }]}
+    assert mr.revalidate_challenge("contact@autocars-groussin.com", "RE: Fiche Google") == ("", None)
+
+    # Vrai challenge MailInBlack (par corps) → reste un challenge.
+    mr._request = lambda method, path, params=None, **kw: {"items": [{
+        "messageId": "m2", "createdAt": "2026-08-05T12:40:21+00:00", "type": "Reply",
+        "campaignId": 1, "followupId": 1, "fromEmail": "gw@mib.ipgarde.com",
+        "toEmail": "rudy@x.fr", "subject": "Un clic pour délivrer votre email",
+        "body": "Un clic pour délivrer votre email !",
+    }]}
+    filt, _url = mr.revalidate_challenge("gw@mib.ipgarde.com", "Un clic pour délivrer votre email")
+    assert filt == "MailInBlack"
+
+    # Message introuvable (aléa API) → (None, None) = ne rien purger.
+    mr._request = lambda method, path, params=None, **kw: {"items": []}
+    assert mr.revalidate_challenge("x@y.fr", "sujet") == (None, None)
+
+
 def test_challenge_is_not_bounce_shadowed():
     # Un challenge doit être détecté AVANT le filtre bounce (l'ordre est géré
     # dans run_bot) mais ne doit pas non plus être avalé par is_bounce_or_auto

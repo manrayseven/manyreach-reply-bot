@@ -468,6 +468,45 @@ class ManyReachClient:
             return None
         return None
 
+    def revalidate_challenge(self, from_email: str, subject: str):
+        """Re-contrôle un challenge stocké EN REFETCHANT le corps complet.
+
+        Utile pour purger de l'affichage les FAUX POSITIFS logués avant un
+        correctif de détection (cas autocars-groussin : vrai refus poli dont la
+        signature contenait des liens 'mailinblack.com/securelink' → loggé à tort
+        comme MailInBlack). On relit le vrai corps et on relance la détection
+        actuelle. Renvoie (filter_name_or_None, validation_url_or_None) :
+          - filter None  → ce n'est PLUS un challenge → à écarter/dismisser.
+          - filter        → toujours un challenge, avec l'URL si récupérable.
+        Renvoie (None, None) uniquement si le message est introuvable/erreur (on
+        ne purge alors PAS, pour ne pas masquer un vrai challenge sur un aléa API).
+        """
+        try:
+            params = {
+                "type": "Reply", "emailFrom": from_email,
+                "subject": (subject or "")[:120], "fullBodies": "true", "limit": 5,
+            }
+            data = self._request("GET", "/messages", params=params)
+            items = (data or {}).get("items", []) or []
+            if not items:
+                return (None, None)  # introuvable → on ne conclut rien
+            # Le message le plus pertinent = celui qui matche le sujet exact, sinon
+            # le 1er (le plus récent).
+            msg = None
+            for it in items:
+                m = Message.from_api(it)
+                if (m.subject or "").strip().lower() == (subject or "").strip().lower():
+                    msg = m
+                    break
+            if msg is None:
+                msg = Message.from_api(items[0])
+            filt = detect_antispam_challenge(msg)
+            if not filt:
+                return ("", None)  # trouvé MAIS plus un challenge → purge
+            return (filt, extract_challenge_url(msg))
+        except Exception:  # noqa: BLE001
+            return (None, None)
+
 
 # ----- Bounce / auto-reply detection -----
 

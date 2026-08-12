@@ -1611,11 +1611,16 @@ def _render(client_filter: str | None = None) -> str:
         if str(a.get("validation_url") or "").strip():
             continue
         _fr, _su = str(a.get("from") or ""), str(a.get("subject") or "")
-        _hk = "mrchallenge:v3:" + _hl.md5((_fr + "|" + _su).encode()).hexdigest()[:16]
+        # v4 : la résolution RE-CONTRÔLE aussi la détection (purge des faux
+        # positifs type autocars-groussin, vrai refus loggé à tort en challenge).
+        _hk = "mrchallenge:v4:" + _hl.md5((_fr + "|" + _su).encode()).hexdigest()[:16]
         _cu = kvstore.cache_get(_hk)
-        if _cu is not None:  # cache HIT (URL ou "-" = pas de lien) → pas de refetch
-            if _cu and _cu != "-":
-                a["validation_url"] = _cu
+        if _cu is not None:  # cache HIT
+            if _cu == "DEAD":
+                a["_dead"] = True            # re-contrôlé : plus un challenge → écarté
+            elif _cu and _cu != "-":
+                a["validation_url"] = _cu    # lien de validation récupéré
+            # "-" = vrai challenge mais lien non récupérable → on garde, sans lien.
             continue
         _chal_todo.append((a, _fr, _su, _hk))
     _chal_todo = _chal_todo[:6]  # plafond dur par render
@@ -1628,13 +1633,27 @@ def _render(client_filter: str | None = None) -> str:
             def _resolve(item):
                 a, fr, su, hk = item
                 try:
-                    u = _mc.fetch_challenge_url(fr, su)
+                    filt, u = _mc.revalidate_challenge(fr, su)
                 except Exception:  # noqa: BLE001
-                    u = None
-                # Cache positif 6h, NÉGATIF 6h ("-") → plus de refetch inutile.
-                kvstore.cache_set(hk, u or "-", 6 * 3600)
-                if u:
-                    a["validation_url"] = u
+                    filt, u = None, None
+                if filt == "":
+                    # Trouvé MAIS plus un challenge (faux positif) → purge + dismiss
+                    # définitif pour qu'il ne réapparaisse plus.
+                    a["_dead"] = True
+                    kvstore.cache_set(hk, "DEAD", 24 * 3600)
+                    try:
+                        kvstore.dismiss_alert(
+                            f"{a.get('at', '')}|{(a.get('from') or '').lower()}"
+                        )
+                    except Exception:  # noqa: BLE001
+                        pass
+                elif filt:
+                    # Toujours un vrai challenge : cache le lien (ou "-" si absent).
+                    kvstore.cache_set(hk, u or "-", 6 * 3600)
+                    if u:
+                        a["validation_url"] = u
+                # filt None → indéterminé (aléa API/introuvable) : on ne cache rien,
+                # on retentera au prochain render (jamais de purge sur un doute).
 
             try:
                 with ThreadPoolExecutor(max_workers=6) as _ex:
@@ -1643,6 +1662,10 @@ def _render(client_filter: str | None = None) -> str:
                 _mc.close()
         except Exception:  # noqa: BLE001
             pass
+
+    # Écarte les faux positifs re-contrôlés (vrais refus/bounces mal logués en
+    # challenge avant les correctifs de détection) — ils sont aussi dismissés en KV.
+    _chal_dedup = [a for a in _chal_dedup if not a.get("_dead")]
 
     def _challenge_row(a: dict) -> str:
         when = _time_fr(a.get("at", ""))
