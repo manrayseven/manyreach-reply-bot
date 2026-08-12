@@ -62,6 +62,23 @@ def test_meeting_confirmed_never_auto_books():
     assert status == "Interested" and active is True
 
 
+def test_pas_besoin_is_a_clear_no_marker():
+    # Feedback Rudy 12/08 : "nous n'avons pas besoin de vos service" et "Je n'ai
+    # pas besoin. Merci." remontaient en ALERTE au lieu d'une réponse auto, parce
+    # que le garde-fou anti-devinette de run_bot ne reconnaissait que "pas DE
+    # besoin" (avec 'de'), pas "pas besoin" tout court. Ces refus plats "pas
+    # besoin" DOIVENT matcher un marqueur de refus clair → réponse auto.
+    from scripts.run_bot import _CLEAR_NO_MARKERS  # noqa: E402
+
+    for body in (
+        "Bonjour, nous n'avons pas besoin de vos service merci",
+        "Bonjour, Je n'ai pas besoin. Merci beaucoup.",
+        "pas besoin merci",
+    ):
+        low = body.lower()
+        assert any(m in low for m in _CLEAR_NO_MARKERS), body
+
+
 def test_every_valid_intent_has_a_mapping():
     # Tout intent que le classifier peut produire doit avoir une action mappée
     # (sinon plan_actions le renvoie en needs_review).

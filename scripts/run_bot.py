@@ -62,7 +62,8 @@ from src.manyreach import (  # noqa: E402
 _CLEAR_NO_MARKERS = (
     "non merci", "non,", "non.", "pas intéress", "pas interess",
     "ne suis pas intéress", "ne sommes pas intéress", "ça ne m'intéresse pas",
-    "ne m'intéresse pas", "pas de besoin", "aucun besoin", "rien besoin",
+    "ne m'intéresse pas", "pas besoin", "pas de besoin", "aucun besoin",
+    "rien besoin", "n'ai pas besoin", "n'avons pas besoin",
     "pas concerné", "pas concerne", "pas pour nous", "pas un sujet",
     "ne souhaite pas", "ne souhaitons pas", "sans suite", "ne donnerai pas suite",
     "ne donnerons pas suite", "bonne continuation", "merci mais non",
@@ -834,7 +835,8 @@ def main() -> int:
                 # sur un simple "?" (une question rhétorique dans un refus reste refus).
                 _refusal_markers = (
                     "pas intéress", "pas interess", "non merci", "aucun besoin",
-                    "pas de besoin", "rien besoin", "déjà équipé", "deja equipe",
+                    "pas besoin", "pas de besoin", "rien besoin", "n'ai pas besoin",
+                    "n'avons pas besoin", "déjà équipé", "deja equipe",
                     "pas concerné", "pas concerne", "ne souhaite pas", "pas un sujet",
                 )
                 # ⚠️ NE garder QUE les vraies demandes de recontact EXPLICITES.
