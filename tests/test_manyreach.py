@@ -56,6 +56,29 @@ def test_team_vacation_ooo_is_bounce():
         body="Bonjour, ça m'intéresse, pouvez-vous me rappeler ? Merci")) is False
 
 
+def test_repos_return_ooo_is_bounce():
+    # Auto-reply "repos / on revient le X" (cas mollo.traiteur) : remontait en
+    # alerte objection_timing ("nous revenons le lundi 24 aout" lu comme "plus
+    # tard"). Doit être silencieux.
+    body = ("Bonjour, Notre équipe prend quelques jours de repos, nous revenons "
+            "le lundi 24 aout ! A très bientôt Mollo.")
+    assert is_bounce_or_auto(_msg(body=body)) is True
+    # Négatif : un vrai "recontactez-nous à la rentrée" reste un objection_timing
+    # (ne doit PAS être avalé par le pré-filtre).
+    assert is_bounce_or_auto(_msg(
+        body="Pas le moment, recontactez-nous à la rentrée svp.")) is False
+
+
+def test_email_address_change_is_bounce():
+    # Auto-reply de changement d'adresse (cas harenovationconstruction) :
+    # remontait en "Demande d'infos". Redirection d'adresse → silencieux.
+    body = ("Bonjour, Merci pour votre message. Veuillez noter que notre adresse "
+            "e-mail a changé. Nouvelle adresse : gestion@harenovation.fr. Merci "
+            "de mettre à jour vos contacts et d'utiliser uniquement cette nouvelle "
+            "adresse pour toute correspondance à venir.")
+    assert is_bounce_or_auto(_msg(body=body)) is True
+
+
 def test_parental_and_maternity_variants():
     assert is_bounce_or_auto(_msg(subject="Maternity leave - back in Sept")) is True
     assert is_bounce_or_auto(_msg(subject="Absence congé parental")) is True

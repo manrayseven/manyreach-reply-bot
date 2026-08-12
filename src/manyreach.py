@@ -555,6 +555,20 @@ BOUNCE_BODY_PATTERNS = (
     "actuellement absent",
     "je suis absent",
     "actuellement en vacances",
+    # OOO "repos / on revient le X" (cas mollo.traiteur : "Notre équipe prend
+    # quelques jours de repos, nous revenons le lundi 24 aout !"). Signatures
+    # d'autoreply d'équipe — absentes d'un vrai reply intéressé. On garde des
+    # marqueurs SPÉCIFIQUES ("nous revenons le", "de repos") pour ne pas avaler
+    # un vrai "je reviens vers vous" / "recontactez-nous à la rentrée".
+    "quelques jours de repos",
+    "jours de repos",
+    "jour de repos",
+    "en repos jusqu",
+    "nous revenons le",
+    "nous serons de retour",
+    "serons de retour le",
+    "reviendrons le",
+    "de retour parmi vous le",
     # Autoreply de fermeture temporaire + marqueur "pour toute(s) urgence(s)" (les
     # OOO renvoient vers un contact d'urgence — signal fort d'autoreply). On reste
     # sur "sera fermé" (annonce de fermeture à venir = autoreply) et PAS "sommes
@@ -622,6 +636,22 @@ BOUNCE_BODY_PATTERNS = (
     "veuillez noter le changement",
     "ma nouvelle adresse",
     "ma boite mail change",
+    # Changement d'adresse e-mail (cas harenovationconstruction : "notre adresse
+    # e-mail a changé... utiliser uniquement cette nouvelle adresse... mettre à
+    # jour vos contacts"). Autoreply de redirection → silencieux (wrong_person).
+    "adresse e-mail a changé",
+    "adresse email a changé",
+    "adresse mail a changé",
+    "adresse e-mail a change",
+    "notre adresse a changé",
+    "e-mail a changé",
+    "utiliser uniquement cette nouvelle adresse",
+    "d'utiliser uniquement cette nouvelle",
+    "mettre à jour vos contacts",
+    "mettre a jour vos contacts",
+    "nous avons changé d'adresse",
+    "changé d'adresse mail",
+    "changé d'adresse e-mail",
     # EN
     "i am out of the office",
     "i am out of office",
