@@ -62,7 +62,8 @@ from src.manyreach import (  # noqa: E402
 _CLEAR_NO_MARKERS = (
     "non merci", "non,", "non.", "pas intéress", "pas interess",
     "ne suis pas intéress", "ne sommes pas intéress", "ça ne m'intéresse pas",
-    "ne m'intéresse pas", "pas besoin", "pas de besoin", "aucun besoin",
+    "ne m'intéresse pas", "intéresse pas", "interesse pas", "intéresse plus",
+    "pas besoin", "pas de besoin", "aucun besoin",
     "rien besoin", "n'ai pas besoin", "n'avons pas besoin",
     "pas concerné", "pas concerne", "pas pour nous", "pas un sujet",
     "ne souhaite pas", "ne souhaitons pas", "sans suite", "ne donnerai pas suite",
@@ -834,7 +835,8 @@ def main() -> int:
                 # Marqueurs de REFUS net : si présents, on NE force PAS ask_more_info
                 # sur un simple "?" (une question rhétorique dans un refus reste refus).
                 _refusal_markers = (
-                    "pas intéress", "pas interess", "non merci", "aucun besoin",
+                    "pas intéress", "pas interess", "intéresse pas", "interesse pas",
+                    "non merci", "aucun besoin",
                     "pas besoin", "pas de besoin", "rien besoin", "n'ai pas besoin",
                     "n'avons pas besoin", "déjà équipé", "deja equipe",
                     "pas concerné", "pas concerne", "ne souhaite pas", "pas un sujet",
@@ -899,7 +901,21 @@ def main() -> int:
                 # réponse auto au pif (cas Visoanska : msg "vide" → réponse bidon).
                 if classification.intent == "not_interested_polite":
                     _cl = _clean_body.lower()
-                    _clear_no = len(_clean_body) >= 4 and any(m in _cl for m in _CLEAR_NO_MARKERS)
+                    _has_marker = any(m in _cl for m in _CLEAR_NO_MARKERS)
+                    # ROBUSTESSE (feedback Rudy 13/08 : "Cela nous interesse pas").
+                    # Les refus se formulent de 1000 façons (ordre des mots, sans
+                    # "ne", fautes/accents) : plutôt que de courir après chaque
+                    # variante dans la whitelist, si le classifier est CONFIANT sur
+                    # un message COURT contenant une négation nette (pas/non/aucun…),
+                    # on fait confiance = réponse auto. Les signaux d'opportunité
+                    # (question, RDV, demande d'info) ont déjà été captés plus haut
+                    # → s'il y en avait, l'intent ne serait plus not_interested_polite.
+                    _short_confident_no = (
+                        classification.confidence >= 0.85
+                        and len(_clean_body) < 250
+                        and re.search(r"\b(pas|non|aucun|rien|jamais)\b", _cl) is not None
+                    )
+                    _clear_no = len(_clean_body) >= 4 and (_has_marker or _short_confident_no)
                     if not _clear_no:
                         print("  ⚠️ not_interested SANS refus clair (msg ambigu/vide) → ALERTE (pas de réponse auto au pif)")
                         classification = _dc_replace(

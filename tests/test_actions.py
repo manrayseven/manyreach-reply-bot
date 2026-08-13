@@ -74,6 +74,10 @@ def test_pas_besoin_is_a_clear_no_marker():
         "Bonjour, nous n'avons pas besoin de vos service merci",
         "Bonjour, Je n'ai pas besoin. Merci beaucoup.",
         "pas besoin merci",
+        # Feedback Rudy 13/08 : "Cela nous interesse pas" (verbe puis "pas", sans
+        # "ne", sans accent) — l'ordre inversé n'était pas dans la whitelist.
+        "Cela nous interesse pas, merci beaucoup!",
+        "ça ne m'intéresse pas du tout",
     ):
         low = body.lower()
         assert any(m in low for m in _CLEAR_NO_MARKERS), body
