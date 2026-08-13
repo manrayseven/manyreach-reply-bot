@@ -1141,6 +1141,12 @@ def _render(client_filter: str | None = None) -> str:
         intent = a.get("intent", "")
         intent_label, intent_color = _INTENT_FR.get(intent, (intent, "#8a8579"))
         when = _time_fr(a.get("at", ""))
+        # RÉPONSE ILLISIBLE (texte non transmis par l'API ManyReach) : on la garde
+        # DANS les alertes (jamais la planquer → sinon on rate des leads chauds),
+        # mais on la marque clairement pour que Rudy sache qu'il faut l'ouvrir dans
+        # ManyReach pour lire le vrai message.
+        if "illisible via l'api" in str(a.get("reply") or "").lower():
+            intent_label, intent_color = "📭 À lire dans ManyReach", "#0d9488"
         frm = html.escape(str(a.get("from", "")))
         # Message COMPLET (plus de troncature à 300) — nécessaire pour répondre,
         # surtout aux orphelins traités depuis le dashboard.
@@ -1485,14 +1491,12 @@ def _render(client_filter: str | None = None) -> str:
 
     # RÉPONSES ILLISIBLES : ManyReach ne renvoie pas le texte de certains replies
     # (bug côté ManyReach, replies formatés Gmail → body vide via l'API, même en
-    # fullBodies). Le bot ne peut pas les lire → il les alerte (jamais deviner),
-    # mais elles encombrent les vraies alertes. On les SÉPARE dans une section
-    # compacte "à lire dans ManyReach". Détection via le texte placeholder.
+    # fullBodies). Le bot ne peut pas les lire → il les alerte (jamais deviner).
+    # ⚠️ Elles RESTENT dans "Alertes à traiter" (feedback Rudy 13/08 : une carte
+    # séparée "à lire" faisait RATER des leads chauds — ex. lp@saeclaire.fr
+    # "Pourquoi pas, demain 11h" = un RDV, illisible via l'API, planqué à part).
+    # _alert_row les marque "📭 À lire dans ManyReach" + fournit le lien ManyReach.
     _UNREADABLE = "message reçu mais illisible via l'api"
-    unreadable_alerts = [a for a in alerts
-                         if _UNREADABLE in str(a.get("reply") or "").lower()]
-    alerts = [a for a in alerts
-              if _UNREADABLE not in str(a.get("reply") or "").lower()]
 
     # NOMS DE CAMPAGNE pour l'email de transfert (ID → nom lisible). Résolus via
     # ManyReach get_campaign, mis en cache KV 7 j (les noms bougent peu). Rudy veut
@@ -1532,47 +1536,6 @@ def _render(client_filter: str | None = None) -> str:
                 _cc.close()
         except Exception:  # noqa: BLE001
             pass
-
-    # Section compacte "réponses illisibles" (texte non transmis par ManyReach).
-    def _unreadable_row(a: dict) -> str:
-        frm = html.escape(str(a.get("prospect_email") or a.get("from") or ""))
-        when = html.escape(_time_fr(a.get("at", "")))
-        _pe = urllib.parse.quote(str(a.get("prospect_email") or a.get("from") or ""))
-        _camp = a.get("campaign_id") or a.get("campaignId") or ""
-        _scope = f"&campaign={_camp}&type=campaign" if _camp else "&campaign=&type="
-        _org = os.environ.get("MANYREACH_ORG_ID", "7288")
-        _mru = (f"https://app.manyreach.com/e/inbox?sender=-1&status=&leadstatus=&"
-                f"autostatus=&list=-1&search=from:{_pe}{_scope}&activestatus=&"
-                f"pagesize=25&currentpage=1&o={_org}")
-        _cid = html.escape(f"{a.get('at', '')}|{(a.get('from') or '').lower()}")
-        return (
-            '<div class="sent-row">'
-            f'<span class="sent-when">{when}</span>'
-            f'<span class="sent-email">{frm}</span>'
-            f'<a class="sent-mr" style="background:#8c8678;color:#fff;border-radius:6px;'
-            f'padding:4px 12px;font-size:12px;font-weight:600;text-decoration:none" '
-            f'href="{_mru}" target="_blank" rel="noopener">↗ Lire dans ManyReach</a>'
-            f'<form method="POST" action="/{keyparam}" style="display:inline" '
-            f'onsubmit="this.querySelector(\'button\').disabled=true;return true;">'
-            f'<input type="hidden" name="action" value="dismiss_alert">'
-            f'<input type="hidden" name="alert_id" value="{_cid}">'
-            f'<button type="submit" class="alert-dismiss" title="Retirer">✕</button>'
-            '</form></div>'
-        )
-
-    unreadable_html = "".join(_unreadable_row(a) for a in unreadable_alerts[:40])
-    unreadable_card = ""
-    if unreadable_alerts:
-        unreadable_card = (
-            '<div class="card">'
-            '<h2>📭 Réponses à lire dans ManyReach '
-            f'<span class="badge">{len(unreadable_alerts)}</span></h2>'
-            '<div class="alert-explain">ManyReach ne transmet PAS le texte de ces '
-            'réponses via son API (bug côté ManyReach → corps vide). Le bot ne peut '
-            'donc pas les lire ni les trier. Clique <b>↗ Lire dans ManyReach</b> '
-            'pour voir le message et répondre · <b>✕</b> une fois traité.</div>'
-            + unreadable_html + '</div>'
-        )
 
     # Sections HTML
     alerts_html = "".join(_alert_row(a) for a in alerts[:25])
@@ -2127,16 +2090,15 @@ def _render(client_filter: str | None = None) -> str:
     {alerts_html}
   </div>
 
-  {unreadable_card}
-
-  {"<div class='card errors'><h2>❌ Erreurs récentes <span class='badge'>" + str(len(error_list)) + "</span></h2>" + errors_html + "</div>" if error_list else ""}
-
   <div class="card">
     <h2>✈ Envois automatiques récents <span class="badge">{len(sent_list)}</span></h2>
+    <div class="alert-explain">Réponses <b>clairement négatives / pas intéressées</b> que le bot a traitées tout seul (réponse polie envoyée). Rien à faire — c'est ici pour ta visibilité.</div>
     {sent_html}
   </div>
 
   {challenges_card}
+
+  {"<details style='margin-top:4px'><summary>Erreurs récentes<span class='hint'>" + str(len(error_list)) + " à vérifier</span></summary><div class='card errors'>" + errors_html + "</div></details>" if error_list else ""}
 
   <div style="text-align:right;font-size:11px;color:#94a3b8;margin-bottom:8px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">
     Version : {html.escape((os.environ.get("VERCEL_GIT_COMMIT_SHA","local") or "local")[:7])}
