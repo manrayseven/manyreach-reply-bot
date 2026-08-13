@@ -1669,8 +1669,10 @@ def _render(client_filter: str | None = None) -> str:
 
     def _challenge_row(a: dict) -> str:
         when = _time_fr(a.get("at", ""))
-        frm = html.escape(str(a.get("from", "")))
-        dest = html.escape(str(a.get("destination_mailbox") or a.get("mailinblack_destination") or ""))
+        _frm_raw = str(a.get("from", ""))
+        _dest_raw = str(a.get("destination_mailbox") or a.get("mailinblack_destination") or "")
+        frm = html.escape(_frm_raw)
+        dest = html.escape(_dest_raw)
         filt = html.escape(str(a.get("challenge_filter") or "MailInBlack"))
         vurl = str(a.get("validation_url") or "").strip()
         chal_id = html.escape(f"{a.get('at', '')}|{(a.get('from') or '').lower()}")
@@ -1683,11 +1685,25 @@ def _render(client_filter: str | None = None) -> str:
                 f'🔓 Valider</a>'
             )
         else:
+            # ManyReach SUPPRIME le lien de validation à la réception (prouvé : même
+            # en fullBodies le lien est absent du corps). Impossible de le rendre
+            # cliquable. Meilleure aide possible : ouvrir DIRECTEMENT la boîte de
+            # destination en cherchant l'email du portail → Rudy clique le vrai lien
+            # DANS cet email. Deep-link Gmail (marche si la boîte est sur Gmail/
+            # Google Workspace, ce qui est le cas de la majorité de l'infra d'envoi).
+            _q = urllib.parse.quote(f"from:{_frm_raw}")
+            _gmail = (
+                f"https://mail.google.com/mail/u/?authuser="
+                f"{urllib.parse.quote(_dest_raw)}#search/{_q}"
+            )
             action_html = (
-                f'<span style="font-size:11.5px;color:#8c8678" '
-                f'title="Le filtre n\'a pas laissé le lien dans le texte du message — '
-                f'ouvre la boîte d\'envoi et clique le lien du dernier email de ce portail">'
-                f'lien dans la boîte <b>{dest}</b></span>'
+                f'<a class="sent-mr" style="background:#6b7280;color:#fff;border-radius:6px;'
+                f'padding:4px 12px;font-size:12px;font-weight:600;text-decoration:none" '
+                f'href="{html.escape(_gmail)}" target="_blank" rel="noopener" '
+                f'title="ManyReach ne transmet pas le lien de validation (il le supprime). '
+                f'Ce bouton ouvre la boîte {dest} (si Gmail/Workspace) en cherchant '
+                f'l\'email de {frm} — clique ensuite le lien de validation DANS cet email.">'
+                f'📬 Ouvrir la boîte {dest}</a>'
             )
         return f"""<div class="sent-row">
           <span class="sent-when">{when}</span>
@@ -1710,7 +1726,7 @@ def _render(client_filter: str | None = None) -> str:
         f'onsubmit="var b=this.querySelector(\'button\');b.disabled=true;b.textContent=\'Import en cours…\';return true;">'
         f'<input type="hidden" name="action" value="backfill_challenges">'
         f'<label style="font-size:12px;color:#8c8678">Importer les challenges des '
-        f'<input type="number" name="days" value="14" min="1" max="30" style="width:52px;padding:3px 6px;border:1px solid #ddd;border-radius:6px"> derniers jours</label>'
+        f'<input type="number" name="days" value="14" min="1" max="60" style="width:52px;padding:3px 6px;border:1px solid #ddd;border-radius:6px"> derniers jours</label>'
         f'<button type="submit" class="btn-save" style="background:#a855f7">🛡 Importer</button>'
         f'</form>'
     )
@@ -1719,10 +1735,11 @@ def _render(client_filter: str | None = None) -> str:
   <div class="card">
     <h2>🛡 Challenges antispam à valider <span class="badge">{len(_chal_dedup)}</span></h2>
     <div class="alert-explain">
-      Ces filtres (MailInBlack…) <b>bloquent ton email tant que tu n'as pas cliqué leur lien de validation</b> (captcha).
+      Ces filtres (MailInBlack, humail…) <b>bloquent ton email tant que tu n'as pas cliqué leur lien de validation</b> (captcha).
       Un clic = email délivré + ton adresse whitelistée pour toujours chez ce prospect.<br>
-      <b>🔓 Valider</b> ouvre directement la page du filtre · quand le lien n'est pas récupérable,
-      ouvre la boîte d'envoi indiquée et clique le lien dans l'email du portail · <b>✕</b> une fois validé.
+      ⚠️ <b>ManyReach supprime le lien de validation</b> avant de nous transmettre le message (vérifié : le lien est absent même du corps complet).
+      On ne peut donc pas le rendre cliquable ici. <b>📬 Ouvrir la boîte</b> t'amène directement dans la boîte concernée,
+      sur l'email du filtre → clique le lien de validation <b>dans cet email</b>. (<b>🔓 Valider</b> n'apparaît que dans les rares cas où le lien passe.) · <b>✕</b> une fois validé.
     </div>
     <div style="margin:6px 0 12px">{_backfill_form}</div>
     {_chal_rows}
