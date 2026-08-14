@@ -1207,7 +1207,7 @@ def _render(client_filter: str | None = None) -> str:
             # Classique → lien inbox ManyReach (marche).
             _btns.append(
                 f'<a class="alert-mr" href="{mr_url}" target="_blank" rel="noopener" '
-                f'title="Ouvrir la conversation dans l\'inbox ManyReach (campagne {html.escape(str(mr_camp))})">↗ ManyReach</a>'
+                f'title="Ouvrir la conversation dans l\'inbox ManyReach (campagne {html.escape(str(mr_camp))})">↗ Conversation</a>'
             )
         elif msgid:
             # Orphelin → bouton qui OUVRE le champ de réponse in-app (envoi via API).
@@ -2085,7 +2085,7 @@ def _render(client_filter: str | None = None) -> str:
       <span class="legdot" style="background:#15803d"></span><b>Propose un RDV</b> ·
       <span class="legdot" style="background:#d97706"></span><b>« Plus tard »</b> ·
       <span class="legdot" style="background:#7c3aed"></span><b>Mauvaise personne</b><br>
-      Clique <b>↗ ManyReach</b> pour ouvrir la fiche du prospect et répondre · <b>✕</b> pour cacher une ligne une fois traitée.
+      Clique <b>↗ Conversation</b> pour ouvrir la fiche du prospect et répondre · <b>✕</b> pour cacher une ligne une fois traitée.
     </div>
     {alerts_html}
   </div>
