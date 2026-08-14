@@ -1146,7 +1146,7 @@ def _render(client_filter: str | None = None) -> str:
         # mais on la marque clairement pour que Rudy sache qu'il faut l'ouvrir dans
         # ManyReach pour lire le vrai message.
         if "illisible via l'api" in str(a.get("reply") or "").lower():
-            intent_label, intent_color = "📭 À lire dans ManyReach", "#0d9488"
+            intent_label, intent_color = "📭 À lire dans l'outil", "#0d9488"
         frm = html.escape(str(a.get("from", "")))
         # Message COMPLET (plus de troncature à 300) — nécessaire pour répondre,
         # surtout aux orphelins traités depuis le dashboard.
