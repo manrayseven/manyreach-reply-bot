@@ -1144,9 +1144,13 @@ def _render(client_filter: str | None = None) -> str:
         # RÉPONSE ILLISIBLE (texte non transmis par l'API ManyReach) : on la garde
         # DANS les alertes (jamais la planquer → sinon on rate des leads chauds),
         # mais on la marque clairement pour que Rudy sache qu'il faut l'ouvrir dans
-        # ManyReach pour lire le vrai message.
+        # l'outil pour lire le vrai message. On NORMALISE aussi le texte affiché à
+        # l'affichage (pas seulement pour les nouvelles alertes) → les anciennes
+        # entrées KV avec l'ancien libellé montrent quand même le bon texte.
         if "illisible via l'api" in str(a.get("reply") or "").lower():
             intent_label, intent_color = "📭 À lire dans l'outil", "#0d9488"
+            a = {**a, "reply": "(message reçu mais illisible via l'API - ouvre la "
+                               "conversation pour le lire et répondre)"}
         frm = html.escape(str(a.get("from", "")))
         # Message COMPLET (plus de troncature à 300) — nécessaire pour répondre,
         # surtout aux orphelins traités depuis le dashboard.
