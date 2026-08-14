@@ -1061,8 +1061,8 @@ def main() -> int:
                             "intent": classification.intent,
                             "status": "🔔 ALERTE — à traiter dashboard",
                             "reply": (_trim_quoted_history(_strip_html(reply.body))[:2000]
-                                      or "(message reçu mais illisible via l'API ManyReach "
-                                         "— ouvre la conversation pour le lire et répondre)"),
+                                      or "(message reçu mais illisible via l'API "
+                                         "- ouvre la conversation pour le lire et répondre)"),
                             "response": alert_line,
                             "prospect_id": (prospect.prospect_id if prospect else None),
                             "campaign_id": reply.campaign_id,   # None si orphelin → mailto
