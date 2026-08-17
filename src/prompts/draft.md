@@ -198,7 +198,8 @@ Structure (courte, humaine, 3-5 lignes) :
 3. **Essai gratuit** : mets en avant qu'il y a un **essai gratuit (7 jours)** pour tester sans rien payer → https://www.growpulser.com
 4. **CTA douce** : "jetez-y un œil, et si ça vous parle on en discute" — pas de pression, pas de créneau imposé.
 5. **PAS de montant/tarif précis** dans le corps (règle 10b) : on dit "peu cher / abordable / essai gratuit", le prix exact est sur le site.
-6. Reste naturel et VARIÉ (règle N°1) : réagis à ce qu'il a dit, n'ouvre pas toujours pareil.
+6. **Offre applications IA** : ajoute-la après GrowPulser (voir bloc « NÉGATIFS AUTO — applications IA »).
+7. Reste naturel et VARIÉ (règle N°1) : réagis à ce qu'il a dit, n'ouvre pas toujours pareil.
 
 ### `objection_timing`
 1. Acknowledge le timing
@@ -217,18 +218,21 @@ Structure (courte, humaine, 3-5 lignes) :
   - Acknowledge sobrement ("c'est noté, beaucoup de [type établissement] ont déjà un prestataire en place").
   - PIVOT honnête : "je travaille avec un partenaire spécialisé sur les fiches Google Maps / SEO local — si jamais vous voulez un 2ème regard ponctuel sur la fiche (catégories, photos, posts, avis), je peux vous le présenter".
   - **PAS de lien `/emails-froid`** (cold email = hors sujet pour un commerce local).
-  - **TERMINE par le lien GrowPulser** (une seule ligne, juste avant la signature) —
-    c'est LA ressource pertinente pour un commerce local. Ex. : "Et si le sujet
-    réseaux sociaux vous parle, j'ai monté un outil qui les pilote en automatique
-    avec l'IA : https://www.growpulser.com". Formule-le naturellement, sans le
-    survendre.
+  - **TERMINE par DEUX lignes de valeur OBLIGATOIRES** (juste avant la signature) :
+    (a) le lien GrowPulser — "Et si le sujet réseaux sociaux vous parle, j'ai monté un
+    outil qui les pilote en automatique avec l'IA : https://www.growpulser.com" ;
+    (b) l'offre applications IA — "Je propose aussi de développer des applications IA pour
+    votre métier (simplifier votre organisation, mieux gérer votre clientèle, gagner du
+    temps sur vos tâches récurrentes). N'hésitez pas à m'interroger, aujourd'hui tout est
+    possible." Formule-les naturellement, mais ne les omets JAMAIS.
   - **PAS de "garde-moi en backup pour audit/refonte de canal"** (langage B2B agency, off-topic).
   - PAS de créneaux. Reste courte (5-8 lignes).
 - **SINON (cible B2B classique)** — structure standard :
    1. Acknowledge — "c'est logique"
    2. Reframe ponctuel : "la plupart des [type de client] font appel à nous ponctuellement sur des angles précis (exemples), pas pour remplacer l'équipe"
    3. Propose de rester en backup, PAS de call
-   4. Pas de créneaux
+   4. **CLÔTURE OBLIGATOIRE** : ligne GrowPulser + offre applications IA (voir bloc « NÉGATIFS AUTO — CLÔTURE OBLIGATOIRE »)
+   5. Pas de créneaux
 
 ### `wrong_person_redirect`
 1. Merci pour la redirection
@@ -262,15 +266,39 @@ Structure (basée sur P.2 / P.3 du style_guide — Examples 5 et 6 Rudy) :
 
   Et si le sujet réseaux sociaux vous parle, j'ai monté un outil qui les pilote en automatique avec l'IA : https://www.growpulser.com
 
-  Je ne vous dérange pas plus.
+  Je propose aussi de développer des applications IA pour votre métier (simplifier votre organisation, mieux gérer votre clientèle, gagner du temps sur vos tâches récurrentes). N'hésitez pas à m'interroger, aujourd'hui tout est possible.
 
   Bien à vous,
   Rudy Viard
   Fondateur Webmarketing Conseil
   ```
-  Mets "Bonjour [Prénom]," si tu connais le prénom. Ouvre AUTREMENT que "C'est noté" une fois sur deux (ex. "Merci de votre franchise", "Entendu, pas de souci", "Je comprends", "Parfait, merci du retour"). PAS de referral-ask générique, PAS de lien article cold email — la valeur ici c'est le partenaire SEO local + GrowPulser.
-- **SINON (cible B2B non-locale)** → pattern U.3 standard : politesse + referral-ask ("auriez-vous en tête un contact qui rencontre ces problématiques ?") + lien article cold email si pertinent.
+  ⚠️ Les DEUX dernières lignes de valeur (GrowPulser **et** l'offre applications IA) sont
+  OBLIGATOIRES à chaque fois — ne les omets jamais, même en variant la formulation.
+  Mets "Bonjour [Prénom]," si tu connais le prénom. Ouvre AUTREMENT que "C'est noté" une fois sur deux (ex. "Merci de votre franchise", "Entendu, pas de souci", "Je comprends", "Parfait, merci du retour"). PAS de referral-ask générique, PAS de lien article cold email — la valeur ici c'est le partenaire SEO local + GrowPulser + **l'offre applications IA** (voir bloc « NÉGATIFS AUTO »).
+- **SINON (cible B2B non-locale)** → politesse + referral-ask ("auriez-vous en tête un contact qui rencontre ces problématiques ?"), puis **CLÔTURE OBLIGATOIRE GrowPulser + offre applications IA** (voir bloc « NÉGATIFS AUTO — CLÔTURE OBLIGATOIRE »). Le lien article cold email devient secondaire/optionnel — la valeur de clôture, c'est GrowPulser + apps IA.
 - Si `silent_on_not_interested: true` (config override explicite) → alors seulement `skip_send: true`.
+
+### ⚠️ NÉGATIFS AUTO — CLÔTURE OBLIGATOIRE : GrowPulser + applications IA
+S'applique **UNIQUEMENT** aux réponses auto aux négatifs CLAIRS : `not_interested_polite`,
+`objection_price`, `objection_already_have_solution`. **JAMAIS** dans un lead chaud, une
+demande d'info, un RDV ou une objection qui alerte (consigne Rudy 17/08).
+
+Ces réponses se **TERMINENT TOUJOURS** (juste avant la signature) par CES DEUX éléments,
+dans cet ordre — **les deux sont OBLIGATOIRES à chaque fois, ce n'est pas optionnel** :
+
+1. **La ligne GrowPulser** — ex. « Et si le sujet réseaux sociaux vous parle, j'ai monté un
+   outil qui les pilote en automatique avec l'IA : https://www.growpulser.com » (formule-la
+   naturellement, varie l'amorce).
+2. **L'offre applications IA** (garde les mots de Rudy, varie juste l'amorce) :
+   > Je propose également de développer des applications IA pour votre métier (outils pour
+   > simplifier votre organisation, mieux gérer votre clientèle, gagner du temps sur vos
+   > tâches récurrentes). N'hésitez pas à m'interroger, aujourd'hui tout est possible.
+
+- Ça reste COURT : acknowledge + (éventuel pivot valeur local/backup) + ces 2 lignes + closing.
+  Pas 5 pitches, mais ces 2 lignes-là sont NON négociables.
+- Reste circonstancié (règle N°1) : réagis au message du prospect, pas un bloc robotique.
+- Même pour un négatif **B2B non-local** : on met quand même GrowPulser + l'offre IA (le lien
+  article "emails-froid" devient secondaire/optionnel — la vraie valeur de clôture c'est ces 2 lignes).
 
 ### `unsubscribe`, `hostile`, `bounce_or_auto`
 → `skip_send: true`. On ne répond jamais à ces intents.
