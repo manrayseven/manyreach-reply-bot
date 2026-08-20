@@ -69,6 +69,25 @@ def test_repos_return_ooo_is_bounce():
         body="Pas le moment, recontactez-nous à la rentrée svp.")) is False
 
 
+def test_mailinblack_protect_passed_is_silent_not_challenge():
+    # Auto-notice MailInBlack "Protect" DE DÉLIVRANCE (cas Damien Zucconi 13/08) :
+    # "votre message a déjà passé avec succès tous les filtres" = message PASSÉ,
+    # aucune action. Doit être SILENCIEUX (bounce_or_auto), et surtout PAS remonté
+    # comme un challenge à valider (il n'y a rien à cliquer).
+    body = ("Bonjour, Je suis protégé par Protect de Mailinblack, une solution "
+            "française de cybersécurité qui combine intelligence artificielle et "
+            "vigilance humaine. Grâce à une analyse avancée par IA, votre message "
+            "a déjà passé avec succès tous les filtres de sécurité.")
+    m = _msg(body=body, subject="Question")
+    assert is_bounce_or_auto(m) is True
+    assert detect_antispam_challenge(m) is None  # PAS un challenge (déjà délivré)
+    # Contre-épreuve : un VRAI challenge MailInBlack reste un challenge.
+    assert detect_antispam_challenge(
+        _msg(body="Un clic pour délivrer votre email !")) == "MailInBlack"
+    assert detect_antispam_challenge(
+        _msg(from_email="gegos@invitations.mailinblack.com")) == "MailInBlack"
+
+
 def test_email_address_change_is_bounce():
     # Auto-reply de changement d'adresse (cas harenovationconstruction) :
     # remontait en "Demande d'infos". Redirection d'adresse → silencieux.

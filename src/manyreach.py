@@ -594,6 +594,19 @@ BOUNCE_BODY_PATTERNS = (
     "actuellement absent",
     "je suis absent",
     "actuellement en vacances",
+    # Auto-notice MailInBlack "Protect" DE DÉLIVRANCE (≠ challenge) : le message
+    # est PASSÉ, aucune action à faire (cas Damien Zucconi / Julien Tavernier /
+    # Samantha Dumoulin, 11-13/08). "votre message a déjà passé avec succès tous
+    # les filtres" → auto-répondeur informatif → silencieux (pas d'alerte, pas
+    # d'auto-réponse). NB : les VRAIS challenges MailInBlack ("en attente de
+    # libération" / "un clic pour délivrer" / invitations.mailinblack.com) restent
+    # détectés en amont par detect_antispam_challenge (ordre géré dans run_bot).
+    "passé avec succès tous les filtres",
+    "passe avec succes tous les filtres",
+    "protégé par protect de mailinblack",
+    "protege par protect de mailinblack",
+    "votre message a déjà passé",
+    "votre message a deja passe",
     # OOO "repos / on revient le X" (cas mollo.traiteur : "Notre équipe prend
     # quelques jours de repos, nous revenons le lundi 24 aout !"). Signatures
     # d'autoreply d'équipe — absentes d'un vrai reply intéressé. On garde des
