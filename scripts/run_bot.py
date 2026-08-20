@@ -72,6 +72,27 @@ _CLEAR_NO_MARKERS = (
     "stop", "désabonn", "desabonn", "désinscri", "desinscri",
 )
 
+# HEURE / DATE dans la réponse du prospect → signal RDV FORT (feedback Rudy 18/08 :
+# "si le prospect répond par une heure et/ou une date, il passe en ALERTE, je traite
+# à la main, pour ne pas manquer une piste"). On matche :
+#   - une heure : 14h, 14h30, 14 h, 14:30, 9 heures
+#   - un jour de semaine : lundi…dimanche
+#   - une date chiffrée : 15/03, 15-03, 15 mars / 3 septembre…
+# ⚠️ À évaluer UNIQUEMENT sur le corps NETTOYÉ (réponse du prospect, sans la
+# citation) — sinon les créneaux que RUDY a proposés dans le mail cité matcheraient
+# toujours. Le garde-fou _has_refusal empêche de forcer sur un refus daté
+# ("non merci, je suis pris en mars").
+_DATETIME_RE = re.compile(
+    r"\b\d{1,2}\s?h(?:\s?\d{2})?\b"                     # 14h / 14h30 / 14 h
+    r"|\b\d{1,2}[:h]\d{2}\b"                            # 14:30
+    r"|\b\d{1,2}\s?heures?\b"                           # 9 heures
+    r"|\b(?:lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)\b"
+    r"|\b\d{1,2}[/-]\d{1,2}\b"                          # 15/03
+    r"|\b\d{1,2}\s+(?:janvier|f[ée]vrier|mars|avril|mai|juin|juillet|"
+    r"ao[uû]t|septembre|octobre|novembre|d[ée]cembre)\b",
+    re.IGNORECASE,
+)
+
 
 def load_settings(path: Path) -> dict:
     with path.open("r", encoding="utf-8") as f:
@@ -859,8 +880,12 @@ def main() -> int:
                     "nous sommes intéressé", "ce qui m'intéresse",
                 )
                 _has_refusal = any(r in _body_full_low for r in _refusal_markers)
+                # HEURE/DATE dans la réponse du prospect = signal RDV FORT → alerte
+                # (Rudy 18/08 : ne jamais auto-répondre à un prospect qui propose/
+                # accepte un créneau). Évalué sur le corps NETTOYÉ (pas la citation).
+                _has_datetime = bool(_DATETIME_RE.search(_clean_body))
                 _forced = None
-                if any(s in _body_full_low for s in _meeting_signals):
+                if _has_datetime or any(s in _body_full_low for s in _meeting_signals):
                     _forced = "meeting_confirmed"
                 elif any(s in _body_full_low for s in _interest_signals) or \
                         any(s in _body_full_low for s in _contact_signals):

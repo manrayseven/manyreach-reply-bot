@@ -83,6 +83,32 @@ def test_pas_besoin_is_a_clear_no_marker():
         assert any(m in low for m in _CLEAR_NO_MARKERS), body
 
 
+def test_datetime_detector_flags_meeting_replies():
+    # Feedback Rudy 18/08 : une réponse contenant une HEURE et/ou une DATE doit
+    # être détectée comme signal RDV → alerte (jamais d'auto-réponse). Le détecteur
+    # tourne sur le corps NETTOYÉ (réponse du prospect, sans la citation).
+    from scripts.run_bot import _DATETIME_RE  # noqa: E402
+
+    for body in (
+        "OK pour mardi à 15h30",
+        "Je peux me rendre disponible demain mardi à 15:30",
+        "Oui, 14h me convient",
+        "On se cale le 15/03 ?",
+        "Parfait, le 3 septembre alors",
+        "disponible jeudi",
+        "Rappelez-moi à 9 heures",
+    ):
+        assert _DATETIME_RE.search(body), body
+
+    # Négatifs : un refus/merci sans heure ni date ne matche pas.
+    for body in (
+        "Non merci, pas intéressé.",
+        "Merci pour votre message, bonne continuation.",
+        "Nous avons déjà un prestataire.",
+    ):
+        assert not _DATETIME_RE.search(body), body
+
+
 def test_every_valid_intent_has_a_mapping():
     # Tout intent que le classifier peut produire doit avoir une action mappée
     # (sinon plan_actions le renvoie en needs_review).
