@@ -861,10 +861,15 @@ def _render(client_filter: str | None = None) -> str:
         # Plafond dur : au plus 18 enrichissements live par render (le reste garde
         # ses valeurs stockées) → borne la latence, le cache se remplit au fil des
         # renders. Les non-cachés restants seront traités au prochain affichage.
-        if len(to_fetch) > 18:
-            to_fetch = dict(list(to_fetch.items())[:18])
+        if len(to_fetch) > 14:
+            to_fetch = dict(list(to_fetch.items())[:14])
         _client = None
-        if to_fetch:
+        # GATE BUDGET : chaque enrichissement = 2 appels ManyReach (find_prospect +
+        # get_prospect_thread). Si le render a déjà consommé son temps (ou que l'API
+        # est saturée / rate-limitée), on SAUTE l'enrichissement plutôt que de risquer
+        # un timeout Vercel (504). Les alertes gardent leurs valeurs stockées ; le
+        # prochain render (API dégagée) enrichira. Évite la page morte (incident 20/08).
+        if to_fetch and _budget_left() > 15:
             try:
                 from src.manyreach import ManyReachClient
                 _client = ManyReachClient(timeout=6.0)
@@ -959,11 +964,29 @@ def _render(client_filter: str | None = None) -> str:
                 except Exception:  # noqa: BLE001
                     return em, None  # fail-open, ne pas cacher l'échec
 
+            # BORNE DURE dans le temps. ⚠️ On N'utilise PAS `with ...:` car la sortie
+            # du context manager fait shutdown(wait=True) = attend TOUS les threads
+            # (même les traînards) → ce qui recréerait le 504. On gère l'exécuteur à
+            # la main et on shutdown(wait=False) : les appels non finis (API lente/
+            # saturée/429) sont ABANDONNÉS, le render rend la main tout de suite.
+            import concurrent.futures as _cf
+            _ex = ThreadPoolExecutor(max_workers=8)
             try:
-                with ThreadPoolExecutor(max_workers=8) as ex:
-                    for em, data in ex.map(_fetch, list(to_fetch.items())):
+                _deadline = max(4.0, min(_budget_left() - 8.0, 28.0))
+                _futs = {_ex.submit(_fetch, it): it[0]
+                         for it in list(to_fetch.items())}
+                _done, _pending = _cf.wait(_futs, timeout=_deadline)
+                for f in _done:
+                    try:
+                        em, data = f.result()
                         enrich[em] = data
+                    except Exception:  # noqa: BLE001
+                        pass
             finally:
+                try:
+                    _ex.shutdown(wait=False, cancel_futures=True)
+                except TypeError:  # py<3.9 : pas de cancel_futures
+                    _ex.shutdown(wait=False)
                 try:
                     _client.close()
                 except Exception:  # noqa: BLE001
