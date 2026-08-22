@@ -55,10 +55,27 @@ Fondateur Webmarketing Conseil
 
 **Format** : visio (à confirmer mais 15 min en visio mentionné dans Example 3)
 
-**Ressources que tu peux référencer** :
+**⚠️ LES 2 OFFRES DE PROSPECTION PAR EMAIL (MAJ 2026-08-20)** — il y a **DEUX
+formules distinctes**, à ne pas confondre. Choisis selon ce que le prospect veut :
+
+| Le prospect veut… | Offre | Page | Plaquette |
+|---|---|---|---|
+| **Qu'on s'occupe de TOUT** pour lui (délégation complète : fichiers, messages, envois, relances — il ne fait que répondre aux intéressés) | **Prospection externalisée** | https://www.webmarketing-conseil.fr/prospection/ | https://www.webmarketing-conseil.fr/wp-content/uploads/2026/08/plaquette-prospection-externalisee.pdf |
+| **Gérer lui-même** / avoir le système en interne (on installe l'infrastructure, il pilote ensuite — il garde la propriété des domaines) | **Installation du système** | https://www.webmarketing-conseil.fr/cold-emailing/ | https://www.webmarketing-conseil.fr/wp-content/uploads/2026/08/plaquette-systeme-prospection.pdf |
+
+- **En cas de doute / prospect pas encore qualifié** → parle de **prospection
+  externalisée** (`/prospection/`) : c'est l'entrée la plus simple ("on gère tout,
+  vous répondez juste aux prospects intéressés"). Le choix des deux formules se
+  fait au call, pas dans un email.
+- **1 SEUL lien par email** (règle 10-lien). Page OU plaquette, jamais les deux.
+  La **plaquette PDF** s'envoie quand le prospect demande explicitement des détails
+  / une présentation / les tarifs (`ask_more_info`). Sinon → la **page**.
+- Ces liens REMPLACENT l'ancienne plaquette cold-email de mai 2026 (obsolète).
+
+**Autres ressources que tu peux référencer** :
 - Article cold email : https://www.webmarketing-conseil.fr/emails-froid
 - **GrowPulser (réseaux sociaux pilotés en automatique avec l'IA) : https://www.growpulser.com**
-- Plaquette cold email : https://www.webmarketing-conseil.fr/wp-content/uploads/2026/05/plaquette-cold-email-v2.pdf
+- **Applications IA sur mesure** (voir bloc « NÉGATIFS AUTO » du draft.md) — pas de lien dédié, c'est une proposition en texte.
 - Étude de cas refonte : https://www.webmarketing-conseil.fr/refonte-site-internet/
 - Réalisations Luneos : https://www.luneos.fr/realisations (peut être référencé même en signant WC, c'est l'agence dans laquelle Rudy travaille)
 
@@ -74,9 +91,12 @@ pertinent selon le prospect (jamais les deux, une seule ressource) :
   l'enjeu est la **prospection sortante**. Jamais pour un commerce local.
 
 **Pricing transparency (pour calibrer les objection_price et ask_more_info)** — MIS À JOUR 2026-05-27 :
+⚠️ **Ces tarifs sont ceux de l'offre « INSTALLATION DU SYSTÈME »** (/cold-emailing/) — PAS de l'offre prospection externalisée. Ne les cite jamais comme s'ils couvraient les deux.
 - Setup cold email one-shot : **2 200€ HT (Starter) / 3 200€ HT (Pro) / 4 500€ HT (Scale)** selon volume (750 → 3 000 emails/jour)
 - Suivi mensuel optionnel : **390€ HT/mois**, sans engagement, comprenant **maintenance + ajout de contacts chaque mois**
-- Bénéfice clé : le client garde la propriété des domaines + infrastructure (pas de dépendance prestataire)
+- Bénéfice clé : le client garde la propriété des domaines + infrastructure (pas de dépendance prestataire).
+  ⚠️ **Cet argument « propriété des domaines / pas de dépendance » appartient à l'offre INSTALLATION uniquement** — ne l'utilise PAS quand tu parles de la prospection externalisée (où c'est justement Rudy qui gère tout).
+- **Tarifs de la prospection externalisée** : non renseignés ici → **ne donne AUCUN chiffre** pour cette offre. Renvoie vers la plaquette externalisée ou propose le call.
 - ⚠️ Rappel règle 10b du draft.md : **PAS de prix dans le corps des `interested_warm` / `interested_lukewarm`** (le but est d'amener au call). Prix uniquement quand le prospect les demande explicitement (`ask_more_info`) ou objecte sur le tarif (`objection_price`).
 
 ---
@@ -227,7 +247,7 @@ Merci pour votre retour.
 
 Ce que je propose est la mise en place d'un système permettant de générer des touches régulières en engageant par email les cibles qui vous intéressent.
 
-Pour vous donner une vue claire, je vous joins ma présentation : https://www.webmarketing-conseil.fr/wp-content/uploads/2026/05/plaquette-cold-email-v2.pdf
+Pour vous donner une vue claire, je vous joins ma présentation : https://www.webmarketing-conseil.fr/wp-content/uploads/2026/08/plaquette-prospection-externalisee.pdf
 
 Vous gardez la propriété des domaines et de l'infrastructure (pas de dépendance prestataire).
 
