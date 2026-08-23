@@ -276,14 +276,20 @@ class Classifier:
             f"{clean_reply}\n"
         )
 
-        msg = self.client.messages.create(
+        # temperature=0 : classification DÉTERMINISTE. Sans ça (défaut 1.0), un
+        # même reply pouvait être classé différemment d'un run à l'autre sur les
+        # cas-limites → alertes parasites (ex. jlevasseur "nous avons une bonne
+        # agence marketing" tantôt déjà-équipé/auto, tantôt tiède/alerte).
+        # ⚠️ REPLI DÉFENSIF (incident 21-23/08/2026) : le SDK anthropic n'était pas
+        # figé dans requirements.txt ; une version déployée sur Vercel a rejeté
+        # `temperature` ("Messages.create() got an unexpected keyword argument
+        # 'temperature'") → le classifier plantait sur CHAQUE reply, le bot n'a plus
+        # rien envoyé pendant ~40h (498 erreurs, silencieuses côté dashboard).
+        # On réessaie donc SANS temperature plutôt que de laisser tomber le reply :
+        # mieux vaut une classification non déterministe qu'un bot mort.
+        _kwargs = dict(
             model=self.model,
             max_tokens=700,
-            # temperature=0 : classification DÉTERMINISTE. Sans ça (défaut 1.0), un
-            # même reply pouvait être classé différemment d'un run à l'autre sur les
-            # cas-limites → alertes parasites (ex. jlevasseur "nous avons une bonne
-            # agence marketing" tantôt déjà-équipé/auto, tantôt tiède/alerte).
-            temperature=0,
             system=[
                 {
                     "type": "text",
@@ -293,6 +299,12 @@ class Classifier:
             ],
             messages=[{"role": "user", "content": user_content}],
         )
+        try:
+            msg = self.client.messages.create(temperature=0, **_kwargs)
+        except TypeError as _e:  # SDK qui n'accepte plus `temperature`
+            if "temperature" not in str(_e):
+                raise
+            msg = self.client.messages.create(**_kwargs)
         raw = msg.content[0].text.strip()
         # Strip ```json fences if present
         if raw.startswith("```"):

@@ -1,4 +1,4 @@
-anthropic>=0.40.0
+anthropic>=0.40.0,<1.0.0   # NE PAS DEFIGER : une version majeure a casse Messages.create(temperature=) en prod (21-23/08/2026)
 httpx>=0.27.0
 pydantic>=2.5.0
 python-dotenv>=1.0.0

@@ -130,6 +130,54 @@ def test_strip_html_removes_script_style():
     assert "Texte" in out and "visible" in out
 
 
+def test_classify_survives_sdk_without_temperature():
+    """INCIDENT 21-23/08/2026 : le SDK anthropic n'etait pas fige dans
+    requirements.txt. Une version deployee sur Vercel a rejete `temperature`
+    ("Messages.create() got an unexpected keyword argument 'temperature'") ->
+    le classifier plantait sur CHAQUE reply et le bot n'a plus rien envoye
+    pendant ~40 h (498 erreurs). Le classifier doit desormais REESSAYER sans
+    temperature au lieu de laisser tomber le reply.
+    """
+    import os
+    os.environ.setdefault("ANTHROPIC_API_KEY", "fake-for-test")
+    from datetime import datetime, timezone
+
+    from src.classifier import Classifier
+    from src.manyreach import Message
+
+    class _Block:
+        text = ('{"intent":"not_interested_polite","confidence":0.95,'
+                '"key_phrase":"non merci","redirected_email":null,'
+                '"redirected_to":null,"language":"fr","reasoning":"t"}')
+
+    class _Msg:
+        content = [_Block()]
+
+    class _Messages:
+        def __init__(self):
+            self.calls = []
+
+        def create(self, **kw):
+            self.calls.append("temperature" in kw)
+            if "temperature" in kw:
+                raise TypeError(
+                    "Messages.create() got an unexpected keyword argument 'temperature'")
+            return _Msg()
+
+    class _Client:
+        def __init__(self):
+            self.messages = _Messages()
+
+    c = Classifier()
+    c.client = _Client()
+    reply = Message("m1", datetime.now(timezone.utc), "Reply", "1", None,
+                    "p@x.fr", "r@x.fr", "Re: Question", "Non merci, pas interesse.")
+    res = c.classify(reply, original_outreach=None, previous_message="")
+    assert res.intent == "not_interested_polite"
+    # 1er appel AVEC temperature (echoue), 2e SANS (reussit)
+    assert c.client.messages.calls == [True, False], c.client.messages.calls
+
+
 if __name__ == "__main__":
     from tests._runner import main
     main(dict(globals()))
