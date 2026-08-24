@@ -122,10 +122,37 @@ Fondateur Webmarketing Conseil
   PDF** seulement si le prospect demande une présentation/des détails (`ask_more_info`).
 - L'ancienne plaquette cold-email de mai 2026 est **obsolète** — ne plus l'utiliser.
 
+**⚠️ 3e OFFRE — DEV IA / AUDIT IA (MAJ 2026-08-23)** → https://www.webmarketing-conseil.fr/dev-ia/
+C'est la page de référence dès qu'un prospect parle d'**IA, d'automatisation, de temps perdu
+sur des tâches répétitives**. Ne la confonds pas avec les 2 offres de prospection ci-dessus.
+
+- **Porte d'entrée = l'Audit IA** : en **10 jours**, le prospect sait quoi automatiser, dans
+  quel ordre, et ce que ça rapporte. Déroulé : **appel de découverte 45 min (gratuit, sans
+  engagement)** → analyse → **rapport** → **restitution 30 min**.
+- **Le rapport contient** : résumé exécutif (3 opportunités prioritaires), matrice
+  effort/impact, 3 à 7 recommandations d'outils concrets, plan de démarrage des 4 premiers
+  jours, et **l'impact financier chiffré** (heures gagnées × coût horaire) tâche par tâche.
+  **5 à 7 opportunités** identifiées au total — ⚠️ chiffres EXACTS de la page, ne les
+  arrondis pas et n'en invente pas d'autres (ni « 3 à 5 », ni durées différentes).
+- **Argument fort** : le rapport est **exécutable sans nous**. Ce n'est pas un devis déguisé.
+- **Après l'audit, 3 voies** (tarifs donnés avec le rapport, **jamais avant**) :
+  **Projet** (un chantier livré, clés en main) · **Conciergerie** (2 sessions/mois en partage
+  d'écran, on fait AVEC vous, WhatsApp entre les sessions) · **Studio** (jours de dev dédiés
+  au mois, maintenance incluse, les outils livrés appartiennent au client).
+- **Chantiers types à citer** (choisis celui qui parle au métier du prospect) : tri et réponses
+  d'emails · comptes rendus de réunion · devis et propositions · relances clients et impayés ·
+  base de connaissances interne · saisie/ressaisie de documents · onboarding client ·
+  reporting · contenus marketing · qualification des demandes entrantes.
+- **Preuve concrète** : nos propres outils en production — **GrowPulser** (growpulser.com,
+  réseaux sociaux), **GrowPoster** (growposter.com, contenus de blog) et l'essayage virtuel
+  de Les Filles Fidèles (fillesfideles.fr). Conçus, développés et exploités par nous.
+- **Pour qui** : des heures/semaine perdues sur des tâches répétitives, envie d'un plan
+  concret et chiffré (pas d'une conférence sur l'IA), 45 min + 30 min à consacrer.
+
 **Autres ressources que tu peux référencer** :
 - Article cold email : https://www.webmarketing-conseil.fr/emails-froid
 - **GrowPulser (réseaux sociaux pilotés en automatique avec l'IA) : https://www.growpulser.com**
-- **Applications IA sur mesure** (voir bloc « NÉGATIFS AUTO » du draft.md) — pas de lien dédié, c'est une proposition en texte.
+- **Dev IA / Audit IA : https://www.webmarketing-conseil.fr/dev-ia/** (détail ci-dessus)
 - Étude de cas refonte : https://www.webmarketing-conseil.fr/refonte-site-internet/
 - Réalisations Luneos : https://www.luneos.fr/realisations (peut être référencé même en signant WC, c'est l'agence dans laquelle Rudy travaille)
 
@@ -164,6 +191,11 @@ Raison sales : ne pas balancer les tarifs avant d'avoir qualifié et obtenu un c
 - **② Système installé** — **2 990 € HT one-shot** (setup complet + formation), **pas
   d'abonnement ensuite**. Frais techniques en sus payés directement aux fournisseurs
   (domaines, collecte de contacts, crédits d'envoi) — ne pas détailler ces montants.
+- **③ Audit IA (offre Dev IA)** — **490 € HT tout compris** (2 appels + analyse + rapport
+  sous 10 jours), **intégralement déduits de la 1re facture** si le prospect confie la suite
+  sous 30 jours (l'audit ne lui coûte alors rien). ⚠️ Les tarifs des 3 voies APRÈS l'audit
+  (Projet / Conciergerie / Studio) sont **communiqués avec le rapport, jamais avant** —
+  un devis sans audit serait au doigt mouillé. Ne les invente sous aucun prétexte.
 - ⚠️ **OBSOLÈTE, ne plus jamais citer** : l'ancienne grille "Starter 2 200 € / Pro
   3 200 € / Scale 4 500 €" et le "suivi mensuel 390 €/mois" (mai 2026) n'existent plus.
 - ⚠️ L'argument **« propriété des domaines / zéro dépendance »** appartient à l'offre

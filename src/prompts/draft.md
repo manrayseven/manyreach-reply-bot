@@ -97,6 +97,26 @@ Structure :
    ressource supplémentaire en fin de mail** (ni /emails-froid, ni répétition
    GrowPulser).
 
+**CAS 0bis — sujet DEV IA / AUTOMATISATION** ⚠️ même priorité que le CAS 0.
+
+**Détection** : le cold mail pitchait le **développement IA / l'automatisation**, OU le
+prospect parle de **temps perdu sur des tâches répétitives** (saisie, tri d'emails, devis,
+comptes rendus, relances, reporting), OU il pose une question sur l'**IA**.
+
+Structure :
+1. "Bonjour [prénom], Merci pour votre retour." + **rebondis sur SA tâche précise**
+   (« la saisie de factures et les comptes rendus, c'est typiquement ce qu'on automatise
+   en premier dans les cabinets… ») — c'est la meilleure personnalisation.
+2. Explique le chemin en 2-3 lignes : **appel de découverte 45 min gratuit** → **Audit IA**
+   → rapport sous 10 jours (quoi automatiser, dans quel ordre, ce que ça rapporte).
+   Argument fort : **le rapport est exécutable sans nous**, ce n'est pas un devis déguisé.
+3. 1-2 questions qualifiantes ADAPTÉES (sur la tâche qu'il a citée, ses outils actuels).
+4. **OBLIGATOIRE — termine par le lien** https://www.webmarketing-conseil.fr/dev-ia/
+   (c'est LA ressource de ce cas, cf. règle 10-lien). Ne finis JAMAIS ce cas sans ce lien.
+5. **PAS de prix** (le 490 € de l'audit ne se donne que s'il demande explicitement) ;
+   les tarifs des voies Projet/Conciergerie/Studio ne se donnent **jamais** avant l'audit.
+6. Closing signature standard Webmarketing Conseil.
+
 **CAS 1 — le cold mail pitche le SETUP COLD EMAIL (Webmarketing Conseil)** :
 → Reproduis FIDÈLEMENT le template canonique P.1 du style_guide (validé par Rudy).
    - Adapte juste "Bonjour [Prénom]," si le prénom est connu.
@@ -393,6 +413,12 @@ c'est une **porte entrouverte**.
      prospect dont l'enjeu est la **visibilité / présence en ligne**. Ex. : "Et si le
      sujet réseaux sociaux vous parle, j'ai monté un outil qui les pilote en
      automatique avec l'IA : https://www.growpulser.com".
+   - **Dev IA / Audit IA — https://www.webmarketing-conseil.fr/dev-ia/** → dès que
+     l'enjeu du prospect est le **temps perdu sur des tâches répétitives** (tri d'emails,
+     devis, comptes rendus, relances, saisie, reporting) ou qu'il parle d'**IA /
+     d'automatisation**. Porte d'entrée = l'**Audit IA** : en 10 jours il sait quoi
+     automatiser, dans quel ordre et ce que ça rapporte, et le rapport est exécutable
+     sans nous. Détail complet dans le style_guide.
    - **Article cold email — https://www.webmarketing-conseil.fr/emails-froid** →
      uniquement pour une cible **B2B** dont l'enjeu est la **prospection sortante**.
      **JAMAIS pour un commerce local.**
