@@ -536,16 +536,36 @@ def _handoff_email_html(company: str, detail_line: str, contact_line: str,
     if campaign:
         rows += f'<tr><td style="{_lab}">Campagne</td><td style="{_val}">{e(campaign)}</td></tr>'
 
-    # Historique : UNIQUEMENT les réponses du PROSPECT (on retire les envois de
-    # Rudy — le client n'a pas besoin de voir nos emails). Repli : dernier message.
-    hist = [h for h in (history or []) if str(h.get("who") or "").lower() != "vous"]
+    # Historique : LA CONVERSATION COMPLÈTE (prospect ET nos messages).
+    # ⚠️ On montrait avant UNIQUEMENT les réponses du prospect (commit c757bbe) :
+    # illisible pour le client, qui recevait des phrases hors contexte ("Merci pour
+    # ces précisions", "qui me dit que ça sera pas pareil avec vous ?") sans savoir
+    # à quoi elles répondaient (retour Rudy 25/08). On remet donc les deux côtés.
+    # ANTI-BRUIT : les relances de campagne sont identiques mot pour mot et
+    # reviennent 3-4 fois dans un fil → on ne garde que la 1re occurrence de chaque
+    # texte, sinon le client lit 4 fois le même cold mail.
+    hist = []
+    _seen_txt = set()
+    for h in (history or []):
+        _norm = " ".join(str(h.get("text") or "").split())[:180].lower()
+        _key = (str(h.get("who") or "").lower(), _norm)
+        if not _norm or _key in _seen_txt:
+            continue
+        _seen_txt.add(_key)
+        hist.append(h)
     if not hist and message:
         hist = [{"who": "Prospect", "when": "", "text": message}]
     _items = []
     for h in hist:
         who = e(str(h.get("who") or ""))
         when = e(str(h.get("when") or ""))
-        txt = e(str(h.get("text") or "")).replace("\n", "<br>")
+        _raw = str(h.get("text") or "")
+        # NOS messages servent de CONTEXTE, pas de contenu principal : on les
+        # raccourcit pour ne pas noyer les reponses du prospect (un cold mail fait
+        # 600-700 caracteres). Les reponses du PROSPECT restent INTEGRALES.
+        if str(h.get("who") or "").lower() == "vous" and len(_raw) > 240:
+            _raw = _raw[:240].rsplit(" ", 1)[0] + " [...]"
+        txt = e(_raw).replace("\n", "<br>")
         _mine = who.lower() == "vous"
         _color = "#8c8678" if _mine else "#0d7a5f"  # Prospect vert, Vous gris
         _bg = "#f4f1ea" if _mine else "#f3f9f6"
@@ -561,7 +581,7 @@ def _handoff_email_html(company: str, detail_line: str, contact_line: str,
     history_html = (
         '<div style="padding:14px 16px;background:#fff;border-bottom:1px solid #eee4d0">'
         '<div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;'
-        'color:#a89066;font-weight:bold;margin-bottom:8px">Ses réponses</div>'
+        'color:#a89066;font-weight:bold;margin-bottom:8px">La conversation</div>'
         + "".join(_items) + '</div>'
     )
     return (
