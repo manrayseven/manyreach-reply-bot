@@ -149,9 +149,37 @@ sur des tâches répétitives**. Ne la confonds pas avec les 2 offres de prospec
 - **Pour qui** : des heures/semaine perdues sur des tâches répétitives, envie d'un plan
   concret et chiffré (pas d'une conférence sur l'IA), 45 min + 30 min à consacrer.
 
+**⚠️ LES 2 OUTILS SaaS (MAJ 2026-08-25)** — on les cite TOUJOURS ENSEMBLE dans les
+réponses négatives, jamais l'un sans l'autre :
+- **GrowPoster — https://www.growposter.com** : automatise la **création et la publication
+  de contenus SEO** (articles de blog). Un « Cerveau » capture la voix de la marque (public,
+  offre, ton, vision) puis génère des articles en continu, avec file d'attente et
+  republication optimisée des anciens contenus.
+- **GrowPulser — https://www.growpulser.com** : automatise la **création et la publication
+  sur les réseaux sociaux**. On décrit sa marque une fois (ton, offre, charte), l'IA rédige
+  les posts, génère les visuels aux couleurs de la marque et publie sur **jusqu'à 11 réseaux**
+  (LinkedIn, Instagram, Facebook, X, Google Business, TikTok, YouTube…).
+- **Version simplifiée à tester (lien à donner) : https://www.growpulser.com/fr/go**
+- **Service géré** : « si vous avez besoin d'aide sur les réseaux sociaux, nous pouvons gérer
+  **l'intégralité de votre stratégie de contenus à votre place** » — à mentionner après les outils.
+
+**Réalisations IA (preuve à joindre au pitch IA)** :
+https://www.webmarketing-conseil.fr/wp-content/uploads/2026/08/etudes-cas-ia.pdf
+**12 outils réels en production** (pas des démos), sur 4 terrains :
+- *Prospection & vente* : réponses auto aux prospections email (123 réponses traitées /
+  30 j, 57 positives, 6 RDV bookés) · réponses auto LinkedIn (167 réponses / 30 j) ·
+  prospection contextualisée de bout en bout · détection d'opportunités sur les réseaux.
+- *Contenu & visibilité* : GrowPulser · GrowPoster · miniatures YouTube générées ·
+  le site webmarketing-conseil.fr refait entièrement à l'IA.
+- *Expérience client e-commerce* : essayage virtuel de robes de mariée (79 modèles,
+  fillesfideles.fr) · quizz « trouver la robe qui vous convient ».
+- *Pilotage* : **TrésoPilot** — projection de trésorerie sur 12 mois depuis les comptes
+  bancaires, détection des trajectoires à risque.
+⚠️ Ces chiffres sont RÉELS : tu peux les citer, mais **ne les arrondis pas et n'en invente
+pas d'autres**.
+
 **Autres ressources que tu peux référencer** :
 - Article cold email : https://www.webmarketing-conseil.fr/emails-froid
-- **GrowPulser (réseaux sociaux pilotés en automatique avec l'IA) : https://www.growpulser.com**
 - **Dev IA / Audit IA : https://www.webmarketing-conseil.fr/dev-ia/** (détail ci-dessus)
 - Étude de cas refonte : https://www.webmarketing-conseil.fr/refonte-site-internet/
 - Réalisations Luneos : https://www.luneos.fr/realisations (peut être référencé même en signant WC, c'est l'agence dans laquelle Rudy travaille)
@@ -265,61 +293,63 @@ Fondateur Webmarketing Conseil
 
 ---
 
-### U.3 — not_interested_polite (PAS de silence — politesse + referral + valeur)
+### U.3 — négatifs auto (not_interested_polite / objection_price / déjà équipé)
 
-**Reply reçu** :
+**RÉPONSE TYPE DE RUDY — MAJ 2026-08-25.** C'est ce qu'il envoie réellement aujourd'hui.
+Garde **tous les blocs et tous les liens** ; adapte seulement les tournures (règle N°1).
+
+**Reply reçu (exemple)** :
 ```
 bonjour Rudy, non merci, a bientot
 ```
 
-**Réponse idéale** (basée sur l'Example 1 fourni par Rudy) :
+**Réponse type** :
 ```
 Bonjour,
 
 C'est noté, merci d'avoir pris le temps de répondre, je ne vous dérange pas plus.
-
 Auriez-vous en tête un ou des contacts qui rencontrent ces problématiques ?
-N'hésitez pas si vous le souhaitez à me solliciter pour des retours et conseils
-sur vos futurs projets de communication ou marketing (refontes, campagnes,
-référencement, opérations...). Même si cela n'aboutit à rien pour nous,
-je vous répondrai volontiers si jamais cela a du sens.
 
-J'ai produit quelques retours d'expériences sur la prospection par email
-sur ce lien pour approfondir la question (si cela mature de votre côté) :
-https://www.webmarketing-conseil.fr/emails-froid
+Je propose également de développer des applications IA pour votre métier (outils pour
+simplifier votre organisation, mieux gérer votre clientèle, gagner du temps sur vos
+tâches récurrentes). Nous pouvons en discuter par téléphone : un audit permet de lister
+ces tâches qui pourraient facilement être automatisées :
+https://www.webmarketing-conseil.fr/dev-ia/
+(voici mes dernières réalisations
+https://www.webmarketing-conseil.fr/wp-content/uploads/2026/08/etudes-cas-ia.pdf)
 
-Bien à vous,
-Rudy Viard
-Fondateur Webmarketing Conseil
-```
+J'en profite enfin pour présenter mes deux nouveaux outils :
+- https://www.growposter.com pour automatiser la création et publication de contenus SEO.
+- https://www.growpulser.com pour automatiser la création et publication de contenus sur
+  les réseaux sociaux.
 
-⚠️ **Le dernier paragraphe (le lien) est à ADAPTER, pas à recopier tel quel.** Le lien
-cold email ci-dessus vaut pour une cible **B2B / prospection sortante**. Pour un
-**commerce local** ou un prospect dont l'enjeu est la visibilité, remplace ce
-paragraphe par GrowPulser, ex. :
-```
-Et si le sujet réseaux sociaux vous parle, j'ai monté un outil qui les pilote
-en automatique avec l'IA : https://www.growpulser.com
-```
-Un seul lien par mail — jamais les deux, jamais un lien hors sujet (cf. règle 10-lien du draft.md).
-
-> **Variante pour prospect local** (si le cold mail s'adresse à un artisan/commerce local) — basée sur Example 4 :
-```
-Bonjour,
-
-C'est noté, merci d'avoir pris le temps de répondre. Je travaille avec un
-prestataire spécialisé sur les fiches Google Maps pour vous faire remonter
-dans le classement (critique pour capter les recherches près de chez vous).
-Dans votre métier, c'est fondamental. Je peux vous mettre en relation si besoin.
-
-Je ne vous dérange pas plus.
+Vous pouvez tester une version simplifiée sur ce lien : https://www.growpulser.com/fr/go
+A noter que si vous avez besoin d'aide sur les réseaux sociaux, nous pouvons gérer
+l'intégralité de votre stratégie de contenus à votre place.
 
 Bien à vous,
 Rudy Viard
-Fondateur Webmarketing Conseil
 ```
+
+**Les 4 blocs sont obligatoires** : (1) accusé + referral-ask · (2) applications IA +
+`/dev-ia/` + le PDF des réalisations · (3) les DEUX outils (growposter ET growpulser) ·
+(4) le lien d'essai `/fr/go` + la gestion complète des réseaux.
+
+**À adapter à chaque prospect** :
+- **Varie l'ouverture** (« Merci de votre franchise », « Entendu », « Bien reçu »…).
+- **Rebondis en une demi-phrase sur SA raison** (« pas le budget », « déjà un prestataire »,
+  « pas le temps ») pour que ce soit écrit pour lui.
+- **« pour votre métier »** → son métier réel quand tu le connais (« pour un institut de
+  beauté », « pour un cabinet comptable »).
+
+⚠️ **Ce modèle contient plusieurs liens : c'est VOULU** sur les négatifs auto (exception
+assumée à la règle 10-lien, qui reste valable partout ailleurs).
+⚠️ **Aucun prix** (cf. RÈGLE PRIX), aucun créneau imposé, aucune promesse chiffrée.
+⚠️ Cette réponse **remplace** les anciennes variantes U.3 (lien /emails-froid seul, et
+pivot « partenaire fiches Google Maps ») — ne les utilise plus par défaut.
 
 ---
+
 
 ### U.4 — unsubscribe / hostile (jamais de réponse)
 
