@@ -305,13 +305,22 @@ def filter_processed(message_ids: list[str]) -> set[str]:
     KV par run de cron (cause de runs à 44s)."""
     if not kv_available() or not message_ids:
         return set()
-    keys = [f"bot:processed:{m}" for m in message_ids]
-    res = _cmd("MGET", *keys)
+    # DÉCOUPAGE EN LOTS : on liste desormais jusqu'a ~800 replies par run
+    # (anti-famine, cf. cron.py). Un MGET de 800 cles d'un coup depasse les
+    # limites de payload de l'API REST → on decoupe par 200.
     done: set[str] = set()
-    if isinstance(res, list):
-        for mid, val in zip(message_ids, res):
-            if val is not None:
-                done.add(mid)
+    _CH = 200
+    for _i in range(0, len(message_ids), _CH):
+        _batch = message_ids[_i:_i + _CH]
+        keys = [f"bot:processed:{m}" for m in _batch]
+        try:
+            res = _cmd("MGET", *keys)
+        except Exception:  # noqa: BLE001
+            continue  # lot en echec → on re-traitera, jamais de perte de reply
+        if isinstance(res, list):
+            for mid, val in zip(_batch, res):
+                if val is not None:
+                    done.add(mid)
     return done
 
 

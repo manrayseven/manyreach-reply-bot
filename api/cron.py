@@ -31,7 +31,14 @@ class handler(BaseHTTPRequestHandler):
         # reçoive un "Succès" et que set_last_run tourne toujours. Listing borné à
         # 2 pages (LIST_MAX_PAGES) → phase liste rapide.
         os.environ.setdefault("RUN_BUDGET_SECONDS", "26")
-        os.environ.setdefault("LIST_MAX_PAGES", "2")
+        # ANTI-FAMINE (incident 26/08) : avec 2 pages on ne voyait que les 200
+        # replies les plus RECENTS. Au volume actuel (~25 replies/h), toute reponse
+        # non traitee dans les ~8 h sortait definitivement de la fenetre et n'etait
+        # JAMAIS traitee (cas aline.kinesio39 : 481 replies arrives apres le sien,
+        # repondu hors fenetre a 22h58 puis perdu). La phase de listing est tres
+        # rapide (~0,2 s/page mesure) : on passe a 8 pages = 800 replies (~32 h de
+        # volume). Le tri FIFO (le plus ANCIEN d'abord) fait le reste.
+        os.environ.setdefault("LIST_MAX_PAGES", "8")
         result: dict = {"ok": True}
         try:
             import run_bot  # scripts/run_bot.py
