@@ -1462,6 +1462,17 @@ def _render(client_filter: str | None = None) -> str:
             # côté serveur par conversation) via un POST en arrière-plan (pas de
             # rechargement → l'email reste affiché pour la copie).
             _cid_js = html.escape(str(_client.get("id") or ""))
+            # COMPTAGE DES TRANSFERTS : avant, seul le clic '🤝 Mettre en relation'
+            # comptait. Rudy ouvre souvent directement 'Email de transfert', copie et
+            # envoie -> le transfert n'etait JAMAIS compte (bilan : 7 transmis au lieu
+            # du volume reel). On compte donc AUSSI l'ouverture du bloc, la copie et le
+            # mailto. record_handoff() dedoublonne par conversation -> pas de doublon.
+            _track_ho = (
+                f"try{{fetch('/{keyparam}',{{method:'POST',headers:{{'Content-Type':"
+                f"'application/x-www-form-urlencoded'}},body:'action=mark_handoff&client_id='"
+                f"+encodeURIComponent('{_cid_js}')+'&prospect_email='"
+                f"+encodeURIComponent('{html.escape(prospect_email)}')}});}}catch(e){{}}"
+            )
             _open_ho = (
                 "var d=this.closest('.alert-row').querySelector('.handoff');if(d){d.open=true;}"
                 f"try{{fetch('/{keyparam}',{{method:'POST',headers:{{'Content-Type':'application/x-www-form-urlencoded'}},"
@@ -1475,7 +1486,7 @@ def _render(client_filter: str | None = None) -> str:
                 f'🤝 Mettre en relation</a>'
             )
             handoff_box = (
-                '<details class="handoff">'
+                f'<details class="handoff" ontoggle="if(this.open){{{_track_ho}}}">'
                 '<summary class="handoff-sum">📨 Email de transfert (à copier)</summary>'
                 '<div class="handoff-body">'
                 f'<div class="handoff-to">À envoyer à : <b>{html.escape(_contact_email)}</b>'
