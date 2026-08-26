@@ -1333,7 +1333,45 @@ def main() -> int:
                 # quota cron et BLOQUENT les nouveaux replies (cause du retard
                 # global). Seule exception : send_held (fenêtre/cap), où il faut
                 # vraiment re-essayer plus tard.
-                attempted = (not dry_run) and (not send_held)
+                # ⚠️ NE PAS CLASSER "TRAITÉ" UN ENVOI QUI N'A PAS EU LIEU (fix 26/08).
+                # Cas aline.kinesio39 : le bot a mis le statut à jour, marqué le reply
+                # comme traité… mais l'envoi avait été sauté (garde-fou anti-doublon /
+                # verrou resté pris). Marqué traité = plus JAMAIS retenté → prospect
+                # sans réponse, définitivement. On réessaie donc, mais de façon BORNÉE
+                # (3 tentatives) pour qu'un reply "poison" ne bloque pas la file.
+                _intended = bool(plan.auto_send and not draft.skip_send)
+                _already = any("[DÉJÀ RÉPONDU]" in str(r) for r in results)
+                _send_missing = _intended and not _sent_ok and not _already
+                _give_up = False
+                if _send_missing and kvstore and kvstore.kv_available():
+                    _k = f"sendretry:{reply.message_id}"
+                    try:
+                        _tries = int(kvstore.cache_get(_k) or 0)
+                    except (TypeError, ValueError):
+                        _tries = 0
+                    if _tries < 3:
+                        try:
+                            kvstore.cache_set(_k, str(_tries + 1), 6 * 3600)
+                        except Exception:  # noqa: BLE001
+                            pass
+                        print(f"  >> Envoi non abouti (tentative {_tries + 1}/3) — on NE marque PAS traité, retry au prochain run")
+                    else:
+                        _give_up = True
+                        print("  >> Envoi non abouti 3 fois — abandon, remonté en ERREUR pour Rudy")
+                        try:
+                            kvstore.log_action({
+                                "at": now_utc.isoformat(),
+                                "from": reply.from_email,
+                                "subject": reply.subject,
+                                "intent": "error",
+                                "status": "❌ ERREUR : réponse auto jamais partie (3 tentatives) — à traiter à la main",
+                                "reply": _trim_quoted_history(_strip_html(reply.body))[:500],
+                                "response": "",
+                            })
+                        except Exception:  # noqa: BLE001
+                            pass
+                attempted = ((not dry_run) and (not send_held)
+                             and (not _send_missing or _give_up))
                 if attempted:
                     _mark_done(reply.message_id)
                     if kvstore and kvstore.kv_available():
