@@ -94,6 +94,28 @@ _DATETIME_RE = re.compile(
 )
 
 
+def send_status_from_results(results, send_held=False, auto_send=False, dry_run=False):
+    """Statut d'envoi DÉDUIT DU RÉSULTAT RÉEL, jamais de l'intention.
+
+    Renvoie (status_texte, sent_ok). Avant le fix du 26/08, le dashboard affichait
+    "Répondu" dès que le bot AVAIT L'INTENTION d'envoyer (plan.auto_send) — donc
+    même quand un garde-fou anti-doublon avait bloqué l'envoi. Résultat : le bot
+    affirmait avoir répondu à des prospects qui n'avaient rien reçu (nine.traiteur).
+    """
+    res = [str(r) for r in (results or [])]
+    sent_ok = any("[ENVOYÉ" in r for r in res)
+    blocked = any(("[DÉJÀ RÉPONDU]" in r) or ("[DUPLICATE-LOCK]" in r) for r in res)
+    if sent_ok:
+        return "envoyé", True
+    if send_held:
+        return "gardé (hors heures)", False
+    if blocked:
+        return "⚠️ NON envoyé (anti-doublon : déjà répondu / envoi concurrent)", False
+    if auto_send and not dry_run:
+        return "⚠️ NON envoyé (l'envoi n'a pas abouti)", False
+    return "à relire", False
+
+
 def load_settings(path: Path) -> dict:
     with path.open("r", encoding="utf-8") as f:
         return yaml.safe_load(f) or {}
@@ -1278,8 +1300,15 @@ def main() -> int:
                         _resp_txt = re.sub(r"<br\s*/?>", "\n", draft.body_html)
                         _resp_txt = re.sub(r"</p>", "\n", _resp_txt)
                         _resp_txt = re.sub(r"<[^>]+>", "", _resp_txt).strip()
-                    _status = "envoyé" if (plan.auto_send and not dry_run) else (
-                        "gardé (hors heures)" if send_held else "à relire"
+                    # ⚠️ VÉRITÉ D'ENVOI (fix 26/08) : le statut se déduit du RÉSULTAT
+                    # RÉEL d'execute_plan, PAS de l'intention (plan.auto_send). Avant,
+                    # un envoi bloqué par un garde-fou anti-doublon (DÉJÀ RÉPONDU /
+                    # DUPLICATE-LOCK) était quand même loggé "envoyé" + macaron
+                    # "Répondu" → le dashboard affirmait avoir répondu alors que rien
+                    # n'était parti (cas nine.traiteur). On ne ment plus jamais là-dessus.
+                    _status, _sent_ok = send_status_from_results(
+                        results, send_held=send_held,
+                        auto_send=plan.auto_send, dry_run=dry_run,
                     )
                     kvstore.log_action({
                         "at": now_utc.isoformat(),
@@ -1290,7 +1319,7 @@ def main() -> int:
                         "reply": _trim_quoted_history(_strip_html(reply.body))[:2000],
                         "response": _resp_txt[:1800] if not draft.skip_send else "(pas de réponse — silencieux)",
                         # Pour le dashboard : macaron Répondu/Sans réponse + lien ManyReach.
-                        "replied": bool(plan.auto_send and not dry_run and not draft.skip_send),
+                        "replied": bool(_sent_ok and not draft.skip_send),
                         "campaign_id": reply.campaign_id,
                         "prospect_email": (prospect.email if prospect else None),
                         "client_id": (active_client or {}).get("id"),

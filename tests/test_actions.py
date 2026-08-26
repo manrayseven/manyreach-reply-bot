@@ -116,6 +116,40 @@ def test_every_valid_intent_has_a_mapping():
         assert intent in INTENT_PROSPECT_UPDATE, f"intent sans mapping: {intent}"
 
 
+def test_send_status_never_claims_a_send_that_did_not_happen():
+    """Retour Rudy 26/08 : « tu as mis que tu avais repondu, en realite non ».
+
+    Le statut etait calcule sur l'INTENTION (plan.auto_send) : un envoi bloque par
+    un garde-fou anti-doublon etait quand meme logge "envoye" + macaron "Repondu"
+    (cas nine.traiteur, aucun message reellement parti). Le statut doit desormais
+    venir du RESULTAT REEL d'execute_plan.
+    """
+    from scripts.run_bot import send_status_from_results  # noqa: E402
+
+    # Envoi reussi -> "envoye" + replied True
+    st, ok = send_status_from_results(["[ENVOYE ok]".replace("ENVOYE", "ENVOYÉ")],
+                                      auto_send=True)
+    assert ok is True and st == "envoyé", (st, ok)
+
+    # Bloque par l'anti-doublon MALGRE auto_send -> jamais "envoye"
+    for blocker in ("[DÉJÀ RÉPONDU] m1 — skip", "[DUPLICATE-LOCK] envoi en cours"):
+        st, ok = send_status_from_results([blocker], auto_send=True)
+        assert ok is False, blocker
+        assert "NON envoyé" in st, st
+
+    # auto_send voulu mais aucun marqueur d'envoi -> on l'avoue
+    st, ok = send_status_from_results(["[TAG] ajoute"], auto_send=True)
+    assert ok is False and "NON envoyé" in st, (st, ok)
+
+    # Garde hors fenetre -> statut dedie, pas d'envoi revendique
+    st, ok = send_status_from_results([], send_held=True, auto_send=True)
+    assert ok is False and "gardé" in st, (st, ok)
+
+    # Dry-run -> jamais d'envoi revendique
+    st, ok = send_status_from_results(["[DRY-RUN] ENVERRAIT ..."], auto_send=True, dry_run=True)
+    assert ok is False, (st, ok)
+
+
 if __name__ == "__main__":
     from tests._runner import main
     main(dict(globals()))
