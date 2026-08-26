@@ -180,6 +180,7 @@ def _monthly_stats(actions: list, now=None) -> dict:
             return True  # timestamp illisible → on garde par sécurité
 
     by_email: dict[str, list] = {}
+    camp_of: dict[str, str] = {}   # email prospect -> id de campagne
     transmis = 0
     for a in actions:
         intent = a.get("intent", "")
@@ -194,6 +195,11 @@ def _monthly_stats(actions: list, now=None) -> dict:
         if not _in_window(a.get("at", "")):
             continue
         by_email.setdefault(em, []).append((a.get("at", ""), intent))
+        # Campagne du prospect (pour l'analyse PAR CAMPAGNE du reporting).
+        _c = str(a.get("campaign_id") or a.get("origin_campaign_id") or "").strip()
+        if _c and em not in camp_of:
+            camp_of[em] = _c
+    by_camp: dict[str, dict] = {}
     g = {"received": len(by_email), "positive": 0, "negative": 0, "meetings": 0,
          "timing": 0, "wrong": 0, "warm": 0, "lukewarm": 0, "info": 0,
          "refus": 0, "already": 0, "price": 0, "unsub": 0, "hostile": 0,
@@ -218,6 +224,30 @@ def _monthly_stats(actions: list, now=None) -> dict:
             g["wrong"] += 1
         if eff in _map:
             g[_map[eff]] += 1
+        # --- Détail PAR CAMPAGNE (retour Rudy 26/08 : le bilan doit nommer les
+        # campagnes qui marchent et celles à optimiser, pas rester générique) ---
+        _c = camp_of.get(_em)
+        if _c:
+            _cs = by_camp.setdefault(_c, {"received": 0, "positive": 0, "negative": 0,
+                                          "already": 0, "price": 0, "refus": 0, "unsub": 0})
+            _cs["received"] += 1
+            if eff in _POS_INTENTS:
+                _cs["positive"] += 1
+            elif eff in _NEG_INTENTS:
+                _cs["negative"] += 1
+            # Motif du négatif, PAR campagne : sans ça l'IA infère des chiffres
+            # qui n'existent pas (elle avait écrit « 9 déjà équipés » pour 11 réels).
+            if eff == "objection_already_have_solution":
+                _cs["already"] += 1
+            elif eff == "objection_price":
+                _cs["price"] += 1
+            elif eff == "not_interested_polite":
+                _cs["refus"] += 1
+            elif eff in ("unsubscribe", "hostile"):
+                _cs["unsub"] += 1
+    for _c, _cs in by_camp.items():
+        _cs["pos_rate"] = (_cs["positive"] / _cs["received"]) if _cs["received"] else 0.0
+    g["by_campaign"] = by_camp
     g["pos_rate"] = (g["positive"] / g["received"]) if g["received"] else 0.0
     return g
 
@@ -270,7 +300,7 @@ def _report_sections(g: dict) -> dict:
         issues.append("Le taux d'intérêt reste à améliorer sur cette cible.")
     if not issues:
         issues.append("Pas de point bloquant marquant ce mois-ci.")
-    # Nos prochaines actions (agence → client)
+    # Suggestions d'actions (agence → client)
     if g["positive"]:
         nxt.append(f"Nous relançons les {g['positive']} contact(s) intéressé(s) "
                    "cette semaine pour les faire avancer et vous les transmettre.")
@@ -288,7 +318,7 @@ def _report_sections(g: dict) -> dict:
     return {"worked": worked, "issues": issues, "next": nxt}
 
 
-def _llm_report_sections(client: dict, g: dict) -> dict | None:
+def _llm_report_sections(client: dict, g: dict, camp_names: dict | None = None) -> dict | None:
     """Version IA (Haiku) des 3 sections, mieux contextualisée. None si indispo →
     repli sur _report_sections. Cadrage STRICT : bilan d'une agence à SON client,
     'next' à la 1re personne du pluriel, jamais d'impératif adressé au client."""
@@ -306,22 +336,56 @@ def _llm_report_sections(client: dict, g: dict) -> dict | None:
             f"desinscriptions={g['unsub'] + g['hostile']}), "
             f"taux_interet={int(round(g['pos_rate']*100))}%"
         )
+        # DETAIL PAR CAMPAGNE : le bilan doit NOMMER les campagnes qui marchent et
+        # celles a optimiser (retour Rudy 26/08 : "parle de campagnes specifiques").
+        _cn = camp_names or {}
+        _rows = []
+        for _cid, _cs in sorted((g.get("by_campaign") or {}).items(),
+                                key=lambda kv: kv[1].get("received", 0), reverse=True)[:8]:
+            if _cs.get("received", 0) < 3:
+                continue  # trop peu de donnees pour conclure quoi que ce soit
+            _nm = str(_cn.get(str(_cid)) or ("campagne " + str(_cid)))
+            _det = ", ".join(x for x in [
+                ("%d deja equipes" % _cs["already"]) if _cs.get("already") else "",
+                ("%d budget" % _cs["price"]) if _cs.get("price") else "",
+                ("%d sans besoin" % _cs["refus"]) if _cs.get("refus") else "",
+                ("%d desinscriptions" % _cs["unsub"]) if _cs.get("unsub") else "",
+            ] if x)
+            _rows.append('"%s" : %d reponses, %d interesses (%d%%), %d negatifs%s' % (
+                _nm, _cs["received"], _cs["positive"],
+                int(round(_cs.get("pos_rate", 0) * 100)), _cs["negative"],
+                (" (dont " + _det + ")") if _det else ""))
+        camp_txt = "\n".join("- " + r for r in _rows) if _rows else "(pas assez de donnees par campagne)"
+
         sys = (
-            "Tu rédiges le BILAN MENSUEL qu'une agence de prospection envoie à SON "
-            "client. À partir des chiffres, produis 3 listes courtes en français :\n"
-            "- worked : ce qui a FONCTIONNÉ (factuel, valorisant, sans exagérer).\n"
-            "- issues : ce qui a MOINS bien marché (lucide, jamais alarmiste, "
-            "explique le motif des négatifs).\n"
-            "- next : les prochaines actions que NOUS, l'agence, mettons en place. "
-            "TOUJOURS à la 1re personne du pluriel (« Nous… »). INTERDIT : tout "
-            "impératif adressé au client (« faites », « relancez », « analysez », "
-            "« testez ») — le client ne doit AVOIR AUCUNE tâche à faire.\n"
-            "⚠️ NE PARLE JAMAIS de « rendez-vous » ni de « RDV » (donnée non "
-            "fiable). Parle de contacts intéressés et de prospects transmis.\n"
-            "Chaque item = une phrase concrète. N'invente aucun chiffre. Réponds "
+            "Tu rediges le BILAN MENSUEL qu'une agence de prospection envoie a SON "
+            "client. A partir des chiffres, produis 3 listes courtes en francais :\n"
+            "- worked : ce qui a FONCTIONNE. NOMME les campagnes les plus "
+            "performantes avec leur taux d'interet reel. Factuel, sans exagerer.\n"
+            "- issues : ce qui a MOINS bien marche. NOMME les campagnes en retrait "
+            "et dis en quoi (taux d'interet bas, beaucoup de 'deja equipe', "
+            "desinscriptions...). Lucide, jamais alarmiste.\n"
+            "- next : des SUGGESTIONS D'ACTIONS concretes et SPECIFIQUES. Chaque "
+            "suggestion doit s'appuyer sur un chiffre ou une campagne NOMMEE du "
+            "bilan (ex. 'la campagne X plafonne a 12% d'interet contre 44% pour Y : "
+            "nous y testons une accroche reprise de Y').\n"
+            "INTERDIT ABSOLU dans next, ce sont des banalites creuses : 'affiner le "
+            "ciblage', 'renouveler les segments', 'proposer une nouvelle liste', "
+            "'optimiser les messages', 'poursuivre nos efforts', 'maintenir la "
+            "relation'. Si tu n'as rien de specifique et chiffre a dire, ecris "
+            "MOINS d'items (1 seul suffit).\n"
+            "TOUJOURS a la 1re personne du pluriel ('Nous...'). INTERDIT : tout "
+            "imperatif adresse au client ('faites', 'relancez', 'analysez', "
+            "'testez') : le client ne doit AVOIR AUCUNE tache a faire.\n"
+            "NE PARLE JAMAIS de 'rendez-vous' ni de 'RDV' (donnee non fiable). "
+            "Parle de contacts interesses et de prospects transmis.\n"
+            "Chaque item = une phrase concrete. N'invente AUCUN chiffre et AUCUN "
+            "nom de campagne absent des donnees. Reponds "
             'UNIQUEMENT en JSON : {"worked":[...],"issues":[...],"next":[...]}.'
         )
-        user = f"Offre du client : {offer or 'non precisee'}\nChiffres du mois : {stats_txt}"
+        user = ("Offre du client : " + (offer or "non precisee") + "\n"
+                + "Chiffres du mois : " + stats_txt + "\n"
+                + "Detail par campagne :\n" + camp_txt)
         ca = anthropic.Anthropic(api_key=key, max_retries=2)
         msg = ca.messages.create(
             model="claude-haiku-4-5-20251001",
@@ -344,6 +408,18 @@ def _llm_report_sections(client: dict, g: dict) -> dict | None:
                 "ajoutez", "envoyez", "mettez", "contactez")
         if any(i.lower().lstrip("- ").startswith(_bad) for i in out["next"]):
             return None
+        # FILET ANTI-BANALITÉ (retour Rudy 26/08 : « tes suggestions sont nulles et
+        # bullshit »). On SUPPRIME les items creux au lieu de les afficher : mieux
+        # vaut 1 suggestion concrète que 3 phrases de consultant.
+        _creux = (
+            "affiner le ciblage", "affinerons le ciblage", "renouveler les segments",
+            "renouvellement des segments", "nouvelle liste", "optimiser les messages",
+            "poursuivre nos efforts", "poursuivrons nos efforts", "maintenir la relation",
+            "maintenir le rythme", "continuer sur cette lancée", "ajuster le ciblage",
+            "améliorer la performance", "séquence automatisée",
+        )
+        out["next"] = [i for i in out["next"]
+                       if not any(c in i.lower() for c in _creux)]
         # Aucune mention de RDV (chiffre non fiable) → sinon repli règles.
         _all = " ".join(out["worked"] + out["issues"] + out["next"]).lower()
         if "rendez-vous" in _all or "rendez vous" in _all or " rdv" in _all:
@@ -384,7 +460,7 @@ def _report_text(client: dict, g: dict, sections: dict, now=None) -> str:
     L += [f"- {x}" for x in sections["worked"]]
     L += ["", "CE QUI A MOINS BIEN MARCHÉ"]
     L += [f"- {x}" for x in sections["issues"]]
-    L += ["", "NOS PROCHAINES ACTIONS"]
+    L += ["", "SUGGESTIONS D'ACTIONS"]
     L += [f"- {x}" for x in sections["next"]]
     L += ["", "Je reste à votre disposition pour en discuter.", "",
           "Bien à vous,", "Rudy Viard", "Webmarketing Conseil"]
@@ -432,7 +508,7 @@ def _report_html(client: dict, g: dict, sections: dict, now=None) -> str:
         f'de contacts intéressés sur les réponses reçues.</p>'
         + _block("✅ Ce qui a fonctionné", sections["worked"], "#2e7d52")
         + _block("⚠️ Ce qui a moins bien marché", sections["issues"], "#c0392b")
-        + _block("➡️ Nos prochaines actions", sections["next"], "#26509e")
+        + _block("➡️ Suggestions d'actions", sections["next"], "#26509e")
         + '<p style="margin-top:18px">Je reste à votre disposition pour en discuter.</p>'
         '<p style="margin-top:12px">Bien à vous,<br><strong>Rudy Viard</strong>'
         '<br>Webmarketing Conseil</p></div>'
@@ -1406,9 +1482,9 @@ def _render(client_filter: str | None = None) -> str:
                 f' · Objet suggéré : {html.escape(_subj)}</div>'
                 f'<div id="{_uid}" class="handoff-render">{_card}</div>'
                 '<div class="handoff-actions">'
-                f'<button type="button" class="btn-primary" onclick="{_copy_ho}">📋 Copier l\'email</button>'
+                f'<button type="button" class="btn-primary" onclick="{_copy_ho}{_track_ho}">📋 Copier l\'email</button>'
                 f'<a class="alert-mr alert-mr-sec" href="{html.escape(_mer_href)}" '
-                'title="Ouvre ton logiciel mail (si le mailto est branché)">✉ Ouvrir dans mon mail</a>'
+                f'onclick="{_track_ho}" title="Ouvre ton logiciel mail (si le mailto est branché)">✉ Ouvrir dans mon mail</a>'
                 '<span class="handoff-hint">Colle dans un nouveau message Thunderbird : la mise en forme est conservée.</span>'
                 '</div></div></details>'
             )
@@ -2587,7 +2663,32 @@ class handler(BaseHTTPRequestHandler):
                 acts = kvstore.recent_actions(kvstore.MAX_LOG_ENTRIES)
                 acts_c = [a for a in acts if _eff(a) == client.get("id")]
                 g = _monthly_stats(acts_c)
-                sections = _llm_report_sections(client, g) or _report_sections(g)
+                # Noms lisibles des campagnes (ID -> nom) pour que le bilan les
+                # NOMME au lieu de rester générique. Cache KV déjà utilisé ailleurs.
+                _cnames = {}
+                try:
+                    from src.manyreach import ManyReachClient as _MRC2
+                    _ids = [str(k) for k in (g.get("by_campaign") or {}).keys()][:10]
+                    _mc2 = _MRC2(timeout=6.0)
+                    try:
+                        for _cid in _ids:
+                            _hit = kvstore.cache_get(f"mrcamp:v2:{_cid}")
+                            if _hit and _hit != "-":
+                                _cnames[_cid] = _hit
+                                continue
+                            try:
+                                _d = _mc2.get_campaign(int(_cid))
+                                _nm = (_d.get("name") if isinstance(_d, dict) else "") or ""
+                            except Exception:  # noqa: BLE001
+                                _nm = ""
+                            kvstore.cache_set(f"mrcamp:v2:{_cid}", _nm or "-", 7 * 24 * 3600)
+                            if _nm:
+                                _cnames[_cid] = _nm
+                    finally:
+                        _mc2.close()
+                except Exception:  # noqa: BLE001
+                    _cnames = {}
+                sections = _llm_report_sections(client, g, _cnames) or _report_sections(g)
                 report_html = _report_html(client, g, sections)
                 report_txt = _report_text(client, g, sections)
                 tips = _llm_internal_tips(client, g) or _internal_tips(g)
