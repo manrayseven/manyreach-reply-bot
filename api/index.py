@@ -1672,10 +1672,40 @@ def _render(client_filter: str | None = None) -> str:
             pass
 
     # Sections HTML
-    alerts_html = "".join(_alert_row(a) for a in alerts[:25])
+    # === GROUPAGE PAR ESPACE (demande Rudy 26/08) ===
+    # Rudy veut TOUT traiter sur la MÊME page, mais avec les alertes et les envois
+    # SÉPARÉS par espace (compte client). Quand aucun compte n'est sélectionné dans
+    # le switcher et qu'il y a au moins 2 comptes, on insère un sous-titre par
+    # espace au lieu d'une liste à plat. Avec le filtre actif (ou un seul compte),
+    # on garde l'affichage à plat d'avant.
+    def _grouped(items: list, row_fn, cap: int) -> str:
+        if sel_client or len(clients_all) < 2:
+            return "".join(row_fn(a) for a in items[:cap])
+        _buckets: dict[str, list] = {}
+        for _a in items[:cap]:
+            _buckets.setdefault(_eff_client_id(_a) or "", []).append(_a)
+        # Ordre : compte par défaut d'abord, puis par volume décroissant.
+        def _order(kv):
+            _cid, _lst = kv
+            return (0 if _cid == _default_cid else 1, -len(_lst))
+        _out = []
+        for _cid, _lst in sorted(_buckets.items(), key=_order):
+            _c = clients_by_id.get(_cid)
+            _nm = html.escape(str((_c or {}).get("name") or "À trier"))
+            _out.append(
+                f'<div class="space-hdr" style="display:flex;align-items:center;gap:8px;'
+                f'margin:16px 0 8px;padding-bottom:6px;border-bottom:1px solid #e7ddc4">'
+                f'<span style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;'
+                f'color:#a07520;font-weight:700">👤 {_nm}</span>'
+                f'<span style="font-size:11px;color:#8c8678">{len(_lst)}</span></div>'
+            )
+            _out.extend(row_fn(a) for a in _lst)
+        return "".join(_out)
+
+    alerts_html = _grouped(alerts, _alert_row, 25)
     if not alerts_html:
         alerts_html = '<div class="empty-section">Aucune alerte à traiter — tu es à jour ✓</div>'
-    sent_html = "".join(_sent_row(a) for a in sent_list[:40])
+    sent_html = _grouped(sent_list, _sent_row, 40)
     if not sent_html:
         sent_html = '<div class="empty-section">Aucun envoi récent.</div>'
     errors_html = "".join(_error_row(a) for a in error_list[:5])

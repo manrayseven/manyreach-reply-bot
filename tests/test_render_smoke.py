@@ -42,9 +42,14 @@ def _fake_kv(monkey_actions):
             return list(monkey_actions)
 
         def get_clients(self):
-            return [{"id": "cli1", "name": "Client Test",
-                     "contact_email": "contact@client-test.fr",
-                     "sender_mailboxes": [], "campaigns": []}]
+            return [
+                {"id": "cli1", "name": "Client Test", "is_default": True,
+                 "contact_email": "contact@client-test.fr",
+                 "sender_mailboxes": [], "campaigns": []},
+                {"id": "cli2", "name": "Deuxieme Espace",
+                 "contact_email": "contact@espace2.fr",
+                 "sender_mailboxes": [], "campaigns": []},
+            ]
 
         def get_dismissed(self):
             return set()
@@ -113,6 +118,20 @@ def test_render_produces_html_with_a_full_alert():
             "campaign_id": "12345",
             "client_id": "cli1",
         },
+        {   # 2e espace : doit apparaitre sous son propre sous-titre
+            "at": (now - timedelta(minutes=45)).isoformat(),
+            "from": "prospect2@exemple.fr",
+            "prospect_email": "prospect2@exemple.fr",
+            "subject": "Re: Question",
+            "intent": "ask_more_info",
+            "status": "🔔 ALERTE — à traiter dashboard",
+            "reply": "Vous faites quoi exactement ?",
+            "response": "",
+            "campaign_id": "999",
+            "client_id": "cli2",
+            "client_name": "Deuxieme Espace",
+            "message_id": "m-2",
+        },
     ]
     fake = _fake_kv(actions)
     real_kv = index.kvstore
@@ -131,6 +150,11 @@ def test_render_produces_html_with_a_full_alert():
     # Le bloc transfert (zone qui avait casse) doit etre rendu
     assert "Email de transfert" in html_out
     assert "mark_handoff" in html_out
+    # GROUPAGE PAR ESPACE : sans filtre et avec 2 comptes, chaque espace doit
+    # avoir son sous-titre, mais tout reste sur la MEME page (demande Rudy 26/08).
+    assert "space-hdr" in html_out
+    assert "Client Test" in html_out
+    assert "Deuxieme Espace" in html_out
 
 
 if __name__ == "__main__":
