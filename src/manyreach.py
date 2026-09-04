@@ -91,6 +91,33 @@ class Tag:
     title: str
 
 
+def workspace_api_keys() -> dict[str, str]:
+    """Clés API des ESPACES secondaires (workspaces ManyReach).
+
+    Un workspace ManyReach a ses propres données ET sa propre clé API : la clé
+    du compte principal ne voit PAS ses campagnes ni ses réponses. Vérifié le
+    04/09/2026 — passer `workspaceId` en paramètre d'URL à l'API REST est
+    silencieusement ignoré et renvoie les données du compte principal.
+
+    Convention : une variable d'environnement `MANYREACH_API_KEY_<SUFFIXE>` par
+    espace, où <SUFFIXE> correspond à l'id du client dans le dashboard.
+    Exemple : MANYREACH_API_KEY_CMACLIM -> client "cmaclim".
+
+    Renvoie {id_client: clé}. La clé du compte principal (MANYREACH_API_KEY,
+    sans suffixe) n'en fait jamais partie.
+    """
+    out: dict[str, str] = {}
+    prefix = "MANYREACH_API_KEY_"
+    for name, val in os.environ.items():
+        if not name.startswith(prefix):
+            continue
+        val = (val or "").strip()
+        suffix = name[len(prefix):].strip().lower().replace("_", "-")
+        if val and suffix:
+            out[suffix] = val
+    return out
+
+
 class ManyReachClient:
     def __init__(self, api_key: str | None = None, timeout: float = DEFAULT_TIMEOUT):
         key = api_key or os.environ.get("MANYREACH_API_KEY")

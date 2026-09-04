@@ -1974,9 +1974,36 @@ def _render(client_filter: str | None = None) -> str:
             _cid = str(_c.get("id") or "")
             _lbl = str(_c.get("name") or _cid) + (" (moi)" if _c.get("is_default") else "")
             _tabs.append(_acc_link(_cid, _lbl, sel_client == _cid))
+        # Cles d'espace detectees (ids uniquement — JAMAIS la valeur des cles).
+        # Sert a confirmer d'un coup d'oeil qu'une variable ajoutee dans Vercel
+        # est bien vue par l'app, et a reperer un suffixe qui ne correspond a
+        # aucun compte (donc inexploitable par le bot).
+        _ws_note = ""
+        try:
+            from src.manyreach import workspace_api_keys
+            _ws = workspace_api_keys()
+        except Exception:  # noqa: BLE001
+            _ws = {}
+        if _ws:
+            _bits = []
+            for _sfx in sorted(_ws):
+                if _sfx in clients_by_id:
+                    _nm = html.escape(str(clients_by_id[_sfx].get("name") or _sfx))
+                    _bits.append('<span style="color:#2e7d52">OK ' + _nm + "</span>")
+                else:
+                    _tip = ("Aucun compte ne porte cet id : renomme la variable "
+                            "Vercel MANYREACH_API_KEY_<ID> ou le compte.")
+                    _bits.append(
+                        '<span style="color:#b07a2b" title="' + html.escape(_tip)
+                        + '">! ' + html.escape(_sfx) + " (aucun compte)</span>"
+                    )
+            _ws_note = (
+                '<div style="font-size:11.5px;color:#8c8678;margin-top:6px">'
+                "Cles d'espace detectees : " + " · ".join(_bits) + "</div>"
+            )
         account_switcher_html = (
             '<div class="acc-switch"><span class="acc-switch-lbl">Compte&nbsp;:</span>'
-            + "".join(_tabs) + "</div>"
+            + "".join(_tabs) + "</div>" + _ws_note
         )
 
     # Bloc perf 30 jours (dédupliqué par prospect)
