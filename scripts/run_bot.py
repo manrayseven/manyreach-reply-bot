@@ -163,6 +163,16 @@ def main() -> int:
         epilog=textwrap.dedent(__doc__ or ""),
     )
     parser.add_argument("--limit", type=int, default=None, help="Max replies to process")
+    parser.add_argument(
+        "--space",
+        default=None,
+        help=(
+            "Traite un ESPACE secondaire (workspace ManyReach) au lieu du compte "
+            "principal. La valeur est l'id du compte dans le dashboard ; la cle "
+            "est lue dans MANYREACH_API_KEY_<ID>. Toutes les reponses trouvees "
+            "sont attribuees a ce compte (un workspace = un client)."
+        ),
+    )
     parser.add_argument("--campaign", type=int, default=None, help="Filter to one campaign ID")
     parser.add_argument(
         "--no-dry-run",
@@ -259,6 +269,28 @@ def main() -> int:
             clients_list = kvstore.get_clients()
     except Exception:  # noqa: BLE001
         clients_list = []
+
+    # ESPACE (workspace ManyReach) : donnees ET cle API totalement separees.
+    # Sans --space on garde EXACTEMENT le comportement d'avant (compte principal,
+    # cle MANYREACH_API_KEY). Avec --space, on bascule sur la cle de l'espace et
+    # on force l'attribution au client correspondant.
+    space_id = (getattr(args, "space", None) or "").strip().lower() or None
+    space_key = None
+    if space_id:
+        from src.manyreach import workspace_api_keys
+        space_key = workspace_api_keys().get(space_id)
+        if not space_key:
+            print(
+                f"!! Espace '{space_id}' ignore : aucune variable "
+                f"MANYREACH_API_KEY_{space_id.upper().replace('-', '_')} definie."
+            )
+            return 0
+
+    def _pid(message_id: str) -> str:
+        """Cle d'idempotence. Les ids de message sont propres a chaque workspace
+        et peuvent donc se repeter d'un espace a l'autre : on prefixe pour qu'un
+        reply de l'espace A ne masque jamais un reply de l'espace B."""
+        return f"{space_id}:{message_id}" if space_id else message_id
 
     # LOG_DIR env permet d'écrire ailleurs (ex. /tmp sur Vercel, FS read-only).
     log_dir_env = os.environ.get("LOG_DIR")
@@ -377,10 +409,10 @@ def main() -> int:
         Inerte en dry-run (zéro effet de bord)."""
         if dry_run:
             return
-        append_processed_id(processed_file, message_id)
+        append_processed_id(processed_file, _pid(message_id))
         if kvstore is not None and kvstore.kv_available():
             try:
-                kvstore.mark_kv_processed(message_id)
+                kvstore.mark_kv_processed(_pid(message_id))
             except Exception:  # noqa: BLE001
                 pass
 
@@ -388,7 +420,7 @@ def main() -> int:
         print(f">>> MODE TEST CONTRÔLÉ : uniquement {args.only_email} (envoi forcé si --no-dry-run)")
         confirmed_statuses = None  # ignore status filter, target the email directly
 
-    with ManyReachClient() as mr, log_file.open("w", encoding="utf-8") as logf:
+    with ManyReachClient(api_key=space_key) as mr, log_file.open("w", encoding="utf-8") as logf:
         # FIFO ANTI-FAMINE : on matérialise les replies et on les trie du PLUS
         # ANCIEN au plus récent. Ainsi un reply arrivé hier soir (différé hors
         # fenêtre) passe AVANT les frais du matin → plus jamais de starvation.
@@ -416,9 +448,9 @@ def main() -> int:
             and kvstore.kv_available()
             and _replies
         ):
-            _done = kvstore.filter_processed([r.message_id for r in _replies])
+            _done = kvstore.filter_processed([_pid(r.message_id) for r in _replies])
             if _done:
-                _replies = [r for r in _replies if r.message_id not in _done]
+                _replies = [r for r in _replies if _pid(r.message_id) not in _done]
             print(f"  {len(_done)} déjà traités (skip groupé), {len(_replies)} à examiner")
         print(f"Replies en file (fenêtre {args.since_days}j) : {len(_replies)}")
         for reply in _replies:
@@ -434,7 +466,7 @@ def main() -> int:
             if _time_left() < 9.0:
                 print(f"  >> BUDGET TEMPS ({run_budget_s}s) — arrêt avant nouvelle itération")
                 break
-            if reply.message_id in processed_ids:
+            if _pid(reply.message_id) in processed_ids:
                 skipped_count += 1
                 continue
             # (Le pré-filtre groupé MGET ci-dessus a déjà écarté les déjà-traités
@@ -645,7 +677,13 @@ def main() -> int:
                 # mono-client → active_client None → comportement legacy inchangé.
                 active_client = None
                 client_needs_triage = False
-                if clients_list:
+                if space_id:
+                    # Un workspace = un client, par construction : pas de routage
+                    # ni de triage, l'appartenance ne fait aucun doute.
+                    active_client = next(
+                        (c for c in clients_list if c.get("id") == space_id), None
+                    )
+                elif clients_list:
                     from src import clients as _clients
                     _sender_mb = original_outreach.from_email if original_outreach else None
                     _route = _clients.route(clients_list, _sender_mb, reply.campaign_id)
