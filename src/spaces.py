@@ -95,4 +95,20 @@ def run_spaces(
             os.environ["RUN_BUDGET_SECONDS"] = old_budget
 
     result["elapsed_s"] = round(time.time() - started, 1)
+    # Trace persistante : un espace vide ne produit ni alerte ni envoi, donc
+    # sans ca on ne distingue pas "a tourne, rien a faire" de "n'a pas tourne".
+    try:
+        import json as _json
+        from datetime import datetime as _dt, timezone as _tz
+        from src import kvstore as _kv
+        if _kv.kv_available():
+            _kv.set_spaces_last_run(_json.dumps({
+                "at": _dt.now(_tz.utc).isoformat(),
+                "spaces": result.get("spaces", {}),
+                "note": result.get("note"),
+                "ok": result.get("ok", True),
+                "elapsed_s": result.get("elapsed_s"),
+            }, ensure_ascii=False)[:900])
+    except Exception:  # noqa: BLE001
+        pass
     return result

@@ -191,6 +191,23 @@ def get_last_run() -> str | None:
     return _cmd("GET", LAST_RUN_KEY)
 
 
+SPACES_LAST_KEY = "bot:spaces:last_run"
+
+
+def set_spaces_last_run(payload: str) -> None:
+    """Memorise le resultat du dernier passage sur les espaces (JSON compact).
+
+    Sans ca, un espace vide et un espace en panne se ressemblent : les deux ne
+    produisent ni alerte ni envoi. Le dashboard affiche cette trace pour qu'un
+    echec silencieux se voie.
+    """
+    _cmd("SET", SPACES_LAST_KEY, payload)
+
+
+def get_spaces_last_run() -> str | None:
+    return _cmd("GET", SPACES_LAST_KEY)
+
+
 HELD_SEEN_TTL = 86400  # 24h — couvre une nuit + un week-end max raisonnable
 
 

@@ -1997,9 +1997,28 @@ def _render(client_filter: str | None = None) -> str:
                         '<span style="color:#b07a2b" title="' + html.escape(_tip)
                         + '">! ' + html.escape(_sfx) + " (aucun compte)</span>"
                     )
+            # Dernier passage sur les espaces : rend visible un echec silencieux.
+            _last = ""
+            try:
+                import json as _json
+                _raw = kvstore.get_spaces_last_run() if kvstore.kv_available() else None
+                if _raw:
+                    _d = _json.loads(_raw)
+                    _when = _time_fr(_d.get("at")) if _d.get("at") else "?"
+                    if _d.get("note"):
+                        _det = html.escape(str(_d["note"]))
+                    else:
+                        _det = html.escape(", ".join(
+                            f"{k} : {v}" for k, v in (_d.get("spaces") or {}).items()
+                        )) or "aucun"
+                    _col = "#8c8678" if _d.get("ok", True) else "#c0392b"
+                    _last = (f' — dernier passage {html.escape(_when)} '
+                             f'<span style="color:{_col}">({_det})</span>')
+            except Exception:  # noqa: BLE001
+                _last = ""
             _ws_note = (
                 '<div style="font-size:11.5px;color:#8c8678;margin-top:6px">'
-                "Cles d'espace detectees : " + " · ".join(_bits) + "</div>"
+                "Cles d'espace detectees : " + " · ".join(_bits) + _last + "</div>"
             )
         account_switcher_html = (
             '<div class="acc-switch"><span class="acc-switch-lbl">Compte&nbsp;:</span>'
