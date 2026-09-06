@@ -2228,6 +2228,14 @@ def _render(client_filter: str | None = None) -> str:
       </div>
       <div class="action-cell">
         <form method="POST" action="/{keyparam}"
+              onsubmit="var b=this.querySelector('button'); b.disabled=true; b.innerHTML='⏳ Espaces...'; return true;">
+          <input type="hidden" name="action" value="run_spaces">
+          <button class="btn-primary" type="submit">▶ Lancer les espaces</button>
+        </form>
+        <div class="action-help">Scanne les <b>espaces secondaires</b> (workspaces ManyReach), qui ont leur propre clé API et ne sont donc <b>pas</b> couverts par le bouton ci-contre.</div>
+      </div>
+      <div class="action-cell">
+        <form method="POST" action="/{keyparam}"
               onsubmit="var b=this.querySelector('button'); b.disabled=true; b.innerHTML='⏳...'; return true;">
           <input type="hidden" name="action" value="run_email">
           <input type="email" name="only_email" placeholder="email@prospect.com" required>
@@ -2514,6 +2522,30 @@ class handler(BaseHTTPRequestHandler):
                     "status": log_status,
                     "reply": "",
                     "response": resp_preview[:1000],
+                })
+        elif action == "run_spaces":
+            # Passage sur les ESPACES secondaires (workspaces ManyReach). Meme
+            # logique que /api/cron_spaces : cf. src/spaces.py.
+            from datetime import datetime as _dt, timezone as _tz
+            try:
+                from src.spaces import run_spaces as _run_spaces
+                _res = _run_spaces()
+                if _res.get("note"):
+                    log_status = f"🖱 Espaces : {_res['note']}"
+                else:
+                    _det = ", ".join(f"{k}={v}" for k, v in (_res.get("spaces") or {}).items())
+                    log_status = f"🖱 Espaces traités ({_det or 'aucun'})"
+            except Exception as e:  # noqa: BLE001
+                log_status = f"❌ Espaces : {str(e)[:200]}"
+            if kvstore.kv_available():
+                kvstore.log_action({
+                    "at": _dt.now(_tz.utc).isoformat(),
+                    "from": "",
+                    "subject": "🖱 Lancer les espaces",
+                    "intent": "manual_reply" if log_status.startswith("🖱") else "error",
+                    "status": log_status,
+                    "reply": "",
+                    "response": "",
                 })
         elif action == "run_now" or action == "run_email":
             # Lancement manuel synchrone du bot. Si action=run_email + champ
