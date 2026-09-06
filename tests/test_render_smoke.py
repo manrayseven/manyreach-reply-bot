@@ -49,6 +49,11 @@ def _fake_kv(monkey_actions):
                 {"id": "cli2", "name": "Deuxieme Espace",
                  "contact_email": "contact@espace2.fr",
                  "sender_mailboxes": [], "campaigns": []},
+                # Espace SANS aucune ligne : doit quand meme avoir son bloc,
+                # sinon on ne sait pas s'il est calme ou casse.
+                {"id": "cli3", "name": "Espace Silencieux",
+                 "contact_email": "contact@espace3.fr",
+                 "sender_mailboxes": [], "campaigns": []},
             ]
 
         def get_dismissed(self):
@@ -155,6 +160,9 @@ def test_render_produces_html_with_a_full_alert():
     assert "space-hdr" in html_out
     assert "Client Test" in html_out
     assert "Deuxieme Espace" in html_out
+    # Un espace sans aucune alerte ni envoi garde son bloc et le dit.
+    assert "Espace Silencieux" in html_out
+    assert "Aucune alerte pour cet espace." in html_out
 
 
 if __name__ == "__main__":

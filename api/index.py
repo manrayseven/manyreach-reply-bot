@@ -1678,18 +1678,28 @@ def _render(client_filter: str | None = None) -> str:
     # le switcher et qu'il y a au moins 2 comptes, on insère un sous-titre par
     # espace au lieu d'une liste à plat. Avec le filtre actif (ou un seul compte),
     # on garde l'affichage à plat d'avant.
-    def _grouped(items: list, row_fn, cap: int) -> str:
+    def _grouped(items: list, row_fn, cap: int, empty_lbl: str) -> str:
+        """Un bloc par espace. TOUS les comptes ont leur bloc, meme sans aucune
+        ligne : sinon un espace calme disparait de la page et on ne sait plus
+        s'il est vide ou casse. Le bloc "A trier" n'apparait que s'il est occupe.
+        """
         if sel_client or len(clients_all) < 2:
             return "".join(row_fn(a) for a in items[:cap])
         _buckets: dict[str, list] = {}
         for _a in items[:cap]:
             _buckets.setdefault(_eff_client_id(_a) or "", []).append(_a)
-        # Ordre : compte par défaut d'abord, puis par volume décroissant.
-        def _order(kv):
-            _cid, _lst = kv
-            return (0 if _cid == _default_cid else 1, -len(_lst))
+        # Ordre : compte par defaut d'abord, puis alphabetique — stable d'un
+        # rafraichissement a l'autre (un ordre par volume ferait sauter les
+        # blocs de place des qu'une alerte arrive).
+        _order = sorted(
+            (c.get("id") for c in clients_all if c.get("id")),
+            key=lambda cid: (0 if cid == _default_cid else 1, str(cid)),
+        )
+        if _buckets.get(""):
+            _order.append("")
         _out = []
-        for _cid, _lst in sorted(_buckets.items(), key=_order):
+        for _cid in _order:
+            _lst = _buckets.get(_cid, [])
             _c = clients_by_id.get(_cid)
             _nm = html.escape(str((_c or {}).get("name") or "À trier"))
             _out.append(
@@ -1699,13 +1709,19 @@ def _render(client_filter: str | None = None) -> str:
                 f'color:#a07520;font-weight:700">👤 {_nm}</span>'
                 f'<span style="font-size:11px;color:#8c8678">{len(_lst)}</span></div>'
             )
-            _out.extend(row_fn(a) for a in _lst)
+            if _lst:
+                _out.extend(row_fn(a) for a in _lst)
+            else:
+                _out.append(
+                    '<div style="font-size:12.5px;color:#a39c8c;padding:6px 2px 2px">'
+                    + html.escape(empty_lbl) + "</div>"
+                )
         return "".join(_out)
 
-    alerts_html = _grouped(alerts, _alert_row, 25)
+    alerts_html = _grouped(alerts, _alert_row, 25, "Aucune alerte pour cet espace.") if alerts else ""
     if not alerts_html:
         alerts_html = '<div class="empty-section">Aucune alerte à traiter — tu es à jour ✓</div>'
-    sent_html = _grouped(sent_list, _sent_row, 40)
+    sent_html = _grouped(sent_list, _sent_row, 40, "Aucun envoi pour cet espace.") if sent_list else ""
     if not sent_html:
         sent_html = '<div class="empty-section">Aucun envoi récent.</div>'
     errors_html = "".join(_error_row(a) for a in error_list[:5])
