@@ -10,11 +10,47 @@ from http.server import BaseHTTPRequestHandler
 import json
 import os
 import sys
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "scripts"))
+
+
+# Les ESPACES (workspaces ManyReach) ont leur propre cle API, donc leur propre
+# passage du bot. Plutot que d'exiger un second cron, on l'intercale ici, au plus
+# une fois toutes les SPACES_EVERY_MIN minutes. Leur temps est RESERVE A L'AVANCE
+# sur le budget du passage principal : ajouter un passage APRES coup ferait
+# depasser le timeout de 30 s du cron externe, et le passage principal serait
+# alors compte comme un echec.
+SPACES_EVERY_MIN = float(os.environ.get("SPACES_EVERY_MIN", "30"))
+SPACES_RESERVE_S = 12.0   # temps reserve aux espaces sur les tours concernes
+CRON_ENVELOPE_S = 26.0    # enveloppe totale visee (cron externe : timeout 30 s)
+
+
+def _spaces_due() -> bool:
+    """True s'il existe au moins un espace configure ET que le dernier passage
+    date de plus de SPACES_EVERY_MIN. Sur erreur : False (on ne penalise jamais
+    le passage principal a cause des espaces)."""
+    try:
+        from src.spaces import list_spaces
+        if not list_spaces():
+            return False
+        from datetime import datetime, timezone
+        from src import kvstore
+        if not kvstore.kv_available():
+            return True
+        raw = kvstore.get_spaces_last_run()
+        if not raw:
+            return True
+        at = json.loads(raw).get("at")
+        if not at:
+            return True
+        age_min = (datetime.now(timezone.utc) - datetime.fromisoformat(at)).total_seconds() / 60.0
+        return age_min >= SPACES_EVERY_MIN
+    except Exception:  # noqa: BLE001
+        return False
 
 
 class handler(BaseHTTPRequestHandler):
@@ -64,8 +100,28 @@ class handler(BaseHTTPRequestHandler):
                 "--limit", limit,
                 "--since-days", since_days,
             ]
-            code = run_bot.main()
+            started = time.time()
+            due = _spaces_due()
+            prev_budget = os.environ.get("RUN_BUDGET_SECONDS")
+            if due:
+                # On raccourcit CE passage principal pour laisser la place aux
+                # espaces. La file FIFO garantit que rien n'est perdu : ce qui
+                # n'est pas traite ici passe au tour suivant (5 min plus tard).
+                os.environ["RUN_BUDGET_SECONDS"] = str(
+                    int(max(10.0, CRON_ENVELOPE_S - SPACES_RESERVE_S))
+                )
+            try:
+                code = run_bot.main()
+            finally:
+                if prev_budget is None:
+                    os.environ.pop("RUN_BUDGET_SECONDS", None)
+                else:
+                    os.environ["RUN_BUDGET_SECONDS"] = prev_budget
             result["exit_code"] = code
+            if due:
+                from src.spaces import run_spaces
+                left = CRON_ENVELOPE_S - (time.time() - started)
+                result["spaces"] = run_spaces(total_budget_s=max(0.0, left))
         except SystemExit as e:
             result["exit_code"] = e.code
         except Exception as e:  # noqa: BLE001
