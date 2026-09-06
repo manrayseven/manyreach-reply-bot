@@ -10,7 +10,6 @@ from http.server import BaseHTTPRequestHandler
 import json
 import os
 import sys
-import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -22,10 +21,9 @@ sys.path.insert(0, str(ROOT / "scripts"))
 # passage du bot. Plutot que d'exiger un second cron, on l'intercale ici, au plus
 # une fois toutes les SPACES_EVERY_MIN minutes. Leur temps est RESERVE A L'AVANCE
 # sur le budget du passage principal : ajouter un passage APRES coup ferait
-# depasser le timeout de 30 s du cron externe, et le passage principal serait
-# alors compte comme un echec.
+# depasser le timeout de 30 s du cron externe. On dedie donc un tour entier aux
+# espaces plutot que de partager l'enveloppe.
 SPACES_EVERY_MIN = float(os.environ.get("SPACES_EVERY_MIN", "30"))
-SPACES_RESERVE_S = 12.0   # temps reserve aux espaces sur les tours concernes
 CRON_ENVELOPE_S = 26.0    # enveloppe totale visee (cron externe : timeout 30 s)
 
 
@@ -100,28 +98,20 @@ class handler(BaseHTTPRequestHandler):
                 "--limit", limit,
                 "--since-days", since_days,
             ]
-            started = time.time()
-            due = _spaces_due()
-            prev_budget = os.environ.get("RUN_BUDGET_SECONDS")
-            if due:
-                # On raccourcit CE passage principal pour laisser la place aux
-                # espaces. La file FIFO garantit que rien n'est perdu : ce qui
-                # n'est pas traite ici passe au tour suivant (5 min plus tard).
-                os.environ["RUN_BUDGET_SECONDS"] = str(
-                    int(max(10.0, CRON_ENVELOPE_S - SPACES_RESERVE_S))
-                )
-            try:
-                code = run_bot.main()
-            finally:
-                if prev_budget is None:
-                    os.environ.pop("RUN_BUDGET_SECONDS", None)
-                else:
-                    os.environ["RUN_BUDGET_SECONDS"] = prev_budget
-            result["exit_code"] = code
-            if due:
+            if _spaces_due():
+                # TOUR DEDIE AUX ESPACES : on ne lance PAS le passage principal.
+                # Partager l'enveloppe entre les deux ne marche pas — mesure le
+                # 06/09 : le passage principal la consomme entierement et les
+                # espaces ressortaient systematiquement "reporte (budget temps)",
+                # donc jamais traites. Le compte principal reprend au tour
+                # suivant (5 min) et la file FIFO, qui part du plus ancien,
+                # garantit que rien n'est perdu. L'indicateur de fraicheur reste
+                # juste : le passage espace appelle set_last_run lui aussi.
                 from src.spaces import run_spaces
-                left = CRON_ENVELOPE_S - (time.time() - started)
-                result["spaces"] = run_spaces(total_budget_s=max(0.0, left))
+                result["spaces"] = run_spaces(total_budget_s=CRON_ENVELOPE_S)
+                result["main"] = "saute (tour dedie aux espaces)"
+            else:
+                result["exit_code"] = run_bot.main()
         except SystemExit as e:
             result["exit_code"] = e.code
         except Exception as e:  # noqa: BLE001
