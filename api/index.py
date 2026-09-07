@@ -12,6 +12,7 @@ import json
 import os
 import re
 import sys
+import time as _time
 import urllib.parse
 from datetime import datetime
 from pathlib import Path
@@ -687,7 +688,6 @@ def _render(client_filter: str | None = None) -> str:
     # ces appels : au-delà du budget, on SAUTE les résolutions non-critiques et la
     # page s'affiche quand même (infos en cache/repli). Le cron suivant / render
     # suivant complétera (le cache se remplit progressivement).
-    import time as _time
     _t0 = _time.time()
 
     def _budget_left() -> float:
@@ -2861,15 +2861,27 @@ class handler(BaseHTTPRequestHandler):
             days = max(1, min(days, 30))
             n_found = 0
             status = "exécuté"
+            _bf_prev_pages = os.environ.get("LIST_MAX_PAGES")
+            _bf_stopped = False
             try:
                 from src.manyreach import (
                     ManyReachClient, detect_antispam_challenge, extract_challenge_url,
                 )
                 cutoff = _dt.now(_tz.utc) - _td(days=days)
+                # BORNE DE TEMPS (07/09) : 80 pages = 8000 replies. Sur un compte
+                # actif, parcourir tout ca depasse le maxDuration Vercel (60 s)
+                # et l'utilisateur recoit un 504 GATEWAY_TIMEOUT au lieu d'un
+                # resultat. On s'arrete AVANT et on dit jusqu'ou on est alle.
+                _bf_start = _time.time()
+                _BF_BUDGET_S = 45.0
+                _bf_stopped = False
                 os.environ["LIST_MAX_PAGES"] = "80"  # backfill : on remonte plus loin
                 seen_ch: set[str] = set()
                 with ManyReachClient(timeout=8.0) as _mc:
                     for msg in _mc.list_replies(since=cutoff):
+                        if _time.time() - _bf_start > _BF_BUDGET_S:
+                            _bf_stopped = True
+                            break
                         filt = detect_antispam_challenge(msg)
                         if not filt:
                             continue
@@ -2897,10 +2909,21 @@ class handler(BaseHTTPRequestHandler):
                         })
                         n_found += 1
                 status = f"{n_found} challenge(s) importé(s) sur {days} j"
+                if _bf_stopped:
+                    status += " — ARRÊTÉ avant la fin (limite de temps) : relance pour continuer"
             except Exception as e:  # noqa: BLE001
                 import traceback
                 status = f"erreur backfill ({e})"
                 traceback.print_exc()
+            finally:
+                # LIST_MAX_PAGES est un env var GLOBAL au process. Sans cette
+                # restauration, une instance "warm" gardait 80 pages pour toutes
+                # les actions suivantes — un « Lancer maintenant » lance juste
+                # apres listait 8000 replies et partait lui aussi en 504.
+                if _bf_prev_pages is None:
+                    os.environ.pop("LIST_MAX_PAGES", None)
+                else:
+                    os.environ["LIST_MAX_PAGES"] = _bf_prev_pages
             if kvstore.kv_available():
                 kvstore.log_action({
                     "at": _dt.now(_tz.utc).isoformat(),
