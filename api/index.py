@@ -2663,10 +2663,19 @@ class handler(BaseHTTPRequestHandler):
                             kv_processed = False
                             if last_reply and kvstore.kv_available():
                                 kv_processed = kvstore.is_kv_processed(last_reply.message_id)
-                            allowed_statuses = ("Interested", "MaybeLater", "Neutral", "NotInterested", "CollegueReplied")
+                            # Le bot ne SAUTE que sur un statut TERMINAL (cf.
+                            # run_bot : Unsub / Hostile). Il ne filtre PAS sur
+                            # Interested/MeetingBooked/etc. — la liste "statuts
+                            # importants" ne sert qu'au mode --important-only,
+                            # que le cron n'utilise pas. L'ancienne liste codee
+                            # en dur ici affichait "hors liste traitee par le
+                            # bot" pour un MeetingBooked parfaitement traite :
+                            # un faux diagnostic qui envoie chercher le probleme
+                            # au mauvais endroit.
+                            terminal_statuses = ("Unsub", "Hostile")
                             reasons = []
-                            if prospect.sending_status not in allowed_statuses:
-                                reasons.append(f"⛔ statut={prospect.sending_status} hors liste traitée par le bot")
+                            if prospect.sending_status in terminal_statuses:
+                                reasons.append(f"⛔ statut terminal ({prospect.sending_status}) — skip silencieux")
                             if sent_after_reply:
                                 reasons.append(f"⛔ Sent après Reply (idempotence — bot considère déjà répondu)")
                             if kv_processed:

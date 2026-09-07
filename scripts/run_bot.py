@@ -452,6 +452,19 @@ def main() -> int:
             if _done:
                 _replies = [r for r in _replies if _pid(r.message_id) not in _done]
             print(f"  {len(_done)} déjà traités (skip groupé), {len(_replies)} à examiner")
+        # PRIORITE AU FRAIS (07/09) — la file part du plus ancien pour que rien
+        # ne meure de faim, mais apres une panne (ex. credits Anthropic epuises
+        # les 04-06/09) le backlog represente des HEURES de retard. Pendant ce
+        # temps, un RDV chaud arrive ce matin reste en fin de file : cas reel
+        # boulangeriemadeleine73 (« voici mon numero, je suis disponible »),
+        # toujours pas traite 25 min et 5 passages plus tard.
+        # On remonte donc LA plus recente en tete a chaque passage : une reponse
+        # fraiche est vue au tour suivant (5 min), et le reste continue de
+        # drainer le backlog dans l'ordre du plus ancien. Aucune famine possible,
+        # puisqu'une seule ligne passe devant.
+        if len(_replies) > 1:
+            _replies.insert(0, _replies.pop())
+            print("  ↑ la reponse la plus recente est passee en tete (priorite au frais)")
         print(f"Replies en file (fenêtre {args.since_days}j) : {len(_replies)}")
         for reply in _replies:
             # Le quota du cron protège du timeout Vercel — il ne porte QUE sur les
