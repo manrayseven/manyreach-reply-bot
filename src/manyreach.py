@@ -6,6 +6,9 @@ Full OpenAPI spec is in manyreach_openapi.json at repo root.
 from __future__ import annotations
 
 import os
+import threading
+import time
+from collections import deque
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -118,6 +121,47 @@ def workspace_api_keys() -> dict[str, str]:
     return out
 
 
+class _RateLimiter:
+    """Regulateur de debit PARTAGE entre threads.
+
+    ManyReach limite a 60 requetes/min et par cle. Mesure du 07/09 : 80 appels
+    lances a 4 threads sans regulation -> 49 rejets 429. Avec plusieurs threads,
+    il ne suffit donc pas de reessayer apres coup, il faut ne PAS depasser : on
+    espace les appels pour rester juste sous la limite.
+    """
+
+    def __init__(self, per_minute: int = 55):
+        self._per_minute = max(1, per_minute)
+        self._lock = threading.Lock()
+        self._stamps: deque = deque()
+
+    def acquire(self) -> None:
+        while True:
+            with self._lock:
+                now = time.monotonic()
+                while self._stamps and now - self._stamps[0] >= 60.0:
+                    self._stamps.popleft()
+                if len(self._stamps) < self._per_minute:
+                    self._stamps.append(now)
+                    return
+                wait = 60.0 - (now - self._stamps[0])
+            time.sleep(min(max(wait, 0.05), 2.0))
+
+
+# Un seul regulateur par cle API : les threads d'un meme run le partagent.
+_LIMITERS: dict[str, _RateLimiter] = {}
+_LIMITERS_LOCK = threading.Lock()
+
+
+def _limiter_for(key: str) -> _RateLimiter:
+    with _LIMITERS_LOCK:
+        lim = _LIMITERS.get(key)
+        if lim is None:
+            lim = _RateLimiter(int(os.environ.get("MR_RATE_PER_MIN", "55")))
+            _LIMITERS[key] = lim
+        return lim
+
+
 class ManyReachClient:
     def __init__(self, api_key: str | None = None, timeout: float = DEFAULT_TIMEOUT):
         key = api_key or os.environ.get("MANYREACH_API_KEY")
@@ -128,6 +172,8 @@ class ManyReachClient:
             headers={"X-API-Key": key, "Content-Type": "application/json"},
             timeout=timeout,
         )
+        # Le regulateur est indexe sur la CLE : chaque espace a son propre quota.
+        self._limiter = _limiter_for(key)
 
     def close(self) -> None:
         self._client.close()
@@ -151,6 +197,7 @@ class ManyReachClient:
         max_attempts = 2
         for attempt in range(max_attempts):
             try:
+                self._limiter.acquire()
                 resp = self._client.request(method, path, **kwargs)
             except (httpx.TimeoutException, httpx.TransportError) as e:
                 # Timeout de lecture / blip réseau ManyReach. On ne retry QUE les

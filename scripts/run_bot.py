@@ -476,22 +476,15 @@ def main() -> int:
                 )
             _replies = _fresh + _old
         print(f"Replies en file (fenêtre {args.since_days}j) : {len(_replies)}")
-        for reply in _replies:
-            # Le quota du cron protège du timeout Vercel — il ne porte QUE sur les
-            # itérations "lourdes" (draft+send Sonnet). Les itérations "cheap"
-            # (defer, silent, déjà-handled) sont quasi-gratuites en temps et tokens.
-            if limit and heavy_count >= limit:
-                break
-            # Budget de temps : un refus simple draft sur Haiku (~4-5s), un
-            # prospect chaud sur Sonnet (~10-12s). On garde 9s de marge pour
-            # démarrer encore au moins une itération Haiku. Garantit que
-            # set_last_run + le finalize KV tournent toujours avant le timeout.
-            if _time_left() < 9.0:
-                print(f"  >> BUDGET TEMPS ({run_budget_s}s) — arrêt avant nouvelle itération")
-                break
+        # === TRAITEMENT D'UNE REPONSE (corps extrait tel quel de la boucle) ===
+        # Seuls les 'continue' de niveau boucle sont devenus des 'return' ; les
+        # 'break' des boucles INTERNES sont inchanges. Les compteurs restent
+        # partages via nonlocal (ce sont des compteurs d'affichage/quota).
+        def _process_one(reply):
+            nonlocal processed_count, skipped_count, heavy_count, clients_list
             if _pid(reply.message_id) in processed_ids:
                 skipped_count += 1
-                continue
+                return
             # (Le pré-filtre groupé MGET ci-dessus a déjà écarté les déjà-traités
             # → plus besoin d'un GET KV par reply ici.)
 
@@ -524,7 +517,7 @@ def main() -> int:
             if backlog_cutoff and reply.created_at < backlog_cutoff and not args.only_email:
                 print("  >> Antérieur à la date de mise en route — ignoré (backlog)")
                 skipped_count += 1
-                continue
+                return
 
             # === PRÉ-SKIP CHEAP : reply déjà 'gardé' la nuit ET fenêtre toujours
             # fermée → on saute AVANT même de payer find_prospect + classifier.
@@ -541,13 +534,13 @@ def main() -> int:
             ):
                 print("  >> Reply déjà gardé, fenêtre toujours fermée → skip (0 token)")
                 processed_count += 1
-                continue
+                return
 
             # ANTI-RÉPONSE-INSTANTANÉE : laisser le reply "vieillir" un peu
             if not args.only_email and not reply_old_enough(reply, now_utc):
                 print("  >> Reply trop récent — traité à un prochain run (timing humain)")
                 skipped_count += 1
-                continue
+                return
 
             try:
                 # Pre-filter 1: challenge antispam MailInBlack & co (AVANT le
@@ -607,7 +600,7 @@ def main() -> int:
                     if not dry_run:
                         _mark_done(reply.message_id)
                     processed_count += 1
-                    continue
+                    return
 
                 # Pre-filter 2: generic bounces and auto-replies
                 if is_bounce_or_auto(reply):
@@ -619,7 +612,7 @@ def main() -> int:
                     if not dry_run:
                         _mark_done(reply.message_id)
                     processed_count += 1
-                    continue
+                    return
 
                 # Try to find the prospect & original outreach for context
                 prospect = None
@@ -645,7 +638,7 @@ def main() -> int:
                     if not dry_run:
                         _mark_done(reply.message_id)
                     processed_count += 1
-                    continue
+                    return
 
                 # ORPHAN REPLY (pas de prospect dans la base ManyReach) : skip
                 # systématique. Rudy ne peut rien faire de ces alertes (le lien
@@ -674,7 +667,7 @@ def main() -> int:
                     if not dry_run:
                         _mark_done(reply.message_id)
                     processed_count += 1
-                    continue
+                    return
 
                 previous_sent_text = ""
                 if prospect is not None:
@@ -789,7 +782,7 @@ def main() -> int:
                         # ce reply (cas répondu manuellement par Rudy notamment).
                         _mark_done(reply.message_id)
                         skipped_count += 1
-                        continue
+                        return
 
                 # RÉCUPÉRATION CORPS COMPLET si la preview est vide/illisible.
                 # L'API ManyReach tronque le corps (preview) → parfois vide alors
@@ -815,7 +808,7 @@ def main() -> int:
                                 if not dry_run:
                                     _mark_done(reply.message_id)
                                 processed_count += 1
-                                continue
+                                return
                     except Exception as _e:  # noqa: BLE001
                         print(f"  !! fetch_full_body: {_e}")
 
@@ -1062,7 +1055,7 @@ def main() -> int:
                     if not dry_run:
                         _mark_done(reply.message_id)
                     processed_count += 1
-                    continue
+                    return
 
                 # === RACCOURCI 1 : intents silencieux (unsub / hostile / bounce_or_auto) ===
                 # Aucun email à envoyer → on n'a JAMAIS besoin de drafter (économie Sonnet)
@@ -1103,7 +1096,7 @@ def main() -> int:
                         if kvstore and kvstore.kv_available():
                             kvstore.clear_held_seen(reply.message_id)
                     processed_count += 1
-                    continue
+                    return
 
                 # === RACCOURCI 1bis : ALERT_ONLY — leads chauds, RDV, plus tard ===
                 # Le bot NE répond PAS. Envoie une alerte email à Rudy avec toutes
@@ -1196,7 +1189,7 @@ def main() -> int:
                     if not dry_run:
                         _mark_done(reply.message_id)
                     processed_count += 1
-                    continue
+                    return
 
                 # === SILENCE-CAP ANTI-PING-PONG (post-classification) ===
                 # On n'arrive ici QUE pour des intents auto-envoi (ALWAYS_SILENT et
@@ -1221,7 +1214,7 @@ def main() -> int:
                     if not dry_run:
                         _mark_done(reply.message_id)
                     skipped_count += 1
-                    continue
+                    return
 
                 # === RACCOURCI 2 : intent qui enverrait un mail, mais hors fenêtre ===
                 # Plutôt que de brûler Sonnet à drafter à chaque run de cron (toutes les
@@ -1255,7 +1248,7 @@ def main() -> int:
                     logf.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
                     # PAS de append_processed_id → sera réessayé au prochain run
                     processed_count += 1
-                    continue
+                    return
 
                 # Draft. (Plus de créneaux Calendar ni de contexte site : les
                 # intents qui menaient à une proposition de RDV sont désormais
@@ -1475,6 +1468,45 @@ def main() -> int:
                         })
                     except Exception:  # noqa: BLE001
                         pass
+
+        # === PILOTE PARALLELE (07/09) ===
+        # Mesure du 07/09 : 92 reponses recues dans l'heure, 6 traitees. En
+        # sequentiel un passage ne tient que 1 a 3 reponses (chacune enchaine des
+        # appels reseau : ManyReach + le modele), donc la file ne pouvait que
+        # grossir. Le travail est de l'ATTENTE reseau, pas du calcul : le traiter
+        # a plusieurs multiplie le debit sans multiplier la charge machine.
+        #
+        # On avance par VAGUES de REPLY_WORKERS : les deux gardes d'origine
+        # (quota d'iterations lourdes, budget de temps) sont reevaluees entre
+        # chaque vague, donc le passage s'arrete toujours avant le timeout Vercel
+        # et set_last_run tourne. _process_one gere deja ses propres erreurs ;
+        # une reponse qui echoue n'empeche pas les autres.
+        _WORKERS = max(1, int(os.environ.get("REPLY_WORKERS", "4")))
+        if _WORKERS > 1 and len(_replies) > 1:
+            from concurrent.futures import ThreadPoolExecutor
+            _idx = 0
+            with ThreadPoolExecutor(max_workers=_WORKERS) as _ex:
+                while _idx < len(_replies):
+                    if limit and heavy_count >= limit:
+                        break
+                    if _time_left() < 9.0:
+                        print(f"  >> BUDGET TEMPS ({run_budget_s}s) — arret avant nouvelle vague")
+                        break
+                    _wave = _replies[_idx:_idx + _WORKERS]
+                    _idx += len(_wave)
+                    for _f in [_ex.submit(_process_one, _r) for _r in _wave]:
+                        try:
+                            _f.result()
+                        except Exception as _we:  # noqa: BLE001
+                            print(f"  !! erreur non rattrapee sur une reponse : {_we}")
+        else:
+            for reply in _replies:
+                if limit and heavy_count >= limit:
+                    break
+                if _time_left() < 9.0:
+                    print(f"  >> BUDGET TEMPS ({run_budget_s}s) — arret avant nouvelle iteration")
+                    break
+                _process_one(reply)
 
     if kvstore and kvstore.kv_available():
         kvstore.set_last_run(datetime.now(timezone.utc).isoformat())
