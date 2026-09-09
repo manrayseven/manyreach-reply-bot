@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import zlib
 import random
 import re
 import sys
@@ -385,7 +386,10 @@ def main() -> int:
             # Clock skew côté MR → on bypass le check d'âge minimum.
             return True
         # Deterministic per-message jitter so the threshold is stable across runs
-        extra = (abs(hash(reply.message_id)) % (jitter + 1)) if jitter > 0 else 0
+        # hash() est randomise a CHAQUE processus : le seuil changeait donc d'un
+        # run a l'autre, contrairement a ce que promet le commentaire ci-dessus.
+        # crc32 est stable, donc le seuil d'un message ne bouge plus.
+        extra = (zlib.crc32(reply.message_id.encode()) % (jitter + 1)) if jitter > 0 else 0
         return delta >= (min_age + extra) * 60
 
     processed_count = 0          # total iterations (pour stats)
@@ -464,15 +468,29 @@ def main() -> int:
         # dernieres heures (dans l'ordre d'arrivee), PUIS le backlog avec le
         # temps restant. Le volume frais (~4-5 reponses/h) est tres inferieur a
         # la capacite (12 passages/h), donc le backlog continue de drainer.
+        # Mesure du 09/09 : 533 reponses arrivees dans les 8 h de la fenetre,
+        # pour une capacite d'environ 36/h. Trier le frais du PLUS ANCIEN au plus
+        # recent mettait donc une reponse de 15h07 derriere 500 autres — elle
+        # n'etait toujours pas traitee 1 h 30 plus tard (cas signales par Rudy :
+        # julien.lopesdelima, laurelyne@yogaetarchi, barbarafouillet).
+        #
+        # Dans la fenetre fraiche on prend donc la PLUS RECENTE d'abord : c'est
+        # celle dont un humain attend une reponse maintenant. Le backlog (au-dela
+        # de la fenetre) reste trie du plus ancien, et une reponse fraiche non
+        # traitee y bascule en vieillissant — donc rien ne peut mourir de faim.
         _FRESH_WINDOW_H = float(os.environ.get("FRESH_WINDOW_H", "8"))
         if _replies:
             _cut = datetime.now(timezone.utc) - timedelta(hours=_FRESH_WINDOW_H)
-            _fresh = [r for r in _replies if r.created_at >= _cut]
-            _old = [r for r in _replies if r.created_at < _cut]
-            if _fresh and _old:
+            _fresh = sorted(
+                [r for r in _replies if r.created_at >= _cut],
+                key=lambda r: r.created_at, reverse=True,   # la plus RECENTE d'abord
+            )
+            _old = [r for r in _replies if r.created_at < _cut]  # deja du plus ancien
+            if _fresh:
                 print(
                     f"  ↑ priorite au frais : {len(_fresh)} reponse(s) de moins de "
-                    f"{_FRESH_WINDOW_H:.0f} h passent avant {len(_old)} en attente"
+                    f"{_FRESH_WINDOW_H:.0f} h, la plus recente d'abord, "
+                    f"puis {len(_old)} en attente"
                 )
             _replies = _fresh + _old
         print(f"Replies en file (fenêtre {args.since_days}j) : {len(_replies)}")
