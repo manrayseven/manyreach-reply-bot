@@ -477,6 +477,14 @@ class ManyReachClient:
             json={"emails": emails},
         )
 
+    def blacklist_domains(self, domains: list[str]) -> dict:
+        """Blackliste des domaines entiers (avec ou sans @ selon l'API)."""
+        return self._request(
+            "POST",
+            "/blacklist/domains",
+            json={"domains": domains},
+        )
+
     def is_blacklisted(self, email: str) -> bool:
         try:
             data = self._request("GET", "/blacklist/emails/check", params={"email": email})

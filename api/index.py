@@ -156,6 +156,49 @@ def _perf_30d(actions: list, now=None) -> dict:
     }
 
 
+# === CMACLIM : cibles structurellement mortes (audit 11-12/09/2026) ===
+# Académies : MTA central education.gouv.fr rejette nos émetteurs en bloc
+# (« your access to submit messages has been rejected ») + les écoles publiques
+# n'achètent pas leurs équipements (mairie/département/région décident).
+CMACLIM_DEAD_DOMAINS = [
+    "ac-aix-marseille.fr", "ac-amiens.fr", "ac-besancon.fr", "ac-bordeaux.fr",
+    "ac-caen.fr", "ac-clermont.fr", "ac-corse.fr", "ac-creteil.fr", "ac-dijon.fr",
+    "ac-grenoble.fr", "ac-guadeloupe.fr", "ac-guyane.fr", "ac-lille.fr",
+    "ac-limoges.fr", "ac-lyon.fr", "ac-martinique.fr", "ac-mayotte.fr",
+    "ac-montpellier.fr", "ac-nancy-metz.fr", "ac-nantes.fr", "ac-nice.fr",
+    "ac-normandie.fr", "ac-orleans-tours.fr", "ac-paris.fr", "ac-poitiers.fr",
+    "ac-reims.fr", "ac-rennes.fr", "ac-reunion.fr", "ac-rouen.fr",
+    "ac-strasbourg.fr", "ac-toulouse.fr", "ac-versailles.fr",
+    "education.gouv.fr", "gouv.fr", "finances.gouv.fr", "dgfip.finances.gouv.fr",
+    "interieur.gouv.fr", "gendarmerie.interieur.gouv.fr", "france-services.gouv.fr",
+]
+# Adresses prouvées invalides par NDR (audit du 12/09 — « user unknown »,
+# comptes inexistants, artefacts de scraping). Jamais retirées de la base :
+# la blacklist les neutralise, réimport compris.
+CMACLIM_DEAD_EMAILS = [
+    "a0mairie-marillaclefranc@wanadoo.fr", "aurence.ben-zaied@strasbourg.eu",
+    "13h30-16h30ecole.montmorot@ac-besancon.fr", "admin.ent.berlioz@ac-strasbourg.fr",
+    "63ce.0770708b@ac-creteil.fr", "75mairie@ville-lespontsdece.fr",
+    "48mairiepince72@orange.fr", "0441675g@ac-nantes.fr",
+    "02.37.42.48.92vesgreasfootball@wanadoo.fr", "alexia.boudry@btpcfa-hautsdefrance.fr",
+    "adjoint-direction@marnymomes.com", "bebe.continiuum@gmail.com",
+    "24-l.hersan@ville-nogentsurmarne.fr", "contact@saltuscampus.fr",
+    "a.guitton@mirmande.org", "32mairie.rhodon@wanadoo.fr",
+    "14ce.0770714h@ac-creteil.fr", "06.23.30.85.26annick.osinski@orange.fr",
+    "concertation-vdc@cc-sources-lac-annecy.com", "96mairie@uxegney.fr",
+    "cdif.digne-les-bains@dgfip.finances.gouv.fr", "0860047@ac-poitiers.fr",
+    "contact@lesptitsphenomenes.com", "contact@la-joie-de-vivre.com",
+    "93j.naboulet@orange.fr", "contact@mairie-rousset.fr", "alain.rivoal@laposte.fr",
+    "aadi.diag@orange.fr", "ai1ec-12279@ville-contes.net", "agencefloirac@hotmail.fr",
+    "agentsecumunicipale@louvroil.fr", "contact@lespetitskiwis.fr",
+    "autorisation-urbanisme@doissat.fr", "3cmairie.gron.18@wanadoo.fr",
+    "abrina.des.jardins@gmail.com", "adl.lapasserelle@ovh.fr", "asssolivres@yahoo.fr",
+    "a.grellier@lafocss.org", "13h30-16h30maternelle.montmorot@ac-besancon.fr",
+    "adjoint4@lourmarin.com", "01familles@free.fr", "ca-cormeroyal@ca-cmds.fr",
+    "accueil@sappey-mairie.fr", "terresdebresse.fr-a.brouard@terresdebresse.fr",
+    "sarl.lesetoiles@yahoo.com", "aurelie.t@stac-cantaltour.com",
+]
+
 ALERT_INTENTS = {
     "interested_warm", "interested_lukewarm", "ask_more_info",
     "meeting_confirmed", "objection_timing", "objection_reasoned",
@@ -2271,6 +2314,14 @@ def _render(client_filter: str | None = None) -> str:
       </div>
       <div class="action-cell">
         <form method="POST" action="/{keyparam}"
+              onsubmit="var b=this.querySelector('button'); b.disabled=true; b.innerHTML='⏳ Blacklist...'; return true;">
+          <input type="hidden" name="action" value="blacklist_dead_cmaclim">
+          <button class="btn-primary" type="submit" style="background:#991b1b">⛔ Blacklister cibles mortes (Cmaclim)</button>
+        </form>
+        <div class="action-help">Ajoute à la blacklist du <b>workspace Cmaclim</b> : les <b>39 domaines</b> académies/gouv (émetteurs rejetés centralement, non-acheteurs) et les <b>46 adresses</b> prouvées invalides par NDR. Sans rien supprimer de la base. Réutilisable sans risque (idempotent).</div>
+      </div>
+      <div class="action-cell">
+        <form method="POST" action="/{keyparam}"
               onsubmit="var b=this.querySelector('button'); b.disabled=true; b.innerHTML='⏳...'; return true;">
           <input type="hidden" name="action" value="run_email">
           <input type="email" name="only_email" placeholder="email@prospect.com" required>
@@ -2929,6 +2980,45 @@ class handler(BaseHTTPRequestHandler):
                     "at": _dt.now(_tz.utc).isoformat(),
                     "from": "(manuel)",
                     "subject": "🛡 Importer les challenges",
+                    "intent": "run_now",
+                    "status": status,
+                    "reply": "",
+                    "response": "",
+                })
+        elif action == "blacklist_dead_cmaclim":
+            # Blackliste EN UNE FOIS les cibles mortes du workspace Cmaclim :
+            # domaines académies/gouv (émetteurs rejetés centralement, non-
+            # acheteurs) + adresses prouvées invalides par NDR. Tourne côté
+            # Vercel avec MANYREACH_API_KEY_CMACLIM. Idempotent : re-blacklister
+            # une entrée déjà présente est sans effet.
+            from datetime import datetime as _dt, timezone as _tz
+            status = "exécuté"
+            try:
+                from src.manyreach import ManyReachClient, workspace_api_keys
+                _keys = workspace_api_keys()
+                _wkey = _keys.get("cmaclim")
+                if not _wkey:
+                    status = "erreur : MANYREACH_API_KEY_CMACLIM absente de l'environnement"
+                else:
+                    n_dom = n_em = 0
+                    with ManyReachClient(api_key=_wkey, timeout=15.0) as _wc:
+                        for i in range(0, len(CMACLIM_DEAD_DOMAINS), 25):
+                            _wc.blacklist_domains(CMACLIM_DEAD_DOMAINS[i:i + 25])
+                            n_dom += len(CMACLIM_DEAD_DOMAINS[i:i + 25])
+                        for i in range(0, len(CMACLIM_DEAD_EMAILS), 25):
+                            _wc.blacklist_emails(CMACLIM_DEAD_EMAILS[i:i + 25])
+                            n_em += len(CMACLIM_DEAD_EMAILS[i:i + 25])
+                    status = (f"{n_dom} domaines (académies + gouv) et {n_em} adresses "
+                              f"invalides blacklistés sur le workspace Cmaclim")
+            except Exception as e:  # noqa: BLE001
+                import traceback
+                status = f"erreur blacklist Cmaclim ({e})"
+                traceback.print_exc()
+            if kvstore.kv_available():
+                kvstore.log_action({
+                    "at": _dt.now(_tz.utc).isoformat(),
+                    "from": "(manuel)",
+                    "subject": "⛔ Blacklist cibles mortes Cmaclim",
                     "intent": "run_now",
                     "status": status,
                     "reply": "",
