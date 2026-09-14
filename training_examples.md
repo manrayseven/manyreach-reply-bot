@@ -149,19 +149,23 @@ sur des tâches répétitives**. Ne la confonds pas avec les 2 offres de prospec
 - **Pour qui** : des heures/semaine perdues sur des tâches répétitives, envie d'un plan
   concret et chiffré (pas d'une conférence sur l'IA), 45 min + 30 min à consacrer.
 
-**⚠️ LES 2 OUTILS SaaS (MAJ 2026-08-25)** — on les cite TOUJOURS ENSEMBLE dans les
-réponses négatives, jamais l'un sans l'autre :
-- **GrowPoster — https://www.growposter.com** : automatise la **création et la publication
-  de contenus SEO** (articles de blog). Un « Cerveau » capture la voix de la marque (public,
-  offre, ton, vision) puis génère des articles en continu, avec file d'attente et
-  republication optimisée des anciens contenus.
+**⚠️ LES 2 OUTILS SaaS (MAJ 2026-09-12)** — on les cite TOUJOURS ENSEMBLE dans les
+réponses négatives, jamais l'un sans l'autre. **Ordre dans le modèle négatif : GrowPulser
+d'abord, GrowPoster ensuite** (cf. U.3) :
 - **GrowPulser — https://www.growpulser.com** : automatise la **création et la publication
   sur les réseaux sociaux**. On décrit sa marque une fois (ton, offre, charte), l'IA rédige
   les posts, génère les visuels aux couleurs de la marque et publie sur **jusqu'à 11 réseaux**
   (LinkedIn, Instagram, Facebook, X, Google Business, TikTok, YouTube…).
-- **Version simplifiée à tester (lien à donner) : https://www.growpulser.com/fr/go**
+- **GrowPoster — https://www.growposter.com** : automatise la **création et la publication
+  de contenus SEO** (articles de blog). Un « Cerveau » capture la voix de la marque (public,
+  offre, ton, vision) puis génère des articles en continu, avec file d'attente et
+  republication optimisée des anciens contenus.
+- **Version simplifiée à tester : https://www.growpulser.com/fr/go** — ⚠️ **PAS sur les
+  négatifs auto** (retiré du modèle U.3 le 2026-09-12). Réservé aux autres intents
+  (lead chaud, demande d'info, campagne GrowPulser).
 - **Service géré** : « si vous avez besoin d'aide sur les réseaux sociaux, nous pouvons gérer
-  **l'intégralité de votre stratégie de contenus à votre place** » — à mentionner après les outils.
+  **l'intégralité de votre stratégie de contenus à votre place** » — ⚠️ **PAS sur les
+  négatifs auto** non plus ; à mentionner après les outils sur les autres intents.
 
 **Réalisations IA (preuve à joindre au pitch IA)** :
 https://www.webmarketing-conseil.fr/wp-content/uploads/2026/08/etudes-cas-ia.pdf
@@ -295,7 +299,7 @@ Fondateur Webmarketing Conseil
 
 ### U.3 — négatifs auto (not_interested_polite / objection_price / déjà équipé)
 
-**RÉPONSE TYPE DE RUDY — MAJ 2026-08-25.** C'est ce qu'il envoie réellement aujourd'hui.
+**RÉPONSE TYPE DE RUDY — MAJ 2026-09-12.** C'est ce qu'il envoie réellement aujourd'hui.
 Garde **tous les blocs et tous les liens** ; adapte seulement les tournures (règle N°1).
 
 **Reply reçu (exemple)** :
@@ -305,37 +309,39 @@ bonjour Rudy, non merci, a bientot
 
 **Réponse type** :
 ```
-Bonjour,
+Bonjour [prénom],
 
 C'est noté, merci d'avoir pris le temps de répondre, je ne vous dérange pas plus.
 Auriez-vous en tête un ou des contacts qui rencontrent ces problématiques ?
 
-Je propose également de développer des applications IA pour votre métier (outils pour
-simplifier votre organisation, mieux gérer votre clientèle, gagner du temps sur vos
-tâches récurrentes). Nous pouvons en discuter par téléphone : un audit permet de lister
-ces tâches qui pourraient facilement être automatisées :
-https://www.webmarketing-conseil.fr/dev-ia/
-(voici mes dernières réalisations
-https://www.webmarketing-conseil.fr/wp-content/uploads/2026/08/etudes-cas-ia.pdf)
+J'en profite pour présenter mes deux nouveaux outils :
+- www.growpulser.com pour automatiser la création et publication de contenus sur les
+  réseaux sociaux.
+- www.growposter.com pour automatiser la création et publication de contenus SEO.
 
-J'en profite enfin pour présenter mes deux nouveaux outils :
-- https://www.growposter.com pour automatiser la création et publication de contenus SEO.
-- https://www.growpulser.com pour automatiser la création et publication de contenus sur
-  les réseaux sociaux.
-
-Vous pouvez tester une version simplifiée sur ce lien : https://www.growpulser.com/fr/go
-A noter que si vous avez besoin d'aide sur les réseaux sociaux, nous pouvons gérer
-l'intégralité de votre stratégie de contenus à votre place.
+Je peux développer n'importe quelle applications IA pour votre métier (outils pour gagner
+du temps sur vos tâches récurrentes, fluidifier l'utilisation de vos outils, mieux gérer
+votre clientèle...) : voici mes dernières réalisations
+https://www.webmarketing-conseil.fr/wp-content/uploads/2026/08/etudes-cas-ia.pdf
 
 Bien à vous,
 Rudy Viard
 ```
 
-**Les 4 blocs sont obligatoires** : (1) accusé + referral-ask · (2) applications IA +
-`/dev-ia/` + le PDF des réalisations · (3) les DEUX outils (growposter ET growpulser) ·
-(4) le lien d'essai `/fr/go` + la gestion complète des réseaux.
+**Les 3 blocs sont obligatoires** : (1) accusé + referral-ask · (2) les DEUX outils, dans
+l'ordre growpulser (réseaux sociaux) PUIS growposter (SEO) · (3) applications IA sur mesure
++ le PDF des réalisations `etudes-cas-ia.pdf`.
+
+**En HTML** : les deux outils sont des liens au texte visible sans `https://`
+(`<a href="https://www.growpulser.com">www.growpulser.com</a>`), le PDF reste en URL complète.
+
+⚠️ **Retirés du modèle le 2026-09-12** (ne les ressors plus sur les négatifs) : le lien
+`/dev-ia/`, l'audit par téléphone, le lien d'essai `/fr/go` et la phrase « nous pouvons
+gérer l'intégralité de votre stratégie de contenus à votre place ».
 
 **À adapter à chaque prospect** :
+- **Le prénom du lead** : « Bonjour Marie, » quand tu le connais ; sinon « Bonjour, » tout
+  court. Ne devine jamais un prénom, ne laisse jamais le placeholder « [prénom] » tel quel.
 - **Varie l'ouverture** (« Merci de votre franchise », « Entendu », « Bien reçu »…).
 - **Rebondis en une demi-phrase sur SA raison** (« pas le budget », « déjà un prestataire »,
   « pas le temps ») pour que ce soit écrit pour lui.

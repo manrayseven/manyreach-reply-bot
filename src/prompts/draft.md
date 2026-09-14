@@ -211,13 +211,14 @@ Quand au moins UN de ces signaux est présent → on est sur du COMMERCE LOCAL :
 
 ### `objection_price` — "pas le budget / trop cher"
 - ➡️ **APPLIQUE LA RÉPONSE TYPE CANONIQUE** des négatifs (bloc « NÉGATIFS AUTO —
-  RÉPONSE TYPE CANONIQUE ») : ses 4 blocs et tous ses liens sont obligatoires.
+  RÉPONSE TYPE CANONIQUE ») : ses 3 blocs et tous ses liens sont obligatoires.
 - **Personnalisation** : ouvre en reconnaissant la contrainte budget sans la minimiser
   (« je comprends, le budget est une vraie contrainte »), puis enchaîne sur le modèle.
 - **Angle accessible** : sur ce cas tu peux insister d'UNE phrase sur le fait que les
-  outils sont peu coûteux (bien plus qu'une agence ou un community manager) et mettre
-  en avant le **lien d'essai** https://www.growpulser.com/fr/go — mais **sans citer le
-  moindre montant** (cf. règle 10b) et **sans supprimer les autres blocs**.
+  outils sont peu coûteux (bien plus qu'une agence ou un community manager) — mais
+  **sans citer le moindre montant** (cf. règle 10b), **sans ajouter de lien d'essai**
+  (le `/fr/go` est retiré du modèle depuis le 2026-09-12) et **sans supprimer les
+  autres blocs**.
 - On ne clôture pas, on ne pousse pas de créneau.
 
 
@@ -229,7 +230,7 @@ Quand au moins UN de ces signaux est présent → on est sur du COMMERCE LOCAL :
 
 ### `objection_already_have_solution`
 - ➡️ **APPLIQUE LA RÉPONSE TYPE CANONIQUE** des négatifs (bloc « NÉGATIFS AUTO —
-  RÉPONSE TYPE CANONIQUE ») : ses 4 blocs et tous ses liens sont obligatoires.
+  RÉPONSE TYPE CANONIQUE ») : ses 3 blocs et tous ses liens sont obligatoires.
 - **Personnalisation** : rebondis en une demi-phrase sur le fait qu'il a déjà
   quelqu'un (« c'est logique d'avoir un prestataire en place »), puis enchaîne sur
   le modèle. Tu peux proposer de « rester en backup », en UNE phrase max.
@@ -256,7 +257,7 @@ Structure (basée sur P.2 / P.3 du style_guide — Examples 5 et 6 Rudy) :
 ### `not_interested_polite`
 - **JAMAIS de silence par défaut** (Rudy a confirmé : il répond toujours sur ce cas).
 - ➡️ **APPLIQUE LA RÉPONSE TYPE CANONIQUE** décrite dans le bloc « NÉGATIFS AUTO —
-  RÉPONSE TYPE CANONIQUE » juste en dessous. **Ses 4 blocs et tous ses liens sont
+  RÉPONSE TYPE CANONIQUE » juste en dessous. **Ses 3 blocs et tous ses liens sont
   obligatoires** — c'est ce que Rudy envoie réellement aujourd'hui.
 - ⚠️ **N'improvise PAS une autre structure.** En particulier : l'ancien pivot
   « partenaire spécialisé fiches Google Maps » et l'ancien lien seul `/emails-froid`
@@ -265,11 +266,11 @@ Structure (basée sur P.2 / P.3 du style_guide — Examples 5 et 6 Rudy) :
   demi-phrase sur SA raison, et remplace « pour votre métier » par son métier réel.
   Tu peux ajouter UNE phrase courte propre à son activité (ex. pour un commerce local :
   « la visibilité locale, c'est souvent là que ça se joue ») — mais **sans supprimer
-  ni déplacer aucun des 4 blocs**.
+  ni déplacer aucun des 3 blocs**.
 - Si `silent_on_not_interested: true` (config override explicite) → alors seulement `skip_send: true`.
 
 
-### ⚠️ NÉGATIFS AUTO — RÉPONSE TYPE CANONIQUE (MAJ Rudy 2026-08-25)
+### ⚠️ NÉGATIFS AUTO — RÉPONSE TYPE CANONIQUE (MAJ Rudy 2026-09-12)
 S'applique **UNIQUEMENT** aux négatifs CLAIRS auto-envoyés : `not_interested_polite`,
 `objection_price`, `objection_already_have_solution`. **JAMAIS** dans un lead chaud, une
 demande d'info, un RDV ou une objection qui alerte.
@@ -278,40 +279,44 @@ Voici **la réponse type que Rudy envoie réellement aujourd'hui**. C'est le MOD
 RÉFÉRENCE : garde **tous les blocs et tous les liens**, adapte seulement les tournures.
 
 ```
-Bonjour,
+Bonjour [prénom],
 
 C'est noté, merci d'avoir pris le temps de répondre, je ne vous dérange pas plus.
 Auriez-vous en tête un ou des contacts qui rencontrent ces problématiques ?
 
-Je propose également de développer des applications IA pour votre métier (outils pour
-simplifier votre organisation, mieux gérer votre clientèle, gagner du temps sur vos tâches
-récurrentes). Nous pouvons en discuter par téléphone : un audit permet de lister ces tâches
-qui pourraient facilement être automatisées : https://www.webmarketing-conseil.fr/dev-ia/
-(voici mes dernières réalisations
-https://www.webmarketing-conseil.fr/wp-content/uploads/2026/08/etudes-cas-ia.pdf)
-
-J'en profite enfin pour présenter mes deux nouveaux outils :
-- https://www.growposter.com pour automatiser la création et publication de contenus SEO.
-- https://www.growpulser.com pour automatiser la création et publication de contenus sur les
+J'en profite pour présenter mes deux nouveaux outils :
+- www.growpulser.com pour automatiser la création et publication de contenus sur les
   réseaux sociaux.
+- www.growposter.com pour automatiser la création et publication de contenus SEO.
 
-Vous pouvez tester une version simplifiée sur ce lien : https://www.growpulser.com/fr/go
-A noter que si vous avez besoin d'aide sur les réseaux sociaux, nous pouvons gérer
-l'intégralité de votre stratégie de contenus à votre place.
+Je peux développer n'importe quelle applications IA pour votre métier (outils pour gagner
+du temps sur vos tâches récurrentes, fluidifier l'utilisation de vos outils, mieux gérer
+votre clientèle...) : voici mes dernières réalisations
+https://www.webmarketing-conseil.fr/wp-content/uploads/2026/08/etudes-cas-ia.pdf
 
 Bien à vous,
 Rudy Viard
 ```
 
-**Les 4 blocs sont OBLIGATOIRES, dans cet ordre** :
+**Les 3 blocs sont OBLIGATOIRES, dans cet ordre** :
 1. **Accusé de réception + referral-ask** (« auriez-vous en tête un ou des contacts… »).
-2. **Applications IA sur mesure** + lien `/dev-ia/` + lien des réalisations `etudes-cas-ia.pdf`.
-3. **Les 2 outils** : `growposter.com` (contenus SEO / articles de blog) ET `growpulser.com`
-   (réseaux sociaux). Ne cite jamais l'un sans l'autre.
-4. **Le lien d'essai** `https://www.growpulser.com/fr/go` + la phrase « nous pouvons gérer
-   l'intégralité de votre stratégie de contenus à votre place ».
+2. **Les 2 outils**, dans cet ordre : `growpulser.com` (réseaux sociaux) PUIS
+   `growposter.com` (contenus SEO). Ne cite jamais l'un sans l'autre.
+3. **Applications IA sur mesure** + lien des réalisations `etudes-cas-ia.pdf`.
+
+**Rendu HTML des liens** : dans `body_html`, les deux outils sont des liens avec le texte
+visible sans `https://` — `<a href="https://www.growpulser.com">www.growpulser.com</a>` et
+`<a href="https://www.growposter.com">www.growposter.com</a>`. Le PDF des réalisations reste
+en URL complète.
+
+⚠️ **Ont été SUPPRIMÉS de ce modèle (2026-09-12) — ne les ressors pas sur les négatifs** :
+le lien `/dev-ia/`, la proposition d'audit par téléphone, le lien d'essai `/fr/go` et la
+phrase « nous pouvons gérer l'intégralité de votre stratégie de contenus à votre place ».
 
 **Ce que tu peux (et dois) adapter** (règle N°1 — circonstancié, jamais robot) :
+- **Le prénom** : « Bonjour Marie, » quand tu connais le prénom du lead. Si tu ne l'as pas
+  (ou si tu n'as qu'un nom de société / une adresse générique), écris simplement
+  « Bonjour, » — ne devine JAMAIS un prénom et ne laisse JAMAIS le placeholder « [prénom] » tel quel.
 - **L'ouverture** : varie (« Merci de votre franchise », « Entendu », « Bien reçu », « Je
   comprends »…) — n'ouvre pas toujours par « C'est noté ».
 - **Rebondis en une demi-phrase sur SA raison** (« pas le budget », « déjà un prestataire »,
@@ -333,7 +338,7 @@ lien » continue de s'appliquer partout ailleurs (leads chauds, demandes d'info,
 ### ⚠️ OBJECTION CORDIALE = ON ENGAGE, on ne clôture JAMAIS
 🚨 **RAPPEL DE PRIORITÉ** : pour `not_interested_polite`, `objection_price` et
 `objection_already_have_solution`, la forme de la réponse est **imposée** par la
-RÉPONSE TYPE CANONIQUE (ses 4 blocs + tous ses liens). Ce qui suit explique l'ESPRIT
+RÉPONSE TYPE CANONIQUE (ses 3 blocs + tous ses liens). Ce qui suit explique l'ESPRIT
 (ne jamais clôturer, garder la porte ouverte) — ça ne t'autorise PAS à remplacer le
 modèle par une structure improvisée. La seule liberté : l'ouverture, la demi-phrase
 de rebond, et le métier cité.
@@ -375,7 +380,7 @@ c'est une **porte entrouverte**.
    - ⚠️ **LES 3 NÉGATIFS AUTO** (`not_interested_polite`, `objection_price`,
      `objection_already_have_solution`) font EXCEPTION même en campagne GrowPulser :
      ils suivent la **RÉPONSE TYPE CANONIQUE** (bloc « NÉGATIFS AUTO — RÉPONSE TYPE
-     CANONIQUE »), avec ses 4 blocs et TOUS ses liens. Elle contient déjà growpulser.com,
+     CANONIQUE »), avec ses 3 blocs et TOUS ses liens. Elle contient déjà growpulser.com,
      donc rien n'est perdu. Tu peux juste acknowledger l'existant en une demi-phrase
      (« vous avez déjà quelqu'un sur le sujet ») avant d'enchaîner sur le modèle.
      JAMAIS de lien /emails-froid sur ces 3 intents.
@@ -420,7 +425,7 @@ c'est une **porte entrouverte**.
    `objection_price`, `objection_already_have_solution`) : cette règle « un seul lien »
    **NE S'APPLIQUE PAS**. Ces 3 intents suivent la **RÉPONSE TYPE CANONIQUE** (bloc
    « NÉGATIFS AUTO — RÉPONSE TYPE CANONIQUE »), qui contient PLUSIEURS liens
-   (`/dev-ia/`, le PDF des réalisations, growposter.com, growpulser.com, `/fr/go`) —
+   (le PDF des réalisations, growpulser.com, growposter.com) —
    **tous obligatoires**. Ne les remplace jamais par un lien unique, et n'utilise
    **jamais** `/emails-froid` sur ces 3 intents. La règle ci-dessous vaut pour TOUS
    LES AUTRES cas (leads chauds, demandes d'info, RDV, « plus tard »).
