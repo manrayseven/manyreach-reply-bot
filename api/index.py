@@ -2337,14 +2337,6 @@ def _render(client_filter: str | None = None) -> str:
       </div>
       <div class="action-cell">
         <form method="POST" action="/{keyparam}"
-              onsubmit="var b=this.querySelector('button'); b.disabled=true; b.innerHTML='⏳ Blacklist...'; return true;">
-          <input type="hidden" name="action" value="blacklist_dead_cmaclim">
-          <button class="btn-primary" type="submit" style="background:#991b1b">⛔ Blacklister cibles mortes (Cmaclim)</button>
-        </form>
-        <div class="action-help">Ajoute à la blacklist du <b>workspace Cmaclim</b> : les <b>39 domaines</b> académies/gouv (émetteurs rejetés centralement, non-acheteurs) et les <b>46 adresses</b> prouvées invalides par NDR. Sans rien supprimer de la base. Réutilisable sans risque (idempotent).</div>
-      </div>
-      <div class="action-cell">
-        <form method="POST" action="/{keyparam}"
               onsubmit="var b=this.querySelector('button'); b.disabled=true; b.innerHTML='⏳...'; return true;">
           <input type="hidden" name="action" value="run_email">
           <input type="email" name="only_email" placeholder="email@prospect.com" required>
