@@ -1440,9 +1440,11 @@ def _render(client_filter: str | None = None) -> str:
         # "Mettre en relation" : mailto pré-rempli vers l'email du client, avec un
         # récap STRUCTURÉ (société / contact / campagne / message / à faire) — même
         # format à chaque fois pour que le transfert soit "carré" côté client.
+        # Toujours affiché (même sans email client) : l'essentiel est de pouvoir
+        # copier le récap ; si l'email manque, on propose de le saisir sur place.
         mise_en_relation = ""
         handoff_box = ""
-        if _client and (_client.get("contact_email") or "").strip():
+        if _client:
             _phone = str(a.get("prospect_phone") or a.get("_phone_live") or "").strip()
             _company = str(a.get("_company") or "").strip()
             _industry = str(a.get("_industry") or "").strip()
@@ -1483,12 +1485,12 @@ def _render(client_filter: str | None = None) -> str:
             ]
             _recap = "\n".join(_recap_lines)
             _subj = f"Prospect intéressé à reprendre : {_company or prospect_email}"
+            _contact_email = str(_client.get("contact_email") or "").strip()
             _mer_href = (
-                "mailto:" + urllib.parse.quote(_client["contact_email"])
+                "mailto:" + urllib.parse.quote(_contact_email)
                 + "?subject=" + urllib.parse.quote(_subj)
                 + "&body=" + urllib.parse.quote(_recap)
             )
-            _contact_email = str(_client.get("contact_email") or "")
             # Bel email de transfert (HTML) + copie qui garde la mise en forme →
             # plus fiable que le mailto (qui n'ouvre pas toujours Thunderbird).
             _card = _handoff_email_html(_company, _detail, _contact, _camp, _msg,
@@ -1522,18 +1524,37 @@ def _render(client_filter: str | None = None) -> str:
                 f"body:'action=mark_handoff&client_id='+encodeURIComponent('{_cid_js}')+'&prospect_email='+encodeURIComponent('{html.escape(prospect_email)}')}});}}catch(e){{}}"
                 "return false;"
             )
+            _dest_title = (html.escape(_contact_email) if _contact_email
+                           else "ton contact (email du client à renseigner)")
             mise_en_relation = (
                 f'<a class="alert-mr alert-mr-mer" href="#" onclick="{_open_ho}" '
                 f'title="Prépare l\'email de transfert à envoyer à '
-                f'{html.escape(_contact_email)} et compte ce prospect comme transmis">'
+                f'{_dest_title} et compte ce prospect comme transmis">'
                 f'🤝 Mettre en relation</a>'
             )
+            if _contact_email:
+                _handoff_to = (
+                    f'<div class="handoff-to">À envoyer à : <b>{html.escape(_contact_email)}</b>'
+                    f' · Objet suggéré : {html.escape(_subj)}</div>'
+                )
+            else:
+                # Pas d'email client : saisie sur place, mémorisée sur la fiche client
+                # (toutes ses alertes en profitent ensuite).
+                _handoff_to = (
+                    f'<form method="POST" action="/{keyparam}" class="handoff-to handoff-setto">'
+                    '<input type="hidden" name="action" value="set_client_email">'
+                    f'<input type="hidden" name="client_id" value="{_cid_js}">'
+                    'À envoyer à : '
+                    f'<input type="email" name="contact_email" required class="handoff-email" '
+                    f'placeholder="email de {html.escape(str(_client.get("name") or "ton contact"))}">'
+                    '<button type="submit" class="alert-mr alert-mr-sec">Enregistrer</button>'
+                    f' · Objet suggéré : {html.escape(_subj)}</form>'
+                )
             handoff_box = (
                 f'<details class="handoff" ontoggle="if(this.open){{{_track_ho}}}">'
                 '<summary class="handoff-sum">📨 Email de transfert (à copier)</summary>'
                 '<div class="handoff-body">'
-                f'<div class="handoff-to">À envoyer à : <b>{html.escape(_contact_email)}</b>'
-                f' · Objet suggéré : {html.escape(_subj)}</div>'
+                f'{_handoff_to}'
                 f'<div id="{_uid}" class="handoff-render">{_card}</div>'
                 '<div class="handoff-actions">'
                 f'<button type="button" class="btn-primary" onclick="{_copy_ho}{_track_ho}">📋 Copier l\'email</button>'
@@ -2167,6 +2188,8 @@ def _render(client_filter: str | None = None) -> str:
  .handoff-sum::-webkit-details-marker{{display:none}}
  .handoff[open] .handoff-sum{{margin-bottom:8px}}
  .handoff-to{{font-size:11.5px;color:#5c574c;margin-bottom:8px}}
+ .handoff-setto{{display:flex;align-items:center;gap:6px;flex-wrap:wrap}}
+ .handoff-email{{font-size:11.5px;padding:3px 8px;border:1px solid #e0d9cb;border-radius:6px;font-family:inherit;min-width:220px}}
  .handoff-render{{background:#fff;border:1px solid #e7ddc4;border-radius:10px;padding:6px;overflow-x:auto}}
  .handoff-actions{{display:flex;align-items:center;gap:12px;margin-top:10px;flex-wrap:wrap}}
  .handoff-hint{{font-size:11px;color:#8c8678}}
@@ -2803,6 +2826,17 @@ class handler(BaseHTTPRequestHandler):
             cid = (form.get("client_id") or "").strip()
             if cid:
                 kvstore.set_clients([c for c in kvstore.get_clients() if c.get("id") != cid])
+        elif action == "set_client_email":
+            # Saisie de l'email client depuis le bloc "Email de transfert" : on ne
+            # touche QUE contact_email (save_client réécrirait toute la fiche).
+            cid = (form.get("client_id") or "").strip()
+            new_email = (form.get("contact_email") or "").strip()
+            if cid and new_email:
+                clients = kvstore.get_clients()
+                for c in clients:
+                    if c.get("id") == cid:
+                        c["contact_email"] = new_email
+                kvstore.set_clients(clients)
         elif action == "assign_client":
             # Triage manuel d'une alerte "à trier" → on mémorise l'assignation ET
             # on APPREND (mailbox/campagne) pour que le bot trie seul ensuite.
