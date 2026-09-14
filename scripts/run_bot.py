@@ -499,7 +499,7 @@ def main() -> int:
         # 'break' des boucles INTERNES sont inchanges. Les compteurs restent
         # partages via nonlocal (ce sont des compteurs d'affichage/quota).
         def _process_one(reply):
-            nonlocal processed_count, skipped_count, heavy_count, clients_list
+            nonlocal processed_count, skipped_count, heavy_count, clients_list, sends_done, error_count
             if _pid(reply.message_id) in processed_ids:
                 skipped_count += 1
                 return
