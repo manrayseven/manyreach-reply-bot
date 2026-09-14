@@ -49,7 +49,9 @@ from src.actions import (  # noqa: E402
     plan_mailinblack_actions,
 )
 from src.classifier import Classifier, _strip_html, _trim_quoted_history, is_stop_signal  # noqa: E402
+from src import clients as _clients  # noqa: E402
 from src.drafter import Drafter  # noqa: E402
+from src.fixed_replies import fixed_draft, quick_classification, quick_intent  # noqa: E402
 from src.manyreach import (  # noqa: E402
     ManyReachClient,
     detect_antispam_challenge,
@@ -718,7 +720,6 @@ def main() -> int:
                         (c for c in clients_list if c.get("id") == space_id), None
                     )
                 elif clients_list:
-                    from src import clients as _clients
                     _sender_mb = original_outreach.from_email if original_outreach else None
                     _route = _clients.route(clients_list, _sender_mb, reply.campaign_id)
                     active_client = _route["client"]
@@ -846,12 +847,22 @@ def main() -> int:
                         reasoning="corps vide/non récupérable → alerte, jamais de réponse auto",
                     )
                 else:
-                    # Classify
-                    classification = classifier.classify(
-                        reply,
-                        original_outreach=original_outreach,
-                        previous_message=previous_sent_text,
-                    )
+                    # PRÉ-TRI SANS IA (économie tokens) : STOP / « non merci » net et
+                    # court → intent posé par règle. Le moindre doute (date/heure,
+                    # question, nuance, redirection…) → classifier IA comme avant.
+                    # Les garde-fous ci-dessous s'appliquent de la même façon.
+                    _quick = None
+                    if not _DATETIME_RE.search(_clean_check):
+                        _quick = quick_intent(_clean_check, reply.subject)
+                    if _quick:
+                        print(f"  >> PRÉ-TRI sans IA : {_quick}")
+                        classification = quick_classification(_quick, _clean_check)
+                    else:
+                        classification = classifier.classify(
+                            reply,
+                            original_outreach=original_outreach,
+                            previous_message=previous_sent_text,
+                        )
                 print(
                     f"  CLASSIFIED  intent={classification.intent}  "
                     f"conf={classification.confidence:.2f}  "
@@ -1271,20 +1282,30 @@ def main() -> int:
                 # Draft. (Plus de créneaux Calendar ni de contexte site : les
                 # intents qui menaient à une proposition de RDV sont désormais
                 # remontés en alerte — Rudy gère les RDV à la main.)
-                draft = drafter.draft(
-                    reply=reply,
-                    classification=classification,
-                    original_outreach=original_outreach,
-                    prospect=prospect,
-                    style_guide=style_guide,
-                    proposed_slots=None,
+                # RÉPONSE TYPE FIXE (économie tokens) : les 3 négatifs auto ont un
+                # texte imposé → envoyé tel quel, sans drafter, quand le compte a
+                # un modèle et que le prospect écrit en français. Sinon IA.
+                draft = fixed_draft(
+                    classification, active_client, space_id=space_id,
                     silent_on_not_interested=silent_on_not_interested,
-                    company_context="",
-                    client_context=(
-                        _clients.build_client_draft_context(active_client)
-                        if clients_list else ""
-                    ),
                 )
+                if draft is not None:
+                    print(f"  >> {draft.notes}")
+                else:
+                    draft = drafter.draft(
+                        reply=reply,
+                        classification=classification,
+                        original_outreach=original_outreach,
+                        prospect=prospect,
+                        style_guide=style_guide,
+                        proposed_slots=None,
+                        silent_on_not_interested=silent_on_not_interested,
+                        company_context="",
+                        client_context=(
+                            _clients.build_client_draft_context(active_client)
+                            if clients_list else ""
+                        ),
+                    )
 
                 if draft.skip_send:
                     print("  DRAFT  [skip_send=true]  no reply will be sent")

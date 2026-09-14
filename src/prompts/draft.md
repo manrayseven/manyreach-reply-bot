@@ -271,6 +271,12 @@ Structure (basée sur P.2 / P.3 du style_guide — Examples 5 et 6 Rudy) :
 
 
 ### ⚠️ NÉGATIFS AUTO — RÉPONSE TYPE CANONIQUE (MAJ Rudy 2026-09-14)
+> 🛠️ **Maintenance** : pour les prospects francophones, ce modèle (et celui de Cmaclim
+> ci-dessous) est désormais envoyé **tel quel par le code, sans IA** — voir
+> `src/fixed_replies.py`. Toute modification du texte doit être faite **aux deux endroits**.
+> Ce prompt ne sert plus que dans les cas non couverts (prospect non francophone,
+> client sans modèle fixe).
+
 S'applique **UNIQUEMENT** aux négatifs CLAIRS auto-envoyés : `not_interested_polite`,
 `objection_price`, `objection_already_have_solution`. **JAMAIS** dans un lead chaud, une
 demande d'info, un RDV ou une objection qui alerte.
