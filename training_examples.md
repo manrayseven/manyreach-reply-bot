@@ -299,8 +299,10 @@ Fondateur Webmarketing Conseil
 
 ### U.3 — négatifs auto (not_interested_polite / objection_price / déjà équipé)
 
-**RÉPONSE TYPE DE RUDY — MAJ 2026-09-12.** C'est ce qu'il envoie réellement aujourd'hui.
+**RÉPONSE TYPE DE RUDY — MAJ 2026-09-14.** C'est ce qu'il envoie réellement aujourd'hui.
 Garde **tous les blocs et tous les liens** ; adapte seulement les tournures (règle N°1).
+⚠️ **Compte Webmarketing Conseil uniquement** : pour un autre client (ex. Cmaclim), voir le
+bloc « NÉGATIFS AUTO — AUTRES CLIENTS » de draft.md (aucune offre ni lien de Rudy).
 
 **Reply reçu (exemple)** :
 ```
@@ -309,7 +311,7 @@ bonjour Rudy, non merci, a bientot
 
 **Réponse type** :
 ```
-Bonjour [prénom],
+Bonjour,
 
 C'est noté, merci d'avoir pris le temps de répondre, je ne vous dérange pas plus.
 Auriez-vous en tête un ou des contacts qui rencontrent ces problématiques ?
@@ -319,7 +321,11 @@ J'en profite pour présenter mes deux nouveaux outils :
   réseaux sociaux.
 - www.growposter.com pour automatiser la création et publication de contenus SEO.
 
-Je peux développer n'importe quelle applications IA pour votre métier (outils pour gagner
+Je propose également une refonte de votre site sous 48 à 72h à petit prix (avec
+modifications incluses pour vous permettre de le faire évoluer)
+https://www.webmarketing-conseil.fr/site-internet/
+
+Enfin, je développe des applications IA sur mesure pour votre métier (outils pour gagner
 du temps sur vos tâches récurrentes, fluidifier l'utilisation de vos outils, mieux gérer
 votre clientèle...) : voici mes dernières réalisations
 https://www.webmarketing-conseil.fr/wp-content/uploads/2026/08/etudes-cas-ia.pdf
@@ -328,20 +334,19 @@ Bien à vous,
 Rudy Viard
 ```
 
-**Les 3 blocs sont obligatoires** : (1) accusé + referral-ask · (2) les DEUX outils, dans
-l'ordre growpulser (réseaux sociaux) PUIS growposter (SEO) · (3) applications IA sur mesure
-+ le PDF des réalisations `etudes-cas-ia.pdf`.
+**Les 4 blocs sont obligatoires** : (1) accusé + referral-ask · (2) les DEUX outils, dans
+l'ordre growpulser (réseaux sociaux) PUIS growposter (SEO) · (3) refonte de site sous 48 à
+72h + `/site-internet/` · (4) applications IA sur mesure + le PDF des réalisations.
 
 **En HTML** : les deux outils sont des liens au texte visible sans `https://`
-(`<a href="https://www.growpulser.com">www.growpulser.com</a>`), le PDF reste en URL complète.
+(`<a href="https://www.growpulser.com">www.growpulser.com</a>`) ; `/site-internet/` et le
+PDF restent en URL complète.
 
 ⚠️ **Retirés du modèle le 2026-09-12** (ne les ressors plus sur les négatifs) : le lien
 `/dev-ia/`, l'audit par téléphone, le lien d'essai `/fr/go` et la phrase « nous pouvons
 gérer l'intégralité de votre stratégie de contenus à votre place ».
 
 **À adapter à chaque prospect** :
-- **Le prénom du lead** : « Bonjour Marie, » quand tu le connais ; sinon « Bonjour, » tout
-  court. Ne devine jamais un prénom, ne laisse jamais le placeholder « [prénom] » tel quel.
 - **Varie l'ouverture** (« Merci de votre franchise », « Entendu », « Bien reçu »…).
 - **Rebondis en une demi-phrase sur SA raison** (« pas le budget », « déjà un prestataire »,
   « pas le temps ») pour que ce soit écrit pour lui.
@@ -350,7 +355,7 @@ gérer l'intégralité de votre stratégie de contenus à votre place ».
 
 ⚠️ **Ce modèle contient plusieurs liens : c'est VOULU** sur les négatifs auto (exception
 assumée à la règle 10-lien, qui reste valable partout ailleurs).
-⚠️ **Aucun prix** (cf. RÈGLE PRIX), aucun créneau imposé, aucune promesse chiffrée.
+⚠️ **Aucun montant** (cf. RÈGLE PRIX — « à petit prix » est la seule mention autorisée, telle quelle), aucun créneau imposé, aucune promesse chiffrée hors le délai « 48 à 72h ».
 ⚠️ Cette réponse **remplace** les anciennes variantes U.3 (lien /emails-froid seul, et
 pivot « partenaire fiches Google Maps ») — ne les utilise plus par défaut.
 
