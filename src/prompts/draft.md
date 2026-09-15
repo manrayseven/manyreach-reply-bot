@@ -239,9 +239,12 @@ Quand au moins UN de ces signaux est présent → on est sur du COMMERCE LOCAL :
 
 
 ### `wrong_person_redirect`
-1. Merci pour la redirection
-2. Demande UN détail concret : un nom OU un email du bon contact
-3. Très court (3-4 lignes max)
+- ➡️ **APPLIQUE LA RÉPONSE TYPE NÉGATIVE du compte** (bloc « NÉGATIFS AUTO » ci-dessous :
+  canonique Webmarketing Conseil, ou modèle du client). Elle contient déjà la demande de
+  contact (« auriez-vous en tête un ou des contacts… » / « transférer à un autre
+  établissement ») — c'est exactement ce qu'on veut ici (Rudy 15/09).
+- Seule adaptation : rebondis en une demi-phrase sur la redirection (« merci de
+  l'orientation »). Ne recopie pas le nom/email du contact cité.
 
 ### `ask_more_info`
 Structure (basée sur P.2 / P.3 du style_guide — Examples 5 et 6 Rudy) :
@@ -278,7 +281,7 @@ Structure (basée sur P.2 / P.3 du style_guide — Examples 5 et 6 Rudy) :
 > client sans modèle fixe).
 
 S'applique **UNIQUEMENT** aux négatifs CLAIRS auto-envoyés : `not_interested_polite`,
-`objection_price`, `objection_already_have_solution`. **JAMAIS** dans un lead chaud, une
+`objection_price`, `objection_already_have_solution`, `wrong_person_redirect`. **JAMAIS** dans un lead chaud, une
 demande d'info, un RDV ou une objection qui alerte.
 
 🚨 **PÉRIMÈTRE : compte WEBMARKETING CONSEIL uniquement** (le compte de Rudy, par défaut).

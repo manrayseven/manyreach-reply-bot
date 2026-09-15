@@ -29,6 +29,7 @@ NEGATIVE_AUTO_INTENTS = frozenset({
     "not_interested_polite",
     "objection_price",
     "objection_already_have_solution",
+    "wrong_person_redirect",  # vraie personne « pas nous » (Rudy 15/09)
 })
 
 # --- Modèles (HTML simple : <p> / <br>, comme le drafter) ---------------------

@@ -1131,10 +1131,10 @@ def main() -> int:
                 # Le bot NE répond PAS. Envoie une alerte email à Rudy avec toutes
                 # les infos pour qu'il gère manuellement (RDV, lead chaud, "plus
                 # tard"). Met juste à jour le statut côté ManyReach + log KV.
-                # NOTE : wrong_person_redirect (changement d'adresse / personne
-                # partie / autoreply congés) est désormais dans ALWAYS_SILENT —
-                # plus d'alerte ni de réponse auto. Rudy ne veut pas être dérangé
-                # par ces cas (validé 2026-06-05).
+                # NOTE : wrong_person_redirect n'est jamais une alerte. Depuis le
+                # 15/09 (Rudy), une vraie personne « pas nous » reçoit la réponse
+                # type (AUTOSEND) ; les redirections automatiques restent
+                # silencieuses (pré-filtre / bounce_or_auto).
                 from src.actions import ALERT_ONLY  # local import to avoid cycles
                 if classification.intent in ALERT_ONLY:
                     print(f"  >> ALERT_ONLY ({classification.intent}) — alerte Rudy, pas de réponse auto")

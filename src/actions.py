@@ -71,6 +71,11 @@ AUTOSEND_ELIGIBLE = frozenset({
     # PLATS doivent être auto-gérés ; SEULES les objections ARGUMENTÉES/malines
     # (objection_reasoned) remontent en alerte).
     "objection_already_have_solution",
+    # wrong_person_redirect : une VRAIE personne répond « ce n'est pas nous /
+    # adressez-vous à X » → réponse type négative (Rudy 15/09, tous comptes). Les
+    # redirections AUTOMATIQUES (départ, changement d'adresse, congés) restent
+    # silencieuses : pré-filtre is_bounce_or_auto ou classées bounce_or_auto.
+    "wrong_person_redirect",
 })
 
 # Intents qui DÉCLENCHENT UNE ALERTE EMAIL à Rudy (pas de réponse auto).
@@ -90,10 +95,7 @@ ALERT_ONLY = frozenset({
 })
 
 # Intents that NEVER send a reply (silent action only).
-# wrong_person_redirect (qq'un qui a quitté la boîte / changement d'adresse /
-# autoreply de congés) : Rudy ne veut PAS d'alerte ni de réponse polie automatique.
-# Le bot tag, passe en NotInterested côté MR, et c'est fini.
-ALWAYS_SILENT = frozenset({"unsubscribe", "hostile", "bounce_or_auto", "ack_only", "wrong_person_redirect"})
+ALWAYS_SILENT = frozenset({"unsubscribe", "hostile", "bounce_or_auto", "ack_only"})
 
 
 ActionKind = Literal[

@@ -44,8 +44,12 @@ def test_key_intents_route_as_expected():
     # SEULE l'objection argumentée reste en alerte parmi les objections.
     assert "objection_reasoned" in ALERT_ONLY
     assert "objection_reasoned" not in AUTOSEND_ELIGIBLE
+    # « Ce n'est pas nous / adressez-vous à X » écrit par une personne → réponse
+    # type (Rudy 15/09), plus le silence.
+    assert "wrong_person_redirect" in AUTOSEND_ELIGIBLE
+    assert "wrong_person_redirect" not in ALWAYS_SILENT
     # Silencieux.
-    for i in ("unsubscribe", "hostile", "bounce_or_auto"):
+    for i in ("unsubscribe", "hostile", "bounce_or_auto", "ack_only"):
         assert i in ALWAYS_SILENT, i
 
 

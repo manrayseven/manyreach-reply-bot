@@ -97,6 +97,16 @@ def test_fixed_draft_falls_back_to_ai():
         assert fixed_draft(_cls(intent), None) is None, intent
 
 
+def test_fixed_draft_wrong_person_gets_template():
+    # « Ce n'est pas nous, adressez-vous à la mairie » → réponse type (Rudy 15/09).
+    assert fixed_draft(_cls("wrong_person_redirect"), None).body_html == WC_NEGATIVE_HTML
+    d = fixed_draft(_cls("wrong_person_redirect"), None, space_id="cmaclim")
+    assert d.body_html == CMACLIM_NEGATIVE_HTML
+    # le réglage « silencieux » des refus ne le concerne pas
+    assert not fixed_draft(_cls("wrong_person_redirect"), None,
+                           silent_on_not_interested=True).skip_send
+
+
 def test_fixed_draft_silent_setting():
     d = fixed_draft(_cls(), None, silent_on_not_interested=True)
     assert d is not None and d.skip_send and d.body_html is None
