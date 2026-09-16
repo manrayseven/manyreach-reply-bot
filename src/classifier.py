@@ -1,6 +1,7 @@
 """Classify a ManyReach reply into one of N intents using Claude."""
 from __future__ import annotations
 
+import html as _html_mod
 import json
 import os
 import re
@@ -92,12 +93,10 @@ def _strip_html(html: str) -> str:
         flags=re.IGNORECASE | re.DOTALL,
     )
     cleaned = re.sub(r"<[^>]+>", " ", cleaned)
-    cleaned = re.sub(r"&nbsp;", " ", cleaned)
-    cleaned = re.sub(r"&amp;", "&", cleaned)
-    cleaned = re.sub(r"&lt;", "<", cleaned)
-    cleaned = re.sub(r"&gt;", ">", cleaned)
-    cleaned = re.sub(r"&quot;", '"', cleaned)
-    cleaned = re.sub(r"&#39;", "'", cleaned)
+    # TOUTES les entités HTML (&eacute;, &agrave;, &#233;…), pas seulement les 6
+    # courantes : sinon « a &eacute;crit : » échappait à la coupe de citation et
+    # le texte restait illisible dans le dashboard (cas école Major, 16/09).
+    cleaned = _html_mod.unescape(cleaned)
     cleaned = re.sub(r"\s+", " ", cleaned)
     return cleaned.strip()
 

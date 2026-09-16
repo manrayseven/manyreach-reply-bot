@@ -123,6 +123,20 @@ def test_strip_html_basic():
     assert "Je ne suis pas" in out
 
 
+def test_strip_html_decodes_all_entities_and_quote_is_trimmed():
+    # Cas école Major (16/09) : entités nommées (&eacute;, &icirc;…) restées
+    # brutes → texte illisible ET « a &eacute;crit : » non reconnu → citation
+    # du cold mail conservée.
+    raw = (
+        "<p>J'ai oubli&eacute; plusieurs salles.</p><p>une salle des ma&icirc;tre</p>"
+        "<p>Le 2026-09-07 09:12, Romain Viard a &eacute;crit&nbsp;:</p>"
+        "<blockquote>Mesdames, Messieurs, La mise &agrave; jour du DUERP</blockquote>"
+    )
+    out = _trim_quoted_history(_strip_html(raw))
+    assert "&eacute;" not in out and "oublié" in out and "maître" in out, out
+    assert "Mesdames" not in out and "DUERP" not in out, out
+
+
 def test_strip_html_removes_script_style():
     html = "<style>.x{color:red}</style>Texte<script>alert(1)</script> visible"
     out = _strip_html(html)

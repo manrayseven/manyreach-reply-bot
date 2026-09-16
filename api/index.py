@@ -843,9 +843,19 @@ def _render(client_filter: str | None = None) -> str:
     except Exception:  # noqa: BLE001
         _err_stale_cutoff = _err_transient_cutoff = ""
 
+    # TEXTE LISIBLE (Rudy 16/09) : les entrées déjà enregistrées gardent parfois
+    # des entités HTML brutes (&eacute;…) et la citation du cold mail (« a
+    # &eacute;crit : » n'était pas reconnu). On décode et on recoupe à l'affichage.
+    from src.classifier import _trim_quoted_history as _tq_disp
+
+    def _readable(txt: str) -> str:
+        return _tq_disp(re.sub(r"\s+", " ", html.unescape(txt)).strip())
+
     # Les alertes de la liste dédiée passent APRÈS le journal : l'ordre reste du
     # plus récent au plus ancien (elles sont toutes antérieures au journal).
     for a in actions + _extra_alerts:
+        if a.get("reply"):
+            a["reply"] = _readable(str(a["reply"]))
         intent = a.get("intent", "")
         status = a.get("status", "")
         alert_id = f"{a.get('at', '')}|{(a.get('from') or '').lower()}"
