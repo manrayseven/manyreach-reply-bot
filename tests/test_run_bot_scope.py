@@ -59,6 +59,27 @@ def test_process_one_declares_nonlocal_for_main_variables():
     )
 
 
+def _import_names(nodes) -> set[str]:
+    out: set[str] = set()
+    for node in nodes:
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            for al in node.names:
+                out.add((al.asname or al.name).split(".")[0])
+    return out
+
+
+def test_process_one_does_not_reimport_module_names():
+    # Un `from src.actions import ALERT_ONLY` LOCAL dans _process_one rend le nom
+    # local à TOUTE la fonction : l'utiliser plus haut → UnboundLocalError (piège
+    # rencontré le 16/09 en ajoutant la règle « piste en cours »).
+    tree = ast.parse(RUN_BOT.read_text(encoding="utf-8"))
+    module_names = _import_names(tree.body)
+    proc = _find_func(_find_func(tree, "main"), "_process_one")
+    local_imports = _import_names(ast.walk(proc))
+    clash = local_imports & module_names
+    assert not clash, f"imports locaux qui masquent un nom du module : {sorted(clash)}"
+
+
 if __name__ == "__main__":
     from tests._runner import main as _main
     _main(globals())

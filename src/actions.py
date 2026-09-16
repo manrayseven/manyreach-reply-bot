@@ -97,6 +97,30 @@ ALERT_ONLY = frozenset({
 # Intents that NEVER send a reply (silent action only).
 ALWAYS_SILENT = frozenset({"unsubscribe", "hostile", "bounce_or_auto", "ack_only"})
 
+# Tags posés par le bot quand un prospect remonte en ALERTE (= piste suivie par
+# Rudy ou le client). Dérivés de INTENT_PROSPECT_UPDATE pour rester synchronisés.
+LEAD_TAGS = frozenset(
+    tag
+    for intent in ALERT_ONLY
+    for tag in INTENT_PROSPECT_UPDATE.get(intent, (None, None, []))[2]
+)
+
+
+def is_lead_in_progress(prospect: Prospect | None) -> bool:
+    """True si le prospect porte un tag de piste posé par le bot (déjà alerté).
+
+    Sert à faire remonter en alerte TOUTE nouvelle réponse d'une conversation
+    en cours (cas école Major 15/09 : complément d'info non remonté).
+    """
+    if prospect is None:
+        return False
+    tags = (prospect.raw or {}).get("tags") or []
+    names = {
+        str(t.get("name") if isinstance(t, dict) else t).strip().lower()
+        for t in tags
+    }
+    return bool(names & LEAD_TAGS)
+
 
 ActionKind = Literal[
     "update_prospect",

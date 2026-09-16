@@ -18,8 +18,26 @@ from src.actions import (  # noqa: E402
     ALWAYS_SILENT,
     AUTOSEND_ELIGIBLE,
     INTENT_PROSPECT_UPDATE,
+    LEAD_TAGS,
+    is_lead_in_progress,
 )
 from src.classifier import VALID_INTENTS  # noqa: E402
+from src.manyreach import Prospect  # noqa: E402
+
+
+def _prospect(tags):
+    return Prospect.from_api({"prospectId": 1, "email": "a@b.fr", "tags": tags})
+
+
+def test_lead_in_progress_detects_alert_tags():
+    # Cas école Major (15/09) : déjà alertée (bot:info-requested) puis réécrit.
+    assert "bot:info-requested" in LEAD_TAGS and "bot:hot-lead" in LEAD_TAGS
+    assert is_lead_in_progress(_prospect([{"id": 400904, "name": "bot:info-requested"}]))
+    # Tags non-piste (refus, silencieux) ou aucun tag → pas une piste.
+    assert not is_lead_in_progress(_prospect([{"id": 1, "name": "bot:not-interested"}]))
+    assert not is_lead_in_progress(_prospect([{"id": 2, "name": "bot:ack-only"}]))
+    assert not is_lead_in_progress(_prospect([]))
+    assert not is_lead_in_progress(None)
 
 
 def test_categories_are_disjoint():

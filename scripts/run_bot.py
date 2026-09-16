@@ -42,8 +42,10 @@ import yaml  # noqa: E402
 from dotenv import load_dotenv  # noqa: E402
 
 from src.actions import (  # noqa: E402
+    ALERT_ONLY,
     ALWAYS_SILENT,
     AUTOSEND_ELIGIBLE,
+    is_lead_in_progress,
     execute_plan,
     plan_actions,
     plan_mailinblack_actions,
@@ -1052,6 +1054,23 @@ def main() -> int:
                             classification, intent="ask_more_info",
                             confidence=max(classification.confidence, 0.6),
                         )
+
+                # PISTE EN COURS (Rudy 16/09, cas école Major) : un prospect déjà
+                # remonté en alerte (tag bot de piste) qui réécrit — complément
+                # d'info, précision, même « merci » ou « non finalement » — doit
+                # TOUJOURS revenir en alerte : c'est une conversation humaine en
+                # cours, jamais du silence ni une réponse type. Seuls STOP /
+                # hostile restent traités comme tels.
+                if (
+                    is_lead_in_progress(prospect)
+                    and classification.intent not in ALERT_ONLY
+                    and classification.intent not in ("unsubscribe", "hostile")
+                ):
+                    print(f"  ⚠️ Piste en cours (tag bot) : {classification.intent} → ALERTE")
+                    classification = _dc_replace(
+                        classification, intent="ask_more_info",
+                        confidence=max(classification.confidence, 0.8),
+                    )
                 print(f"    key_phrase: {_short(classification.key_phrase, 120)}")
                 if classification.redirected_to:
                     print(f"    redirected_to: {classification.redirected_to}")
@@ -1135,7 +1154,6 @@ def main() -> int:
                 # 15/09 (Rudy), une vraie personne « pas nous » reçoit la réponse
                 # type (AUTOSEND) ; les redirections automatiques restent
                 # silencieuses (pré-filtre / bounce_or_auto).
-                from src.actions import ALERT_ONLY  # local import to avoid cycles
                 if classification.intent in ALERT_ONLY:
                     print(f"  >> ALERT_ONLY ({classification.intent}) — alerte Rudy, pas de réponse auto")
                     # Mise à jour du statut prospect (sans envoyer de mail)

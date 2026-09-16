@@ -1749,9 +1749,14 @@ def _render(client_filter: str | None = None) -> str:
         """
         if sel_client or len(clients_all) < 2:
             return "".join(row_fn(a) for a in items[:cap])
+        # Plafond PAR COMPTE (15/09) : appliqué avant la répartition, les 25
+        # alertes les plus récentes de Webmarketing Conseil évinçaient celles de
+        # Cmaclim (cas école Major : 2e message jamais affiché).
         _buckets: dict[str, list] = {}
-        for _a in items[:cap]:
-            _buckets.setdefault(_eff_client_id(_a) or "", []).append(_a)
+        for _a in items:
+            _b = _buckets.setdefault(_eff_client_id(_a) or "", [])
+            if len(_b) < cap:
+                _b.append(_a)
         # Ordre : compte par defaut d'abord, puis alphabetique — stable d'un
         # rafraichissement a l'autre (un ordre par volume ferait sauter les
         # blocs de place des qu'une alerte arrive).
@@ -2685,6 +2690,21 @@ class handler(BaseHTTPRequestHandler):
                     ]
                 try:
                     run_bot.main()
+                    # ESPACES (16/09) : la clé du compte principal ne voit pas les
+                    # workspaces → un prospect Cmaclim n'était jamais retrouvé par
+                    # « Forcer ». On repasse donc aussi dans chaque espace.
+                    if action == "run_email" and only_email:
+                        from src.spaces import list_spaces
+                        for _sp in list_spaces():
+                            os.environ["RUN_BUDGET_SECONDS"] = "20"
+                            sys.argv = sys.argv[:1] + [
+                                "--no-dry-run", "--only-email", only_email,
+                                "--ignore-window", "--space", _sp,
+                            ]
+                            try:
+                                run_bot.main()
+                            except SystemExit:
+                                pass
                 finally:
                     sys.argv = old_argv
             except SystemExit:
