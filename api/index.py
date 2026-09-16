@@ -817,33 +817,17 @@ def _render(client_filter: str | None = None) -> str:
     if sel_client:
         perf = _perf_30d([a for a in actions_full if _eff_client_id(a) == sel_client])
 
-    # AUTO-RÉSOLUTION DES ALERTES : pour chaque email, on note le timestamp de la
-    # dernière entrée "gérée" (réponse envoyée, action silencieuse, ou reclassée en
-    # refus/terminal). Une alerte ANTÉRIEURE à cette résolution est obsolète → on la
-    # cache. Évite que de vieilles alertes (misclassif corrigée ensuite, ou cas déjà
-    # traité auto) restent affichées maintenant qu'on lit TOUT le log (cas
-    # sante-o-centre : alerté par un cron buggé, puis correctement passé NotInterested).
-    # Les objection_* (price, already_have_solution, timing, reasoned) NE SONT PLUS
-    # ici : ce sont désormais des ALERTES (leads à convaincre, Rudy reprend la
-    # main), pas des résolutions auto → ne doivent pas se masquer tout seuls.
-    _RESOLVED_INTENTS = {
-        "not_interested_polite", "objection_price", "objection_already_have_solution",
-        "unsubscribe", "hostile", "bounce_or_auto", "wrong_person_redirect", "ack_only",
-    }
-    _resolved_at: dict[str, str] = {}
-    for a in actions_full:
-        em = (a.get("from") or "").lower().strip()
-        if not em:
-            continue
-        st = str(a.get("status", "")).lower()
-        is_resolution = (
-            "envoyé" in st or "exécuté" in st or "silencieux" in st
-            or a.get("intent") in _RESOLVED_INTENTS
-        )
-        if is_resolution:
-            at = a.get("at", "")
-            if at > _resolved_at.get(em, ""):
-                _resolved_at[em] = at
+    # TOUTES LES ALERTES (Rudy 16/09) : plus d'auto-résolution. Le journal
+    # principal ne garde que MAX_LOG_ENTRIES actions (envois, silencieux…) →
+    # les alertes plus anciennes en sortaient. Elles sont aussi copiées dans une
+    # liste KV dédiée (kvstore.recent_alerts) qu'on relit ici en complément.
+    _alert_ids_seen: set[str] = set()
+    _log_ids = {f"{a.get('at', '')}|{(a.get('from') or '').lower()}" for a in actions}
+    _extra_alerts = [
+        a for a in (kvstore.recent_alerts() or [])
+        if not _is_foreign_entry(a)
+        and f"{a.get('at', '')}|{(a.get('from') or '').lower()}" not in _log_ids
+    ]
 
     # Seuils d'ancienneté des ERREURS masquées automatiquement :
     #  - erreur générique non résolue > 3 jours = bruit → cachée.
@@ -859,7 +843,9 @@ def _render(client_filter: str | None = None) -> str:
     except Exception:  # noqa: BLE001
         _err_stale_cutoff = _err_transient_cutoff = ""
 
-    for a in actions:
+    # Les alertes de la liste dédiée passent APRÈS le journal : l'ordre reste du
+    # plus récent au plus ancien (elles sont toutes antérieures au journal).
+    for a in actions + _extra_alerts:
         intent = a.get("intent", "")
         status = a.get("status", "")
         alert_id = f"{a.get('at', '')}|{(a.get('from') or '').lower()}"
@@ -898,52 +884,12 @@ def _render(client_filter: str | None = None) -> str:
             # reçoit la réponse type : ces envois tombent dans sent_list plus bas.
             silent_list.append(a)
         elif intent in ALERT_INTENTS or "ALERTE" in status:
-            # Cachée si une entrée PLUS RÉCENTE pour le même email montre que le
-            # cas a été géré depuis (réponse envoyée / silencieux / refus).
-            _em = (a.get("from") or "").lower().strip()
-            superseded = bool(_em and _resolved_at.get(_em, "") > a.get("at", ""))
-            # FILTRE REFUS : alerte PÉRIMÉE d'avant les fixes classifier (ex. coachs
-            # "non + signature promo" mal classés interested/ask_more_info avant
-            # qu'on apprenne au classifier à ignorer les signatures). Si le TEXTE du
-            # reply est un refus net, ce n'est pas un vrai lead → on cache. Cohérent
-            # avec la politique soft-no (refus = réponse auto, jamais d'alerte).
-            _rlow = str(a.get("reply", "")).lower()
-            _slow = str(a.get("subject", "")).lower()
-            _is_refusal = any(ph in _rlow for ph in (
-                "ne suis pas intéress", "ne sommes pas intéress", "ne suis pas interess",
-                "ne m'intéresse pas", "ne nous intéresse pas", "ne m interesse pas",
-                "non merci", "rien besoin", "pas de besoin", "aucun besoin",
-                "pas intéressé par votre", "pas intéressée par votre", "pas interesse par votre",
-                "pas un sujet pour nous", "pas un sujet chez nous", "n'est pas un sujet",
-                "pas d'actualité pour nous",
-            ))
-            # AUTOREPLY OOO / FERMETURE / CONGÉS mal classé en alerte avant les fixes
-            # (sujet "Congés/Fermeture/Absente..." souvent avec corps vide) → pas un
-            # vrai lead → on cache. Idem politique : ces cas sont silencieux.
-            _is_ooo = (
-                any(k in _slow for k in (
-                    "congé", "congés", "conges", "absente", "absence", "fermeture",
-                    "out of office", "réponse automatique", "maternit", "vacances",
-                ))
-                or any(k in _rlow for k in (
-                    "pour toute urgence", "pour toutes urgences", "sera fermé",
-                    "actuellement en congé", "en congés jusqu", "actuellement absent",
-                    "exceptionnellement fermé", "exceptionnellement ferme",
-                    "fermé du ", "ferme du ", "fermée du ", "fermee du ",
-                    "nous répondrons", "nous repondrons",
-                    "répondrons à vos demandes", "repondrons a vos demandes",
-                    # OOO "vacances d'équipe" (cas joliebibi) :
-                    "à notre retour", "a notre retour", "à mon retour", "a mon retour",
-                    "dès notre retour", "répondrons à vos mails", "repondrons a vos mails",
-                    "répondrons à vos messages", "sera absent", "serons absent",
-                    "traiterons vos", "sera absente du", "absente du",
-                ))
-            )
-            # Reply SANS contenu lisible (corps vide / "[No Body Detail]") : non
-            # actionnable + désormais classé bounce_or_auto par le bot → on cache.
-            _no_content = (not _rlow.strip()) or ("no body detail" in _rlow)
-            if (alert_id not in dismissed and not superseded
-                    and not _is_refusal and not _is_ooo and not _no_content):
+            # TOUTES LES ALERTES (Rudy 16/09) : plus aucun masquage automatique
+            # (anciens filtres « répondu depuis », « texte de refus », « absence »,
+            # « corps vide » retirés — ils cachaient de vraies pistes). Seule la
+            # croix ✕ (ou une action du dashboard qui la déclenche) retire une alerte.
+            if alert_id not in dismissed and alert_id not in _alert_ids_seen:
+                _alert_ids_seen.add(alert_id)
                 alerts.append(a)
         elif intent == "mailinblack_pending":
             # Challenge antispam (MailInBlack & co) → section dédiée en bas de
@@ -961,19 +907,13 @@ def _render(client_filter: str | None = None) -> str:
             silent_list.append(a)
 
     # ENRICHISSEMENT LIVE DES ALERTES via ManyReach (mis en cache KV 30 min).
-    # Pour chaque alerte affichée on récupère, depuis la SOURCE DE VÉRITÉ ManyReach :
-    #  - le statut courant du prospect → masque l'alerte s'il est TERMINAL
-    #    (NotInterested/Unsub/Hostile/Bounce) : couvre les alertes périmées et les
-    #    cas traités À LA MAIN (aucune trace KV) — ex. sante-o-centre.
+    # Pour chaque alerte affichée on récupère, depuis la SOURCE DE VÉRITÉ ManyReach
+    # (sans plus jamais masquer l'alerte, cf. 16/09) :
     #  - la campagne D'ORIGINE + le mailbox expéditeur d'origine (1er Sent du thread)
     #    quand le reply n'a pas de campaign_id → permet un VRAI lien ManyReach vers
     #    la conversation de départ (et non un mailto), même pour les alertes créées
     #    avant qu'on stocke ces infos. Cas auberge-grand-maison/aemn/jeanmarc.houel.
     # Fail-open : si l'appel échoue, on garde l'alerte et le lien actuel.
-    _TERMINAL_MR = {
-        "notinterested", "unsub", "unsubscribed", "hostile",
-        "bouncehard", "bounce", "donotcontact", "blacklisted",
-    }
     if alerts:
         def _ck(em: str) -> str:
             return "mrenrich:v4:" + em  # v4 = blob inclut history (transfert client)
@@ -1140,23 +1080,9 @@ def _render(client_filter: str | None = None) -> str:
             em = (a.get("prospect_email") or a.get("from") or "").lower().strip()
             data = enrich.get(em)
             if data:
-                if str(data.get("status", "")).lower().strip() in _TERMINAL_MR:
-                    continue  # prospect déjà terminal → masque l'alerte
-                # SUPERSEDE : on a répondu (bot ou Rudy) APRÈS le reply qui a créé
-                # cette alerte → conversation traitée → masque. On compare le dernier
-                # Sent du thread à l'heure de l'alerte (a["at"]). Marge de 2 min pour
-                # absorber les petits décalages d'horloge d'ingestion.
-                _spoke = str(data.get("we_spoke_last_at") or "").strip()
-                _alert_at = str(a.get("at") or "").strip()
-                if _spoke and _alert_at:
-                    try:
-                        from datetime import datetime as _dt, timedelta as _td
-                        _s = _dt.fromisoformat(_spoke)
-                        _al = _dt.fromisoformat(_alert_at)
-                        if _s > _al - _td(minutes=2):
-                            continue  # répondu depuis l'alerte → masque
-                    except Exception:  # noqa: BLE001
-                        pass
+                # (16/09) On NE masque plus les alertes d'un prospect terminal ou
+                # auquel on a répondu depuis : toutes les alertes restent visibles
+                # jusqu'à la croix ✕. L'enrichissement sert seulement à compléter.
                 if data.get("prospect_email") and not a.get("prospect_email"):
                     a["prospect_email"] = data["prospect_email"]
                 if data.get("campaign") and not a.get("origin_campaign_id"):
@@ -1787,7 +1713,7 @@ def _render(client_filter: str | None = None) -> str:
                 )
         return "".join(_out)
 
-    alerts_html = _grouped(alerts, _alert_row, 25, "Aucune alerte pour cet espace.") if alerts else ""
+    alerts_html = _grouped(alerts, _alert_row, max(1, len(alerts)), "Aucune alerte pour cet espace.") if alerts else ""
     if not alerts_html:
         alerts_html = '<div class="empty-section">Aucune alerte à traiter — tu es à jour ✓</div>'
     sent_html = _grouped(sent_list, _sent_row, 40, "Aucun envoi pour cet espace.") if sent_list else ""

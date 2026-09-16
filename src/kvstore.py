@@ -77,12 +77,46 @@ def set_enabled(enabled: bool) -> None:
     _cmd("SET", ENABLED_KEY, "1" if enabled else "0")
 
 
+ALERTS_KEY = "bot:alerts"
+MAX_ALERTS = 500
+# Même liste que ALERT_INTENTS du dashboard (api/index.py) — dupliquée ici pour ne
+# pas importer src.actions (et donc le SDK Anthropic) dans le client KV.
+_ALERT_INTENTS = frozenset({
+    "interested_warm", "interested_lukewarm", "ask_more_info",
+    "meeting_confirmed", "objection_timing", "objection_reasoned",
+})
+
+
+def _is_alert_entry(entry: dict) -> bool:
+    return (entry.get("intent") in _ALERT_INTENTS
+            or "ALERTE" in str(entry.get("status", "")))
+
+
 def log_action(entry: dict) -> None:
-    """Ajoute une action au journal (capé)."""
+    """Ajoute une action au journal (capé). Les ALERTES sont aussi copiées dans
+    une liste dédiée : le journal (envois, silencieux…) tourne vite et les
+    faisait disparaître du dashboard (Rudy 16/09 : afficher TOUTES les alertes)."""
     if not kv_available():
         return
-    _cmd("LPUSH", ACTION_LOG_KEY, json.dumps(entry, ensure_ascii=False))
+    payload = json.dumps(entry, ensure_ascii=False)
+    _cmd("LPUSH", ACTION_LOG_KEY, payload)
     _cmd("LTRIM", ACTION_LOG_KEY, "0", str(MAX_LOG_ENTRIES - 1))
+    if _is_alert_entry(entry):
+        _cmd("LPUSH", ALERTS_KEY, payload)
+        _cmd("LTRIM", ALERTS_KEY, "0", str(MAX_ALERTS - 1))
+
+
+def recent_alerts(n: int = MAX_ALERTS) -> list[dict]:
+    """Alertes conservées dans la liste dédiée (plus récentes d'abord)."""
+    raw = _cmd("LRANGE", ALERTS_KEY, "0", str(n - 1))
+    out: list[dict] = []
+    if isinstance(raw, list):
+        for item in raw:
+            try:
+                out.append(json.loads(item))
+            except (json.JSONDecodeError, TypeError):
+                pass
+    return out
 
 
 def recent_actions(n: int = 50) -> list[dict]:

@@ -41,6 +41,10 @@ def _fake_kv(monkey_actions):
         def recent_actions(self, limit=None):
             return list(monkey_actions)
 
+        def recent_alerts(self, limit=None):
+            # Liste dédiée : même alerte que le journal (dédoublonnée au rendu).
+            return [a for a in monkey_actions if "ALERTE" in str(a.get("status", ""))]
+
         def get_clients(self):
             return [
                 {"id": "cli1", "name": "Client Test", "is_default": True,
