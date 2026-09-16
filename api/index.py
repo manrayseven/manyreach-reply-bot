@@ -639,7 +639,12 @@ def _handoff_email_html(company: str, detail_line: str, contact_line: str,
     Gmail/Thunderbird). En-tête, Société/Contact/Campagne, HISTORIQUE COMPLET des
     échanges, puis « à faire de votre côté » en bloc beige. Tout wrappe dans le
     cadre (word-break) → plus de débordement."""
-    e = html.escape
+    from src.classifier import readable_text as _rt
+
+    def e(s):  # décode les entités (&eacute;, &amp;#233;…) PUIS échappe
+        return html.escape(_rt(str(s)))
+
+    message = _rt(message or "")
     _wrap = "word-break:break-word;overflow-wrap:anywhere"
     _lab = ("padding:11px 16px;border-bottom:1px solid #eee4d0;font-family:Arial,sans-serif;"
             "font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:#a89066;"
@@ -846,16 +851,18 @@ def _render(client_filter: str | None = None) -> str:
     # TEXTE LISIBLE (Rudy 16/09) : les entrées déjà enregistrées gardent parfois
     # des entités HTML brutes (&eacute;…) et la citation du cold mail (« a
     # &eacute;crit : » n'était pas reconnu). On décode et on recoupe à l'affichage.
-    from src.classifier import _trim_quoted_history as _tq_disp
+    from src.classifier import _trim_quoted_history as _tq_disp, readable_text
 
     def _readable(txt: str) -> str:
-        return _tq_disp(re.sub(r"\s+", " ", html.unescape(txt)).strip())
+        return _tq_disp(re.sub(r"\s+", " ", readable_text(txt)).strip())
 
     # Les alertes de la liste dédiée passent APRÈS le journal : l'ordre reste du
     # plus récent au plus ancien (elles sont toutes antérieures au journal).
     for a in actions + _extra_alerts:
         if a.get("reply"):
             a["reply"] = _readable(str(a["reply"]))
+        if a.get("subject"):
+            a["subject"] = readable_text(str(a["subject"]))
         intent = a.get("intent", "")
         status = a.get("status", "")
         alert_id = f"{a.get('at', '')}|{(a.get('from') or '').lower()}"
@@ -926,12 +933,15 @@ def _render(client_filter: str | None = None) -> str:
     # Fail-open : si l'appel échoue, on garde l'alerte et le lien actuel.
     if alerts:
         def _ck(em: str) -> str:
-            return "mrenrich:v4:" + em  # v4 = blob inclut history (transfert client)
+            # v5 (16/09) : historique récupéré avec la clé de l'ESPACE du prospect
+            # + textes décodés → invalide les caches v4 (vides pour Cmaclim).
+            return "mrenrich:v5:" + em
 
         # 1) Charge le cache pour chaque email ; collecte les emails à interroger
         #    en live (cache froid). Dédup par email (plusieurs alertes même prospect).
         enrich: dict[str, dict | None] = {}
-        to_fetch: dict[str, bool] = {}  # email -> a-t-il déjà une campagne (classique)
+        # email -> (a-t-il déjà une campagne, compte client effectif)
+        to_fetch: dict[str, tuple[bool, str]] = {}
         for a in alerts:
             em = (a.get("prospect_email") or a.get("from") or "").lower().strip()
             if not em or em in enrich or em in to_fetch:
@@ -943,7 +953,8 @@ def _render(client_filter: str | None = None) -> str:
                 except (json.JSONDecodeError, TypeError):
                     enrich[em] = None
             else:
-                to_fetch[em] = bool(a.get("campaign_id") or a.get("campaignId"))
+                to_fetch[em] = (bool(a.get("campaign_id") or a.get("campaignId")),
+                                str(_eff_client_id(a) or ""))
 
         # 2) Interroge ManyReach EN PARALLÈLE (httpx.Client est thread-safe). Évite
         #    le N×latence séquentiel sur cache froid. Fail-open par email.
@@ -958,20 +969,30 @@ def _render(client_filter: str | None = None) -> str:
         # est saturée / rate-limitée), on SAUTE l'enrichissement plutôt que de risquer
         # un timeout Vercel (504). Les alertes gardent leurs valeurs stockées ; le
         # prochain render (API dégagée) enrichira. Évite la page morte (incident 20/08).
+        # ESPACES (16/09) : la clé du compte principal ne voit pas les workspaces
+        # → pour un prospect Cmaclim, ni fiche ni historique (l'email de transfert
+        # ne montrait que le dernier message). Un client ManyReach PAR ESPACE.
+        _space_clients: dict = {}
         if to_fetch and _budget_left() > 15:
             try:
-                from src.manyreach import ManyReachClient
+                from src.manyreach import ManyReachClient, workspace_api_keys
                 _client = ManyReachClient(timeout=6.0)
+                _wkeys = workspace_api_keys()
+                for _has, _cid in to_fetch.values():
+                    if _cid in _wkeys and _cid not in _space_clients:
+                        _space_clients[_cid] = ManyReachClient(
+                            api_key=_wkeys[_cid], timeout=6.0)
             except Exception:  # noqa: BLE001
                 _client = None  # fail-open : pas d'enrichissement (ex. clé absente)
         if _client is not None:
             from concurrent.futures import ThreadPoolExecutor
 
             def _fetch(item):
-                em, has_camp = item
+                em, (has_camp, _cid) = item
+                _mr = _space_clients.get(_cid) or _client
                 data: dict = {}
                 try:
-                    p = _client.find_prospect_by_email(em)
+                    p = _mr.find_prospect_by_email(em)
                     if p:
                         data["status"] = p.sending_status or ""
                         data["prospect_email"] = p.email or em
@@ -996,7 +1017,7 @@ def _render(client_filter: str | None = None) -> str:
                         # une conversation déjà répondue reste en alerte avec un lien
                         # ManyReach qui ouvre vide (cas veterinairephoenix06).
                         thr = sorted(
-                            _client.get_prospect_thread(p.prospect_id),
+                            _mr.get_prospect_thread(p.prospect_id),
                             key=lambda m: m.created_at,
                         )
                         # "On a parlé en dernier" = dernier message du thread est un
@@ -1076,10 +1097,11 @@ def _render(client_filter: str | None = None) -> str:
                     _ex.shutdown(wait=False, cancel_futures=True)
                 except TypeError:  # py<3.9 : pas de cancel_futures
                     _ex.shutdown(wait=False)
-                try:
-                    _client.close()
-                except Exception:  # noqa: BLE001
-                    pass
+                for _c in [_client, *_space_clients.values()]:
+                    try:
+                        _c.close()
+                    except Exception:  # noqa: BLE001
+                        pass
 
         # 3) Applique : masque les prospects TERMINAUX, injecte les champs d'enrichi.
         #    ⚠️ On N'injecte PAS data["campaign"] dans campaign_id : un reply orphelin
@@ -1106,7 +1128,8 @@ def _render(client_filter: str | None = None) -> str:
                 # Detail]", et plus long que le stocké). ManyReach renvoie souvent un
                 # corps vide via le thread alors que le stocké a le vrai texte capté
                 # à l'ingestion → ne jamais l'écraser par du vide (cas ruben@lasolas).
-                _rf = str(data.get("reply_full") or "").strip()
+                # Toujours décodé/recoupé : un cache peut contenir des entités HTML.
+                _rf = _readable(str(data.get("reply_full") or ""))
                 if (_rf and "no body detail" not in _rf.lower()
                         and len(_rf) > len(str(a.get("reply") or "").strip())):
                     a["reply"] = _rf
@@ -1116,7 +1139,10 @@ def _render(client_filter: str | None = None) -> str:
                     if data.get(_k) and not a.get("_" + _k):
                         a["_" + _k] = data[_k]
                 if data.get("history") and not a.get("_history"):
-                    a["_history"] = data["history"]
+                    a["_history"] = [
+                        {**h, "text": _readable(str(h.get("text") or ""))}
+                        for h in data["history"]
+                    ]
             _kept.append(a)
         alerts = _kept
 
@@ -1635,12 +1661,18 @@ def _render(client_filter: str | None = None) -> str:
     # NOMS DE CAMPAGNE pour l'email de transfert (ID → nom lisible). Résolus via
     # ManyReach get_campaign, mis en cache KV 7 j (les noms bougent peu). Rudy veut
     # le vrai nom ("Peintres en Bâtiment v2"), pas l'ID (102336).
-    _camp_ids = {str(a.get("campaign_id") or a.get("origin_campaign_id") or "").strip()
-                 for a in alerts[:25]}
-    _camp_ids.discard("")
+    # ESPACES (16/09) : une campagne Cmaclim n'existe que dans son workspace → la
+    # résoudre avec la clé de l'espace (sinon « 111235 » au lieu du nom). v3 =
+    # invalide les « - » (introuvable) mis en cache avec la mauvaise clé.
+    _camp_owner: dict[str, str] = {}
+    for a in alerts:
+        _k = str(a.get("campaign_id") or a.get("origin_campaign_id") or "").strip()
+        if _k and _k not in _camp_owner:
+            _camp_owner[_k] = str(_eff_client_id(a) or "")
+    _camp_ids = set(_camp_owner)
     _camp_todo = []
     for _cid in _camp_ids:
-        _cn = kvstore.cache_get(f"mrcamp:v2:{_cid}")
+        _cn = kvstore.cache_get(f"mrcamp:v3:{_cid}")
         if _cn is not None:  # HIT (nom ou "-" = introuvable) → pas de refetch
             if _cn and _cn != "-":
                 camp_names[_cid] = _cn
@@ -1650,24 +1682,31 @@ def _render(client_filter: str | None = None) -> str:
     if _camp_todo and _budget_left() > 12:  # skip si le render traîne déjà
         try:
             from concurrent.futures import ThreadPoolExecutor
-            from src.manyreach import ManyReachClient
+            from src.manyreach import ManyReachClient, workspace_api_keys
             _cc = ManyReachClient(timeout=6.0)
+            _wk = workspace_api_keys()
+            _cc_space = {
+                _o: ManyReachClient(api_key=_wk[_o], timeout=6.0)
+                for _o in {_camp_owner.get(c, "") for c in _camp_todo} if _o in _wk
+            }
 
             def _resolve_camp(cid):
                 try:
-                    _data = _cc.get_campaign(int(cid))
+                    _mc = _cc_space.get(_camp_owner.get(cid, "")) or _cc
+                    _data = _mc.get_campaign(int(cid))
                     _nm = (_data.get("name") if isinstance(_data, dict) else "") or ""
                 except Exception:  # noqa: BLE001
                     _nm = ""
-                kvstore.cache_set(f"mrcamp:v2:{cid}", _nm or "-", 7 * 24 * 3600)
+                kvstore.cache_set(f"mrcamp:v3:{cid}", _nm or "-", 7 * 24 * 3600)
                 if _nm:
-                    camp_names[cid] = _nm
+                    camp_names[cid] = readable_text(_nm)
 
             try:
                 with ThreadPoolExecutor(max_workers=6) as _ex:
                     list(_ex.map(_resolve_camp, _camp_todo))
             finally:
-                _cc.close()
+                for _c in [_cc, *_cc_space.values()]:
+                    _c.close()
         except Exception:  # noqa: BLE001
             pass
 

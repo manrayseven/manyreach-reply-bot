@@ -13,7 +13,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from src.classifier import _strip_html, _trim_quoted_history, is_stop_signal  # noqa: E402
+from src.classifier import _strip_html, _trim_quoted_history, is_stop_signal, readable_text  # noqa: E402
 
 
 def test_trim_short_refusal_with_gmail_quote():
@@ -135,6 +135,15 @@ def test_strip_html_decodes_all_entities_and_quote_is_trimmed():
     out = _trim_quoted_history(_strip_html(raw))
     assert "&eacute;" not in out and "oublié" in out and "maître" in out, out
     assert "Mesdames" not in out and "DUERP" not in out, out
+
+
+def test_readable_text_handles_double_encoding():
+    # Alerte chefcoste (16/09) : « d&#233;cliner » affiché tel quel = entité
+    # encodée DEUX fois (&amp;#233;) → un seul décodage ne suffisait pas.
+    assert readable_text("d&amp;#233;cliner &amp;#171; besoin &amp;#187;") == "décliner « besoin »"
+    assert readable_text("oubli&eacute;") == "oublié"
+    assert readable_text("déjà lisible") == "déjà lisible"
+    assert readable_text(None) == ""
 
 
 def test_strip_html_removes_script_style():

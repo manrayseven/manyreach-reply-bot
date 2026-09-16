@@ -83,6 +83,19 @@ class Classification:
         )
 
 
+def readable_text(text: str) -> str:
+    """Décode les entités HTML jusqu'à stabilité : &eacute; → é, et aussi le
+    DOUBLE encodage (&amp;#233; → &#233; → é) vu dans les alertes (Rudy 16/09 :
+    « partout et tout le temps »). À appliquer à tout texte de prospect affiché."""
+    out = str(text or "")
+    for _ in range(3):
+        dec = _html_mod.unescape(out)
+        if dec == out:
+            break
+        out = dec
+    return out
+
+
 def _strip_html(html: str) -> str:
     """Remove HTML tags for cleaner classification context."""
     # Strip script/style blocks first
@@ -96,7 +109,7 @@ def _strip_html(html: str) -> str:
     # TOUTES les entités HTML (&eacute;, &agrave;, &#233;…), pas seulement les 6
     # courantes : sinon « a &eacute;crit : » échappait à la coupe de citation et
     # le texte restait illisible dans le dashboard (cas école Major, 16/09).
-    cleaned = _html_mod.unescape(cleaned)
+    cleaned = readable_text(cleaned)
     cleaned = re.sub(r"\s+", " ", cleaned)
     return cleaned.strip()
 
