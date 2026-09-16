@@ -51,6 +51,7 @@ from src.actions import (  # noqa: E402
     plan_mailinblack_actions,
 )
 from src.classifier import Classifier, _strip_html, _trim_quoted_history, is_stop_signal  # noqa: E402
+from src.conversation import build_history  # noqa: E402
 from src import clients as _clients  # noqa: E402
 from src.drafter import Drafter  # noqa: E402
 from src.fixed_replies import fixed_draft, quick_classification, quick_intent  # noqa: E402
@@ -141,6 +142,38 @@ def load_style_guide(training_path: Path) -> str:
 def _short(s: str, n: int = 180) -> str:
     s = " ".join((s or "").split())
     return s if len(s) <= n else s[: n - 1] + "…"
+
+
+def _alert_context(mr, prospect, thread, reply) -> dict:
+    """Champs figés dans l'alerte pour l'email de transfert : conversation
+    complète, fiche société/contact, nom de campagne. Ne lève jamais (une alerte
+    sans contexte vaut mieux que pas d'alerte)."""
+    ctx: dict = {}
+    try:
+        ctx["history"] = build_history(thread, reply)
+    except Exception as e:  # noqa: BLE001
+        print(f"  !! historique alerte : {e}")
+    if prospect is not None:
+        raw = prospect.raw or {}
+        ctx["company"] = prospect.company or ""
+        ctx["industry"] = prospect.industry or ""
+        ctx["job"] = prospect.job_position or ""
+        ctx["city"] = str(raw.get("city") or "")
+        ctx["size"] = str(raw.get("companySize") or "")
+        # Prénom/nom réels seulement (certaines listes y stockent des dates).
+        ctx["pname"] = " ".join(
+            x for x in (str(prospect.first_name or ""), str(prospect.last_name or ""))
+            if x and not x[:4].isdigit()
+        ).strip()
+    if reply.campaign_id:
+        try:
+            data = mr.get_campaign(int(reply.campaign_id))
+            name = (data.get("name") if isinstance(data, dict) else "") or ""
+            if name:
+                ctx["campaign_name"] = name
+        except Exception:  # noqa: BLE001
+            pass
+    return ctx
 
 
 def load_processed_ids(processed_file: Path) -> set[str]:
@@ -1232,6 +1265,11 @@ def main() -> int:
                                 classification.contact_phone
                                 or (prospect.raw.get("phone") if prospect and prospect.raw else None)
                             ),
+                            # EMAIL DE TRANSFERT COMPLET, figé à la création de
+                            # l'alerte (Rudy 16/09) : le dashboard n'a plus à tout
+                            # re-récupérer à l'affichage (il n'y arrivait pas pour
+                            # toutes les alertes, ni pour les espaces).
+                            **_alert_context(mr, prospect, thread, reply),
                         })
                     if not dry_run:
                         _mark_done(reply.message_id)

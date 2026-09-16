@@ -935,7 +935,7 @@ def _render(client_filter: str | None = None) -> str:
         def _ck(em: str) -> str:
             # v5 (16/09) : historique récupéré avec la clé de l'ESPACE du prospect
             # + textes décodés → invalide les caches v4 (vides pour Cmaclim).
-            return "mrenrich:v5:" + em
+            return "mrenrich:v6:" + em
 
         # 1) Charge le cache pour chaque email ; collecte les emails à interroger
         #    en live (cache froid). Dédup par email (plusieurs alertes même prospect).
@@ -945,6 +945,10 @@ def _render(client_filter: str | None = None) -> str:
         for a in alerts:
             em = (a.get("prospect_email") or a.get("from") or "").lower().strip()
             if not em or em in enrich or em in to_fetch:
+                continue
+            # Alerte récente : le bot y a déjà figé historique + fiche (16/09) →
+            # pas d'appel live. Le budget va aux anciennes alertes qui en manquent.
+            if a.get("history"):
                 continue
             _raw = kvstore.cache_get(_ck(em))
             if _raw:
@@ -1028,23 +1032,11 @@ def _render(client_filter: str | None = None) -> str:
                         # HISTORIQUE COMPLET des échanges (pour l'email de transfert).
                         # ManyReach renvoie chaque envoi du bot 2x (Sent + SentManual,
                         # même msgId) → on dédoublonne par msgId.
+                        # Même construction que le bot (src/conversation) : dans un
+                        # espace, nos emails sont reconstitués depuis les citations.
                         try:
-                            from src.classifier import _strip_html as _sh, _trim_quoted_history as _tq
-                            _hist, _seen = [], set()
-                            for _m in thr:
-                                if _m.message_id in _seen:
-                                    continue
-                                _seen.add(_m.message_id)
-                                _tx = _tq(_sh(_m.body or ""), 700).strip()
-                                if not _tx:
-                                    continue
-                                _hist.append({
-                                    "who": "Prospect" if _m.type == "Reply" else "Vous",
-                                    "when": (_m.created_at.strftime("%d/%m %H:%M")
-                                             if _m.created_at else ""),
-                                    "text": _tx,
-                                })
-                            data["history"] = _hist[-16:]
+                            from src.conversation import build_history
+                            data["history"] = build_history(thr)
                         except Exception:  # noqa: BLE001
                             pass
                         # Champs in-app (réponse via API) : UNIQUEMENT pour les
@@ -1069,7 +1061,7 @@ def _render(client_filter: str | None = None) -> str:
                                     except Exception:  # noqa: BLE001
                                         pass
                                     break
-                    kvstore.cache_set(_ck(em), json.dumps(data), 1800)
+                    kvstore.cache_set(_ck(em), json.dumps(data), 6 * 3600)  # 6 h (16/09)
                     return em, data
                 except Exception:  # noqa: BLE001
                     return em, None  # fail-open, ne pas cacher l'échec
@@ -1408,15 +1400,19 @@ def _render(client_filter: str | None = None) -> str:
         handoff_box = ""
         if _client:
             _phone = str(a.get("prospect_phone") or a.get("_phone_live") or "").strip()
-            _company = str(a.get("_company") or "").strip()
-            _industry = str(a.get("_industry") or "").strip()
-            _city = str(a.get("_city") or "").strip()
-            _size = str(a.get("_size") or "").strip()
-            _job = str(a.get("_job") or "").strip()
-            _pname = str(a.get("_pname") or "").strip()
+            # Live (enrichissement) sinon valeurs FIGÉES par le bot à la création
+            # de l'alerte (16/09).
+            _company = str(a.get("_company") or a.get("company") or "").strip()
+            _industry = str(a.get("_industry") or a.get("industry") or "").strip()
+            _city = str(a.get("_city") or a.get("city") or "").strip()
+            _size = str(a.get("_size") or a.get("size") or "").strip()
+            _job = str(a.get("_job") or a.get("job") or "").strip()
+            _pname = str(a.get("_pname") or a.get("pname") or "").strip()
             _camp_id = str(mr_camp or origin_camp or "").strip()
-            # Nom lisible de la campagne (résolu via ManyReach), sinon l'ID en repli.
-            _camp = camp_names.get(_camp_id, _camp_id)
+            # Nom lisible de la campagne (figé par le bot, ou résolu via ManyReach),
+            # sinon l'ID en repli.
+            _camp = (str(a.get("campaign_name") or "").strip()
+                     or camp_names.get(_camp_id, _camp_id))
             # Société : "Nom - secteur, N salariés, ville" (on omet ce qui manque).
             _detail = ", ".join(x for x in [
                 _industry, (f"{_size} salariés" if _size else ""), _city
@@ -1455,8 +1451,13 @@ def _render(client_filter: str | None = None) -> str:
             )
             # Bel email de transfert (HTML) + copie qui garde la mise en forme →
             # plus fiable que le mailto (qui n'ouvre pas toujours Thunderbird).
-            _card = _handoff_email_html(_company, _detail, _contact, _camp, _msg,
-                                        history=a.get("_history"))
+            # Historique : le plus complet entre celui figé à la création de
+            # l'alerte et celui récupéré en live.
+            _hist_stored = a.get("history") or []
+            _hist_live = a.get("_history") or []
+            _card = _handoff_email_html(
+                _company, _detail, _contact, _camp, _msg,
+                history=_hist_live if len(_hist_live) > len(_hist_stored) else _hist_stored)
             _uid = "ho" + str(abs(hash(raw_alert_id)) % (10 ** 9))
             _copy_ho = (
                 f"var el=document.getElementById('{_uid}');"
