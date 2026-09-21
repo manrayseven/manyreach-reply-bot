@@ -948,7 +948,7 @@ def _render(client_filter: str | None = None) -> str:
                 continue
             # Alerte récente : le bot y a déjà figé historique + fiche (16/09) →
             # pas d'appel live. Le budget va aux anciennes alertes qui en manquent.
-            if a.get("history"):
+            if a.get("history") or a.get("has_ctx"):
                 continue
             _raw = kvstore.cache_get(_ck(em))
             if _raw:
@@ -1137,6 +1137,20 @@ def _render(client_filter: str | None = None) -> str:
                     ]
             _kept.append(a)
         alerts = _kept
+
+    # HISTORIQUE des alertes : stocké dans une clé par alerte (les entrées de
+    # journal doivent rester légères). Un seul MGET pour toutes celles affichées.
+    _need_ctx = [
+        f"{a.get('at', '')}|{(a.get('from') or '').lower()}"
+        for a in alerts if a.get("has_ctx") and not a.get("history")
+    ]
+    if _need_ctx:
+        _ctxs = kvstore.get_alert_contexts(_need_ctx[:120]) or {}
+        for a in alerts:
+            _ck_a = f"{a.get('at', '')}|{(a.get('from') or '').lower()}"
+            _hist = (_ctxs.get(_ck_a) or {}).get("history")
+            if _hist:
+                a["history"] = _hist
 
     keyq = os.environ.get("DASHBOARD_KEY")
     keyparam = f"?key={keyq}" if keyq else ""

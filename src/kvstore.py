@@ -107,27 +107,80 @@ def log_action(entry: dict) -> None:
 
 
 def recent_alerts(n: int = MAX_ALERTS) -> list[dict]:
-    """Alertes conservées dans la liste dédiée (plus récentes d'abord)."""
-    raw = _cmd("LRANGE", ALERTS_KEY, "0", str(n - 1))
+    """Alertes conservées dans la liste dédiée (plus récentes d'abord).
+
+    Lecture PAR TRANCHES : _cmd avale toute erreur (timeout, réponse trop
+    grosse) en renvoyant None → une seule grosse LRANGE qui échoue faisait
+    disparaître TOUTES les alertes anciennes, sans aucune trace (cas
+    malittlecreche, 21/09). Par tranches, un échec ne coûte que sa tranche.
+    """
     out: list[dict] = []
-    if isinstance(raw, list):
+    _CH = 50   # tranches courtes : les anciennes alertes contiennent encore l'historique
+    for start in range(0, n, _CH):
+        raw = _cmd("LRANGE", ALERTS_KEY, str(start), str(min(start + _CH, n) - 1))
+        if not isinstance(raw, list):
+            break  # tranche en échec (ou fin de liste) → on garde ce qu'on a
         for item in raw:
             try:
                 out.append(json.loads(item))
+            except (json.JSONDecodeError, TypeError):
+                pass
+        if len(raw) < _CH:
+            break  # fin de la liste
+    return out
+
+
+# CONTEXTE D'ALERTE (historique complet des échanges) : stocké À PART, une clé
+# par alerte. Dans l'entrée de journal, il pesait jusqu'à ~12 Ko × 500 entrées →
+# lectures de plusieurs Mo qui échouaient en silence.
+ALERT_CTX_PREFIX = "bot:alertctx:"
+ALERT_CTX_TTL = 60 * 24 * 3600  # 60 jours
+
+
+def set_alert_context(alert_id: str, ctx: dict) -> None:
+    if not kv_available() or not alert_id or not ctx:
+        return
+    _cmd("SET", ALERT_CTX_PREFIX + alert_id,
+         json.dumps(ctx, ensure_ascii=False), "EX", str(ALERT_CTX_TTL))
+
+
+def get_alert_contexts(alert_ids: list[str]) -> dict[str, dict]:
+    """Contextes des alertes demandées, en MGET par lots de 50."""
+    out: dict[str, dict] = {}
+    if not kv_available() or not alert_ids:
+        return out
+    _CH = 50
+    for _i in range(0, len(alert_ids), _CH):
+        batch = alert_ids[_i:_i + _CH]
+        res = _cmd("MGET", *[ALERT_CTX_PREFIX + a for a in batch])
+        if not isinstance(res, list):
+            continue
+        for aid, val in zip(batch, res):
+            if not val:
+                continue
+            try:
+                out[aid] = json.loads(val)
             except (json.JSONDecodeError, TypeError):
                 pass
     return out
 
 
 def recent_actions(n: int = 50) -> list[dict]:
-    raw = _cmd("LRANGE", ACTION_LOG_KEY, "0", str(n - 1))
+    """Journal des actions, lu PAR TRANCHES (même raison que recent_alerts :
+    une lecture trop grosse échoue en silence et vide le dashboard)."""
     out: list[dict] = []
-    if isinstance(raw, list):
+    _CH = 100
+    for start in range(0, n, _CH):
+        raw = _cmd("LRANGE", ACTION_LOG_KEY, str(start), str(min(start + _CH, n) - 1))
+        if not isinstance(raw, list):
+            break
         for item in raw:
             try:
                 out.append(json.loads(item))
             except (json.JSONDecodeError, TypeError):
                 pass
+        if len(raw) < _CH:
+            break
     return out
 
 

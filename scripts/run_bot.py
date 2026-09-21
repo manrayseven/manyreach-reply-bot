@@ -1235,6 +1235,15 @@ def main() -> int:
                                 if _m.type in ("Sent", "SentManual") and _m.campaign_id:
                                     _origin_camp = _m.campaign_id
                                     break
+                        # Contexte du transfert : la fiche (légère) reste dans
+                        # l'entrée, l'HISTORIQUE part dans sa propre clé — dans
+                        # l'entrée il gonflait le journal jusqu'à faire échouer
+                        # sa lecture (alertes disparues, 21/09).
+                        _ctx = _alert_context(mr, prospect, thread, reply)
+                        _ctx_hist = _ctx.pop("history", None)
+                        _alert_key = f"{now_utc.isoformat()}|{(reply.from_email or '').lower()}"
+                        if _ctx_hist:
+                            kvstore.set_alert_context(_alert_key, {"history": _ctx_hist})
                         kvstore.log_action({
                             "at": now_utc.isoformat(),
                             "from": reply.from_email,
@@ -1265,11 +1274,13 @@ def main() -> int:
                                 classification.contact_phone
                                 or (prospect.raw.get("phone") if prospect and prospect.raw else None)
                             ),
-                            # EMAIL DE TRANSFERT COMPLET, figé à la création de
-                            # l'alerte (Rudy 16/09) : le dashboard n'a plus à tout
-                            # re-récupérer à l'affichage (il n'y arrivait pas pour
-                            # toutes les alertes, ni pour les espaces).
-                            **_alert_context(mr, prospect, thread, reply),
+                            # Fiche figée à la création de l'alerte (Rudy 16/09) :
+                            # le dashboard n'a plus à tout re-récupérer à
+                            # l'affichage (il n'y arrivait pas pour toutes les
+                            # alertes, ni pour les espaces). L'historique, lui,
+                            # est dans sa clé dédiée (cf. _alert_key ci-dessus).
+                            **_ctx,
+                            "has_ctx": bool(_ctx_hist),
                         })
                     if not dry_run:
                         _mark_done(reply.message_id)
