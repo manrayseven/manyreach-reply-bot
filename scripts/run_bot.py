@@ -99,6 +99,21 @@ _DATETIME_RE = re.compile(
     re.IGNORECASE,
 )
 
+# LE PROSPECT DÉCRIT SES LOCAUX = il répond aux questions de qualification →
+# prospect ENGAGÉ, jamais un refus (Rudy 24/09 : une école qui répond « 13
+# classes et l'espace administratif » recevait la clôture polie « déjà équipé »).
+_DETAILS_RE = re.compile(
+    r"\b\d{1,3}\s*(?:classes?|salles?|sections?|structures?|"
+    r"[ée]tablissements?|cr[èe]ches?|b[âa]timents?|sites?|bureaux)\b"
+    r"|\bsiret\b|\bétage unique\b|\betage unique\b|\bniveau unique\b"
+    r"|\b\d{14}\b",  # numéro SIRET
+    re.IGNORECASE,
+)
+
+# Adresse email citée DANS le corps : le prospect transmet un contact (service,
+# collègue, mairie…) → piste exploitable, doit remonter en alerte.
+_OTHER_EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]{2,}")
+
 
 def send_status_from_results(results, send_held=False, auto_send=False, dry_run=False):
     """Statut d'envoi DÉDUIT DU RÉSULTAT RÉEL, jamais de l'intention.
@@ -1020,12 +1035,34 @@ def main() -> int:
                     "nous sommes intéressé", "ce qui m'intéresse",
                 )
                 _has_refusal = any(r in _body_full_low for r in _refusal_markers)
+                # LE PROSPECT RÉPOND AUX QUESTIONS DE QUALIFICATION (Rudy 24/09,
+                # cas école Grande Bastide Cazaulx) : il décrit ses locaux (« 13
+                # classes et l'espace administratif », SIRET, étage unique…). Même
+                # s'il ajoute une réserve (« votre dotation ne couvre pas tout »),
+                # c'est un prospect ENGAGÉ, jamais un refus : le bot avait envoyé
+                # une clôture polie (« déjà équipé ») à une école intéressée.
+                _has_details = bool(_DETAILS_RE.search(_clean_body))
+                # UN CONTACT DONNÉ (email d'un autre service/personne) : c'est une
+                # piste exploitable, elle doit remonter — pas juste recevoir la
+                # réponse type « mauvais interlocuteur » (cas EVS Chantemerle).
+                _our_mailbox = (reply.to_email or "").lower()
+                _our_domain = _our_mailbox.split("@")[-1] if "@" in _our_mailbox else ""
+                _has_contact_lead = any(
+                    _e.lower() != (reply.from_email or "").lower()
+                    and _e.lower() != _our_mailbox
+                    and not (_our_domain and _e.lower().endswith("@" + _our_domain))
+                    for _e in _OTHER_EMAIL_RE.findall(_clean_body)
+                )
                 # HEURE/DATE dans la réponse du prospect = signal RDV FORT → alerte
                 # (Rudy 18/08 : ne jamais auto-répondre à un prospect qui propose/
                 # accepte un créneau). Évalué sur le corps NETTOYÉ (pas la citation).
                 _has_datetime = bool(_DATETIME_RE.search(_clean_body))
                 _forced = None
-                if _has_datetime or any(s in _body_full_low for s in _meeting_signals):
+                if _has_details or _has_contact_lead:
+                    # Détails de locaux OU contact transmis → ALERTE, quoi qu'ait
+                    # dit le classifier (y compris « déjà équipé » / « pas nous »).
+                    _forced = "ask_more_info"
+                elif _has_datetime or any(s in _body_full_low for s in _meeting_signals):
                     _forced = "meeting_confirmed"
                 elif any(s in _body_full_low for s in _interest_signals) or \
                         any(s in _body_full_low for s in _contact_signals):
@@ -1048,7 +1085,7 @@ def main() -> int:
                     classification.intent in AUTOSEND_ELIGIBLE
                     or classification.intent == "wrong_person_redirect"
                 )
-                if _forced and _overridable and not _has_refusal:
+                if _forced and _overridable and (not _has_refusal or _has_details or _has_contact_lead):
                     print(f"  ⚠️ Override classifier ({classification.intent} → {_forced}) : signal d'opportunité détecté → ALERTE (biais sécurité)")
                     # dataclass FROZEN → recrée l'instance (pas de mutation in-place)
                     classification = _dc_replace(
