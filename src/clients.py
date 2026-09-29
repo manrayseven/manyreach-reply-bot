@@ -42,6 +42,40 @@ def slugify(name: str) -> str:
     return s or "client"
 
 
+def label_from_id(client_id: str) -> str:
+    """« laeris » → « Laeris », « client-durand » → « Client Durand »."""
+    return " ".join(p.capitalize() for p in str(client_id or "").split("-") if p) or client_id
+
+
+def ensure_space_clients(clients: list[dict], space_ids) -> tuple[list[dict], bool]:
+    """Crée un compte pour chaque ESPACE (workspace ManyReach) qui n'en a pas.
+
+    Un espace sans compte était inexploitable : réponses non rattachées, alertes
+    rangées dans le compte fourre-tout, pas de modèle de réponse dédié. Il fallait
+    créer le compte à la main avec EXACTEMENT le bon id (Rudy 29/09, ajout de
+    Laeris). Renvoie (liste, modifiée ?) — l'appelant persiste si modifiée.
+    """
+    known = {str(c.get("id") or "").strip().lower() for c in clients}
+    out = list(clients)
+    changed = False
+    for sid in sorted(space_ids or []):
+        sid = str(sid or "").strip().lower()
+        if not sid or sid in known:
+            continue
+        out.append({
+            "id": sid,
+            "name": label_from_id(sid),
+            "contact_email": "",   # à renseigner dans le dashboard (transferts)
+            "description": "",
+            "mailboxes": [],
+            "campaigns": [],
+            "is_default": False,
+        })
+        known.add(sid)
+        changed = True
+    return out, changed
+
+
 def normalize_mailbox(email: str) -> str:
     return (email or "").lower().strip()
 

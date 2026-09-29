@@ -7,6 +7,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.clients import (  # noqa: E402
+    ensure_space_clients,
+    label_from_id,
     build_client_draft_context,
     default_client,
     learn,
@@ -145,3 +147,24 @@ def test_draft_context_uses_guided_fields():
     assert "jamais de prix" in ctx
     assert "Coach Y" in ctx
     assert "Merci pour ton retour" in ctx
+
+
+def test_ensure_space_clients_creates_missing_account():
+    # Rudy 29/09 : ajout du workspace « Laeris » → le compte doit exister sans
+    # intervention (avant : id a saisir a la main, sinon espace inexploitable).
+    clients = [RUDY, {"id": "cmaclim", "name": "Cmaclim"}]
+    out, changed = ensure_space_clients(clients, ["cmaclim", "laeris"])
+    assert changed
+    ids = [c["id"] for c in out]
+    assert ids == ["rudy", "cmaclim", "laeris"], ids
+    laeris = out[-1]
+    assert laeris["name"] == "Laeris" and laeris["is_default"] is False
+    assert laeris["contact_email"] == ""  # a renseigner pour « Mettre en relation »
+    # Idempotent : un 2e passage ne recree rien.
+    out2, changed2 = ensure_space_clients(out, ["cmaclim", "laeris"])
+    assert not changed2 and len(out2) == 3
+
+
+def test_label_from_id():
+    assert label_from_id("laeris") == "Laeris"
+    assert label_from_id("client-durand") == "Client Durand"

@@ -796,6 +796,18 @@ def _render(client_filter: str | None = None) -> str:
             clients_all = [DEFAULT_CLIENT_SEED]
         except Exception:  # noqa: BLE001
             pass
+    # ESPACES : un compte par workspace ManyReach configuré (variable
+    # MANYREACH_API_KEY_<ID>). Créé automatiquement s'il manque — avant, il
+    # fallait le créer à la main avec exactement le bon id (Rudy 29/09, Laeris).
+    try:
+        from src.clients import ensure_space_clients
+        from src.manyreach import workspace_api_keys
+        clients_all, _new_clients = ensure_space_clients(
+            clients_all, workspace_api_keys().keys())
+        if _new_clients:
+            kvstore.set_clients(clients_all)
+    except Exception:  # noqa: BLE001
+        pass
     clients_by_id = {c.get("id"): c for c in clients_all if c.get("id")}
     triage_map = kvstore.get_triage()  # {alert_id: client_id}
     camp_names: dict[str, str] = {}  # {campaign_id: nom} pour l'email de transfert

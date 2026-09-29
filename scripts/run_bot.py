@@ -334,6 +334,20 @@ def main() -> int:
             clients_list = kvstore.get_clients()
     except Exception:  # noqa: BLE001
         clients_list = []
+    # Un ESPACE sans compte = réponses non rattachées, alertes rangées dans le
+    # fourre-tout, pas de modèle dédié → on crée le compte manquant (Rudy 29/09,
+    # ajout de Laeris). Bloc séparé : un échec ici ne doit pas vider clients_list.
+    try:
+        if kvstore is not None and kvstore.kv_available():
+            from src.manyreach import workspace_api_keys as _wak
+            clients_list, _new_clients = _clients.ensure_space_clients(
+                clients_list, _wak().keys()
+            )
+            if _new_clients:
+                kvstore.set_clients(clients_list)
+                print("  >> Compte créé pour un espace qui n'en avait pas")
+    except Exception as _e:  # noqa: BLE001
+        print(f"  !! création compte espace : {_e}")
 
     # ESPACE (workspace ManyReach) : donnees ET cle API totalement separees.
     # Sans --space on garde EXACTEMENT le comportement d'avant (compte principal,
