@@ -114,6 +114,18 @@ _DETAILS_RE = re.compile(
 # collègue, mairie…) → piste exploitable, doit remonter en alerte.
 _OTHER_EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]{2,}")
 
+# RÉPONSE PAR CHIFFRE aux cold mails « Répondez 1, 2 ou 3 » : le corps se réduit
+# au chiffre (« 1 », « 1. », « réponse 2 », « 3 ! »).
+_DIGIT_CHOICE_RE = re.compile(r"^(?:r[ée]ponse\s*[:°]?\s*)?([123])\s*[.)!,-]?$", re.IGNORECASE)
+# … et le cold mail proposait bien cette convention (sinon un « 1 » isolé ne veut
+# rien dire et suit le chemin normal).
+_OPTIONS_CONVENTION_RE = re.compile(
+    r"r[ée]pondez\s*(?:simplement\s*)?[«\"']?\s*1"
+    r"|\b1\s*[=:-]\s*pas\s+int[ée]ress"
+    r"|\b1\s*[=:-].{0,40}\b2\s*[=:-]",
+    re.IGNORECASE,
+)
+
 
 def send_status_from_results(results, send_held=False, auto_send=False, dry_run=False):
     """Statut d'envoi DÉDUIT DU RÉSULTAT RÉEL, jamais de l'intention.
@@ -886,8 +898,27 @@ def main() -> int:
                 # C'est un vrai reply d'un prospect non-terminal → ALERTE forcée
                 # (Rudy lit le message dans ManyReach). Placeholder non vide pour
                 # ne pas être masqué par le filtre "pas de contenu" du dashboard.
-                _empty_body = len(_clean_check) < 6
-                if _empty_body:
+                # RÉPONSE PAR CHIFFRE (« Répondez 1, 2 ou 3 ») — sans IA, et AVANT
+                # le filet "message vide" : un simple « 1 » fait 1 caractère, il
+                # partait donc en alerte « illisible » au lieu d'être traité.
+                # Rudy 29/09 : « 1 » = pas intéressé → il reçoit quand même la
+                # réponse type (avant : unsubscribe = silence + blacklist).
+                _digit_choice = None
+                _dm = _DIGIT_CHOICE_RE.match(_clean_check)
+                if _dm and original_outreach and _OPTIONS_CONVENTION_RE.search(
+                    _strip_html(original_outreach.body or "")
+                ):
+                    _digit_choice = {
+                        "1": "not_interested_polite",   # réponse type envoyée
+                        "2": "objection_timing",        # alerte (recontact)
+                        "3": "interested_warm",         # alerte (lead chaud)
+                    }[_dm.group(1)]
+
+                _empty_body = len(_clean_check) < 6 and not _digit_choice
+                if _digit_choice:
+                    print(f"  >> Réponse « {_dm.group(1)} » (convention 1/2/3) → {_digit_choice}")
+                    classification = quick_classification(_digit_choice, _clean_check)
+                elif _empty_body:
                     print("  >> Message vide/illisible via l'API → ALERTE (Rudy lit dans ManyReach)")
                     from src.classifier import Classification as _ClsEmpty
                     classification = _ClsEmpty(
@@ -1101,7 +1132,7 @@ def main() -> int:
                 # net (message vide, ambigu, pas compris) → il DEVINE → on bascule
                 # en ALERTE (ask_more_info) pour que Rudy tranche, plutôt qu'une
                 # réponse auto au pif (cas Visoanska : msg "vide" → réponse bidon).
-                if classification.intent == "not_interested_polite":
+                if classification.intent == "not_interested_polite" and not _digit_choice:
                     _cl = _clean_body.lower()
                     _has_marker = any(m in _cl for m in _CLEAR_NO_MARKERS)
                     # ROBUSTESSE (feedback Rudy 13/08 : "Cela nous interesse pas").
