@@ -246,6 +246,38 @@ def record_handoff(key: str) -> bool:
         return bool(res)
 
 
+# FICHES des mises en relation (Rudy 01/10) : au 1er « Copier l'email », on
+# garde TOUT le transfert (société, contact, campagne, message, conversation)
+# pour pouvoir générer plus tard le rapport mois par mois d'un compte.
+HANDOFF_LOG_KEY = "bot:handoff_log"
+MAX_HANDOFF_RECORDS = 1000
+
+
+def add_handoff_record(rec: dict) -> None:
+    if not kv_available() or not rec:
+        return
+    _cmd("LPUSH", HANDOFF_LOG_KEY, json.dumps(rec, ensure_ascii=False))
+    _cmd("LTRIM", HANDOFF_LOG_KEY, "0", str(MAX_HANDOFF_RECORDS - 1))
+
+
+def handoff_records(n: int = MAX_HANDOFF_RECORDS) -> list[dict]:
+    """Fiches des mises en relation, plus récentes d'abord (lecture par tranches)."""
+    out: list[dict] = []
+    _CH = 50
+    for start in range(0, n, _CH):
+        raw = _cmd("LRANGE", HANDOFF_LOG_KEY, str(start), str(min(start + _CH, n) - 1))
+        if not isinstance(raw, list):
+            break
+        for item in raw:
+            try:
+                out.append(json.loads(item))
+            except (json.JSONDecodeError, TypeError):
+                pass
+        if len(raw) < _CH:
+            break
+    return out
+
+
 TRIAGE_KEY = "bot:triage"  # HASH alert_id -> client_id (assignations manuelles)
 
 

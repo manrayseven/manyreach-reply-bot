@@ -729,6 +729,130 @@ def _handoff_email_html(company: str, detail_line: str, contact_line: str,
     )
 
 
+# === MISES EN RELATION : archive + rapport par compte (Rudy 01/10) ============
+
+def _handoff_record(alert_id: str, client_id: str, email: str) -> dict:
+    """Fiche d'une mise en relation, reconstruite depuis l'alerte au 1er clic."""
+    from datetime import datetime as _dt, timezone as _tz
+
+    from src.classifier import readable_text as _rt
+
+    a: dict = {}
+    if alert_id:
+        for src in (kvstore.recent_alerts(),
+                    kvstore.recent_actions(kvstore.MAX_LOG_ENTRIES)):
+            for e in (src or []):
+                if f"{e.get('at', '')}|{(e.get('from') or '').lower()}" == alert_id:
+                    a = e
+                    break
+            if a:
+                break
+    hist = a.get("history") or []
+    if not hist and alert_id and a.get("has_ctx"):
+        hist = ((kvstore.get_alert_contexts([alert_id]) or {}).get(alert_id)
+                or {}).get("history") or []
+    detail = ", ".join(x for x in [
+        str(a.get("industry") or ""),
+        (f"{a.get('size')} salariés" if a.get("size") else ""),
+        str(a.get("city") or ""),
+    ] if x)
+    who = str(a.get("job") or a.get("pname") or "Contact")
+    coords = " - ".join(x for x in [
+        (f"tél {a.get('prospect_phone')}" if a.get("prospect_phone") else ""), email,
+    ] if x)
+    return {
+        "at": _dt.now(_tz.utc).isoformat(),       # date de la mise en relation
+        "reply_at": str(a.get("at") or ""),       # date de la réponse du prospect
+        "client_id": client_id,
+        "email": email,
+        "company": _rt(str(a.get("company") or "")),
+        "detail": _rt(detail),
+        "contact": _rt(who + (f" - {coords}" if coords else "")),
+        "campaign": _rt(str(a.get("campaign_name") or a.get("campaign_id") or "")),
+        "message": _rt(str(a.get("reply") or ""))[:1500],
+        "history": [{**h, "text": _rt(str(h.get("text") or ""))} for h in hist][:16],
+        "intent": str(a.get("intent") or ""),
+    }
+
+
+def _month_label(iso: str) -> tuple[str, str]:
+    """(clé triable « 2026-09 », libellé « Septembre 2026 ») depuis un ISO."""
+    try:
+        from datetime import datetime as _dt
+        d = _dt.fromisoformat(str(iso).replace("Z", "+00:00"))
+    except Exception:  # noqa: BLE001
+        return "0000-00", "Date inconnue"
+    return f"{d.year}-{d.month:02d}", f"{_MONTHS_FR[d.month - 1].capitalize()} {d.year}"
+
+
+def _handoff_report_html(client: dict, records: list[dict]) -> str:
+    """Compte rendu client : synthèse des leads puis les mises en relation,
+    mois par mois, avec la fiche complète de chaque transfert."""
+    e = html.escape
+    name = e(str(client.get("name") or client.get("id") or ""))
+    months: dict[str, list[dict]] = {}
+    labels: dict[str, str] = {}
+    for r in records:
+        key, lbl = _month_label(r.get("at") or r.get("reply_at") or "")
+        months.setdefault(key, []).append(r)
+        labels[key] = lbl
+    order = sorted(months, reverse=True)
+    total = len(records)
+    first_lbl = labels.get(order[-1], "—") if order else "—"
+    last_lbl = labels.get(order[0], "—") if order else "—"
+    avg = round(total / len(order), 1) if order else 0
+
+    _wrap = "word-break:break-word;overflow-wrap:anywhere"
+    _fam = "font-family:Arial,Helvetica,sans-serif"
+    rows = "".join(
+        f'<tr><td style="padding:6px 14px;border-bottom:1px solid #eee4d0;font-size:14px">'
+        f'{e(labels[k])}</td>'
+        f'<td style="padding:6px 14px;border-bottom:1px solid #eee4d0;font-size:14px;'
+        f'text-align:right;font-weight:bold">{len(months[k])}</td></tr>'
+        for k in order
+    )
+    synth = (
+        f'<div style="{_fam};max-width:680px">'
+        f'<div style="background:#faf5e9;border:1px solid #e7ddc4;border-radius:10px;'
+        f'padding:16px 18px;margin-bottom:18px">'
+        f'<div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;'
+        f'color:#a07520;font-weight:bold;margin-bottom:6px">Compte rendu — {name}</div>'
+        f'<div style="font-size:15px;color:#2b2823;line-height:1.6">'
+        f'<b>{total} prospect(s) transmis</b> au total'
+        + (f", de {e(first_lbl)} à {e(last_lbl)}" if order else "")
+        + (f" — soit {avg} par mois en moyenne." if order else ".")
+        + '</div>'
+        + (f'<table style="border-collapse:collapse;margin-top:12px;min-width:260px">'
+           f'{rows}</table>' if rows else "")
+        + '</div>'
+    )
+    if not records:
+        return (synth + '<div style="' + _fam + ';font-size:14px;color:#5c574c">'
+                'Aucune mise en relation enregistrée pour ce compte.</div></div>')
+
+    blocks = []
+    for k in order:
+        items = sorted(months[k], key=lambda r: str(r.get("at") or ""), reverse=True)
+        blocks.append(
+            f'<h3 style="{_fam};font-size:16px;color:#2b2823;margin:22px 0 10px;'
+            f'padding-bottom:6px;border-bottom:2px solid #e7ddc4">{e(labels[k])}'
+            f' <span style="color:#8c8678;font-weight:normal;font-size:13px">'
+            f'— {len(items)} mise(s) en relation</span></h3>'
+        )
+        for r in items:
+            when = _time_fr(r.get("at") or "")
+            blocks.append(
+                f'<div style="{_fam};font-size:12px;color:#8c8678;margin:0 0 4px;{_wrap}">'
+                f'Transmis le {e(when)}</div>'
+                + _handoff_email_html(
+                    str(r.get("company") or ""), str(r.get("detail") or ""),
+                    str(r.get("contact") or ""), str(r.get("campaign") or ""),
+                    str(r.get("message") or ""), history=r.get("history") or [])
+                + '<div style="height:14px"></div>'
+            )
+    return synth + "".join(blocks) + '</div>'
+
+
 def _render(client_filter: str | None = None) -> str:
     # BUDGET DE TEMPS : Vercel coupe à 60s. Les enrichissements live ManyReach
     # (threads, noms de campagne, liens de challenge) peuvent cumuler trop de
@@ -1185,7 +1309,7 @@ def _render(client_filter: str | None = None) -> str:
     report_entry = None
     for a in actions_full:
         _rid = f"{a.get('at', '')}|{(a.get('from') or '').lower()}"
-        if (a.get("intent") == "monthly_report"
+        if (a.get("intent") in ("monthly_report", "handoff_report")
                 and _rid not in dismissed   # fermé par Rudy → on ne l'affiche plus
                 and (not sel_client or a.get("client_id") == sel_client)):
             report_entry = a
@@ -1236,13 +1360,36 @@ def _render(client_filter: str | None = None) -> str:
                 f'<ul class="report-tips-ul">{_lis}</ul>'
                 '</div>'
             )
+        # PDF : on ouvre le rapport seul dans un onglet et on lance l'impression
+        # → « Enregistrer au format PDF » du navigateur. Pas de dépendance
+        # serveur, et la mise en forme du rapport est conservée telle quelle.
+        _pdf_css = (
+            "@page{margin:14mm}"
+            "body{margin:0;font-family:Arial,Helvetica,sans-serif;"
+            "-webkit-print-color-adjust:exact;print-color-adjust:exact}"
+            "h3{page-break-after:avoid}div{page-break-inside:avoid}"
+        )
+        _pdf_js = (
+            "var w=window.open('','_blank');if(!w){return;}"
+            "w.document.write('<!doctype html><html><head><meta charset=utf-8>"
+            f"<title>{_rname}</title><style>{_pdf_css}</style></head><body>'"
+            "+document.getElementById('reportHtml').innerHTML+'</body></html>');"
+            "w.document.close();w.focus();setTimeout(function(){w.print();},400);"
+        )
+        _is_handoff = report_entry.get("intent") == "handoff_report"
+        _icon = "🤝" if _is_handoff else "📊"
+        _hint = ("Colle-le dans un email à ton client, ou imprime-le en PDF."
+                 if _is_handoff else
+                 "Colle-le dans un email à ton client (Gmail garde la mise en "
+                 "forme). Tu peux ajuster avant d'envoyer.")
         report_card = (
             '<div class="card report-card">'
-            f'<h2>📊 {_rname} <span class="report-when">généré {_rwhen}</span>{_close_report}</h2>'
+            f'<h2>{_icon} {_rname} <span class="report-when">généré {_rwhen}</span>{_close_report}</h2>'
             f'<div id="reportHtml" class="report-render">{_rbody}</div>'
             '<div class="report-actions">'
             f'<button type="button" class="btn-primary" onclick="{_copy_js}">📋 Copier le rapport</button>'
-            '<span class="report-hint">Colle-le dans un email à ton client (Gmail garde la mise en forme). Tu peux ajuster avant d\'envoyer.</span>'
+            f'<button type="button" class="btn-outline" onclick="{_pdf_js}">🖨 PDF</button>'
+            f'<span class="report-hint">{_hint}</span>'
             '</div>'
             f'{_tips_block}'
             '</div>'
@@ -1505,12 +1652,15 @@ def _render(client_filter: str | None = None) -> str:
                 f"try{{fetch('/{keyparam}',{{method:'POST',headers:{{'Content-Type':"
                 f"'application/x-www-form-urlencoded'}},body:'action=mark_handoff&client_id='"
                 f"+encodeURIComponent('{_cid_js}')+'&prospect_email='"
-                f"+encodeURIComponent('{html.escape(prospect_email)}')}});}}catch(e){{}}"
+                f"+encodeURIComponent('{html.escape(prospect_email)}')+'&alert_id='"
+                f"+encodeURIComponent('{alert_id}')}});}}catch(e){{}}"
             )
             _open_ho = (
                 "var d=this.closest('.alert-row').querySelector('.handoff');if(d){d.open=true;}"
                 f"try{{fetch('/{keyparam}',{{method:'POST',headers:{{'Content-Type':'application/x-www-form-urlencoded'}},"
-                f"body:'action=mark_handoff&client_id='+encodeURIComponent('{_cid_js}')+'&prospect_email='+encodeURIComponent('{html.escape(prospect_email)}')}});}}catch(e){{}}"
+                f"body:'action=mark_handoff&client_id='+encodeURIComponent('{_cid_js}')"
+                f"+'&prospect_email='+encodeURIComponent('{html.escape(prospect_email)}')"
+                f"+'&alert_id='+encodeURIComponent('{alert_id}')}});}}catch(e){{}}"
                 "return false;"
             )
             _dest_title = (html.escape(_contact_email) if _contact_email
@@ -2370,6 +2520,15 @@ def _render(client_filter: str | None = None) -> str:
       </form>
       <div class="action-help">Génère un <b>bilan du mois</b> pour le client choisi (chiffres + recommandations), prêt à <b>copier-coller dans un email</b>. Il s'affiche juste en dessous.</div>
     </div>
+    <div class="report-row">
+      <form method="POST" action="/{keyparam}" class="report-form"
+            onsubmit="var b=this.querySelector('button'); b.disabled=true; b.innerHTML='⏳ Génération...'; return true;">
+        <input type="hidden" name="action" value="handoff_report">
+        <select name="client_id" class="report-sel">{_report_opts}</select>
+        <button class="btn-primary" type="submit">🤝 Rapport mises en relation</button>
+      </form>
+      <div class="action-help">Compte rendu complet des <b>prospects transmis</b> au client choisi : synthèse en tête, puis le détail <b>mois par mois</b> (société, contact, campagne, conversation). Copiable dans un email ou imprimable en <b>PDF</b>.</div>
+    </div>
     <div class="action-toggle-row">
       <div class="toggle-help">Stop / start du bot. En pause, il ne traite plus aucune réponse jusqu'à réactivation.</div>
       <form method="POST" action="/{keyparam}">
@@ -2872,6 +3031,15 @@ class handler(BaseHTTPRequestHandler):
             cid = (form.get("client_id") or "").strip()
             email = (form.get("prospect_email") or "").strip().lower()
             if cid and email and kvstore.record_handoff(f"{cid}|{email}"):
+                # 1re fois seulement : on ARCHIVE la fiche complète du transfert
+                # (société, contact, campagne, message, conversation) pour le
+                # rapport mois par mois du compte (Rudy 01/10).
+                try:
+                    kvstore.add_handoff_record(
+                        _handoff_record(form.get("alert_id") or "", cid, email)
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
                 kvstore.log_action({
                     "at": _dt.now(_tz.utc).isoformat(),
                     "from": email,
@@ -2881,6 +3049,31 @@ class handler(BaseHTTPRequestHandler):
                     "reply": "",
                     "response": "",
                     "client_id": cid,
+                })
+        elif action == "handoff_report":
+            # Compte rendu des MISES EN RELATION d'un compte (Rudy 01/10) :
+            # synthèse des leads puis le détail mois par mois, copiable en HTML
+            # dans un email ou imprimable en PDF depuis le dashboard.
+            from datetime import datetime as _dt, timezone as _tz
+            cid = (form.get("client_id") or "").strip()
+            clients = kvstore.get_clients()
+            client = next((c for c in clients if c.get("id") == cid), None)
+            if client is None and clients:
+                client = clients[0]
+            if client is not None:
+                _post_client = client.get("id")
+                recs = [r for r in kvstore.handoff_records()
+                        if str(r.get("client_id") or "") == client.get("id")]
+                kvstore.log_action({
+                    "at": _dt.now(_tz.utc).isoformat(),
+                    "from": "(rapport)",
+                    "subject": f"🤝 Mises en relation — {client.get('name', '')}",
+                    "intent": "handoff_report",
+                    "status": f"{len(recs)} mise(s) en relation pour "
+                              f"{client.get('name', '')}",
+                    "reply": "",
+                    "response": _handoff_report_html(client, recs),
+                    "client_id": client.get("id"),
                 })
         elif action == "monthly_report":
             # Génère un reporting mensuel copiable pour un client (30 j).
