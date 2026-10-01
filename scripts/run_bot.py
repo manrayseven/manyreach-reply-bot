@@ -114,6 +114,22 @@ _DETAILS_RE = re.compile(
 # collègue, mairie…) → piste exploitable, doit remonter en alerte.
 _OTHER_EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]{2,}")
 
+# « Je transmets au bon interlocuteur » : le message part au décideur → piste en
+# attente, pas un refus. ALERTE seule (Rudy 01/10) : répondre « auriez-vous des
+# contacts en tête ? » à quelqu'un qui vient de dire qu'il fait suivre est absurde.
+_FORWARDING_RE = re.compile(
+    r"\bje\s+(?:lui\s+|vous\s+)?(?:le\s+|la\s+|les\s+)?transmet"
+    r"|\bje\s+(?:lui\s+)?transf[èe]re"
+    r"|\b(?:je\s+)?(?:lui\s+)?(?:le\s+|la\s+)?fais?\s+suivre"
+    r"|\bje\s+ferai\s+suivre"
+    r"|\bje\s+(?:lui\s+)?passe\s+(?:le\s+)?message"
+    r"|\bje\s+(?:lui\s+)?en\s+parle"
+    r"|\b(?:votre|le)\s+(?:message|mail|email|demande)\s+(?:lui\s+)?sera\s+transmis"
+    r"|\bsera\s+transmis(?:e)?\s+(?:à|au|a\s+l)"
+    r"|\btransmettre\s+(?:votre|ce)\s+(?:message|mail|email|demande)",
+    re.IGNORECASE,
+)
+
 # RÉPONSE PAR CHIFFRE aux cold mails « Répondez 1, 2 ou 3 » : le corps se réduit
 # au chiffre (« 1 », « 1. », « réponse 2 », « 3 ! »).
 _DIGIT_CHOICE_RE = re.compile(r"^(?:r[ée]ponse\s*[:°]?\s*)?([123])\s*[.)!,-]?$", re.IGNORECASE)
@@ -1169,6 +1185,23 @@ def main() -> int:
                             classification, intent="ask_more_info",
                             confidence=max(classification.confidence, 0.6),
                         )
+
+                # « JE TRANSMETS AU BON INTERLOCUTEUR » (Rudy 01/10, cas neo-tel) :
+                # ce n'est NI un refus NI un « ce n'est pas nous » — le message
+                # part au décideur. Le bot envoyait la clôture polie (« auriez-vous
+                # en tête un ou des contacts ? ») à quelqu'un qui venait de dire
+                # qu'il faisait suivre. Désormais : ALERTE SEULE, aucune réponse
+                # auto, et le prospect reste actif (statut Neutral, pas de refus).
+                if (
+                    _FORWARDING_RE.search(_clean_body)
+                    and classification.intent not in ALERT_ONLY
+                    and classification.intent not in ("unsubscribe", "hostile")
+                ):
+                    print(f"  ⚠️ « Je transmets » : {classification.intent} → ALERTE (pas de réponse auto)")
+                    classification = _dc_replace(
+                        classification, intent="interested_lukewarm",
+                        confidence=max(classification.confidence, 0.8),
+                    )
 
                 # PISTE EN COURS (Rudy 16/09, cas école Major) : un prospect déjà
                 # remonté en alerte (tag bot de piste) qui réécrit — complément

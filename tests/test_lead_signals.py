@@ -20,7 +20,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "scripts"))
 os.environ.setdefault("ANTHROPIC_API_KEY", "fake-for-test")
 
-from run_bot import _DETAILS_RE, _OTHER_EMAIL_RE  # noqa: E402
+from run_bot import _DETAILS_RE, _FORWARDING_RE, _OTHER_EMAIL_RE  # noqa: E402
 
 
 def _emails(body: str, sender: str, ours: str) -> list[str]:
@@ -65,6 +65,32 @@ def test_own_signature_address_is_not_a_contact_lead():
     # notre propre adresse citée dans le fil ne compte pas non plus
     body2 = "Merci. De : Romain Viard romain.viard@cemaclim.com"
     assert _emails(body2, sender="x@y.fr", ours="viard.r@cemaclim.com") == []
+
+
+
+def test_forwarding_is_detected():
+    # Cas neo-tel (01/10) : le bot repondait « auriez-vous des contacts en tete ? »
+    # a quelqu'un qui venait de dire qu'il transmettait au bon interlocuteur.
+    for body in (
+        "Je ne suis pas en charge de cette partie. La personne qui s'en occupe est "
+        "absente actuellement. Je lui transmettrai votre message à son retour.",
+        "Bonjour, je transmets à notre direction.",
+        "Je fais suivre au service concerné.",
+        "Je transfère à ma collègue.",
+        "Votre message sera transmis à la personne en charge.",
+        "Je lui passe le message.",
+    ):
+        assert _FORWARDING_RE.search(body), body
+
+
+def test_plain_redirect_or_refusal_is_not_forwarding():
+    # « Adressez-vous ailleurs » (sans rien faire) et les refus restent hors regle.
+    for body in (
+        "Je vous invite à vous adresser directement aux établissements ou à la mairie.",
+        "Voici le contact du service en charge : gu.education@mairie-chambery.fr",
+        "Non merci, pas intéressé.",
+    ):
+        assert not _FORWARDING_RE.search(body), body
 
 
 if __name__ == "__main__":
