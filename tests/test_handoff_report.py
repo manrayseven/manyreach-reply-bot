@@ -70,6 +70,26 @@ def test_report_escapes_prospect_text():
     assert "<script>" not in out and "&lt;script&gt;" in out
 
 
+def test_record_built_from_a_given_alert():
+    alert = {
+        "at": "2026-09-20T06:37:00+00:00", "from": "ce.0130741k@ac-aix-marseille.fr",
+        "intent": "ask_more_info", "company": "&eacute;cole Major", "industry": "Elementary school",
+        "city": "Marseille", "job": "Direction", "prospect_phone": "04 91 91 21 51",
+        "campaign_name": "R&eacute;servation de stock", "reply": "L'&eacute;cole compte 11 classes.",
+        "history": [{"who": "Prospect", "when": "20/09 06:37", "text": "11 classes"}],
+    }
+    email = "ce.0130741k@ac-aix-marseille.fr"
+    rec = index._handoff_record("", "cmaclim", email, alert=alert)
+    # Entités HTML décodées (le rapport doit être lisible), fiche complète.
+    assert rec["company"] == "école Major", rec["company"]
+    assert rec["detail"] == "Elementary school, Marseille", rec["detail"]
+    assert rec["contact"] == f"Direction - tél 04 91 91 21 51 - {email}", rec["contact"]
+    assert rec["campaign"] == "Réservation de stock", rec["campaign"]
+    assert rec["message"] == "L'école compte 11 classes.", rec["message"]
+    assert rec["history"] and rec["client_id"] == "cmaclim"
+    assert rec["reply_at"] == "2026-09-20T06:37:00+00:00"
+
+
 if __name__ == "__main__":
     from tests._runner import main as _main
     _main(globals())

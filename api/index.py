@@ -731,14 +731,18 @@ def _handoff_email_html(company: str, detail_line: str, contact_line: str,
 
 # === MISES EN RELATION : archive + rapport par compte (Rudy 01/10) ============
 
-def _handoff_record(alert_id: str, client_id: str, email: str) -> dict:
-    """Fiche d'une mise en relation, reconstruite depuis l'alerte au 1er clic."""
+def _handoff_record(alert_id: str, client_id: str, email: str,
+                    alert: dict | None = None) -> dict:
+    """Fiche d'une mise en relation, reconstruite depuis l'alerte au 1er clic.
+
+    `alert` évite de relire le journal quand l'appelant a déjà l'alerte en main
+    (rattrapage des transferts antérieurs à l'archivage)."""
     from datetime import datetime as _dt, timezone as _tz
 
     from src.classifier import readable_text as _rt
 
-    a: dict = {}
-    if alert_id:
+    a: dict = alert or {}
+    if not a and alert_id:
         for src in (kvstore.recent_alerts(),
                     kvstore.recent_actions(kvstore.MAX_LOG_ENTRIES)):
             for e in (src or []):
@@ -747,6 +751,10 @@ def _handoff_record(alert_id: str, client_id: str, email: str) -> dict:
                     break
             if a:
                 break
+    # L'id de l'alerte sert à récupérer la conversation (clé dédiée) ; on le
+    # déduit de l'alerte quand l'appelant ne l'a pas (rattrapage).
+    if not alert_id and a:
+        alert_id = f"{a.get('at', '')}|{(a.get('from') or '').lower()}"
     hist = a.get("history") or []
     if not hist and alert_id and a.get("has_ctx"):
         hist = ((kvstore.get_alert_contexts([alert_id]) or {}).get(alert_id)
@@ -3105,8 +3113,42 @@ class handler(BaseHTTPRequestHandler):
                 client = clients[0]
             if client is not None:
                 _post_client = client.get("id")
+                _cid_r = str(client.get("id") or "")
                 recs = [r for r in kvstore.handoff_records()
-                        if str(r.get("client_id") or "") == client.get("id")]
+                        if str(r.get("client_id") or "") == _cid_r]
+                # RATTRAPAGE : les transferts cliqués AVANT l'archivage (01/10) ne
+                # laissaient qu'une trace « déjà transmis ». On reconstruit leur
+                # fiche depuis l'alerte du prospect (date = date de sa réponse) et
+                # on l'archive, pour que le rapport couvre bien TOUS les mois.
+                try:
+                    _known = {str(r.get("email") or "").lower() for r in recs}
+                    _todo = [
+                        k.split("|", 1)[1].lower()
+                        for k in (kvstore.all_handoffs() or set())
+                        if "|" in k and k.split("|", 1)[0].lower() == _cid_r.lower()
+                    ]
+                    _todo = [e for e in _todo if e and e not in _known]
+                    if _todo:
+                        _idx: dict[str, dict] = {}
+                        for _src in (kvstore.recent_alerts(),
+                                     kvstore.recent_actions(kvstore.MAX_LOG_ENTRIES)):
+                            for _a in (_src or []):
+                                _em = str(_a.get("prospect_email")
+                                          or _a.get("from") or "").lower()
+                                if _em and _em not in _idx and _a.get("reply"):
+                                    _idx[_em] = _a
+                        for _em in _todo:
+                            _a = _idx.get(_em)
+                            if not _a:
+                                continue  # alerte trop ancienne → rien à reconstruire
+                            _rec = _handoff_record("", _cid_r, _em, alert=_a)
+                            _rec["at"] = str(_a.get("at") or _rec["at"])
+                            _rec["backfilled"] = True
+                            kvstore.add_handoff_record(_rec)
+                            recs.append(_rec)
+                except Exception:  # noqa: BLE001
+                    pass
+                recs.sort(key=lambda r: str(r.get("at") or ""), reverse=True)
                 kvstore.log_action({
                     "at": _dt.now(_tz.utc).isoformat(),
                     "from": "(rapport)",

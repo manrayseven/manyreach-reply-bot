@@ -234,6 +234,14 @@ def set_clients(clients: list[dict]) -> None:
 HANDOFFS_KEY = "bot:handoffs"  # SET des transferts déjà comptés (client|email)
 
 
+def all_handoffs() -> set[str]:
+    """Toutes les clés « client|prospect » déjà comptées comme transmises."""
+    if not kv_available():
+        return set()
+    res = _cmd("SMEMBERS", HANDOFFS_KEY)
+    return {str(x) for x in res} if isinstance(res, list) else set()
+
+
 def record_handoff(key: str) -> bool:
     """Enregistre un transfert « Mettre en relation ». Dédupliqué : renvoie True
     seulement la 1re fois pour ce (client|prospect) → 1 comptage par conversation."""
