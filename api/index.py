@@ -1426,6 +1426,49 @@ def _render(client_filter: str | None = None) -> str:
         except Exception:
             pass
 
+    # ESPACES : l'Unibox ManyReach est scopée par compte via le paramètre `o=`.
+    # Avec l'id de l'organisation principale, un prospect d'espace ouvrait
+    # l'Unibox par défaut, vide (Rudy 02/10). On résout l'id de chaque espace
+    # avec SA clé (account_context), mis en cache KV 7 j.
+    _mr_org_default = os.environ.get("MANYREACH_ORG_ID", "7288")
+    _space_org: dict[str, str] = {}
+    try:
+        from src.manyreach import ManyReachClient as _MRC3
+        from src.manyreach import workspace_api_keys as _wak3
+        for _cid3, _key3 in (_wak3() or {}).items():
+            # Override manuel possible : MANYREACH_ORG_ID_<ID> (ex. _CMACLIM),
+            # utile si l'API ne renvoie pas le contexte de la clé.
+            _env_oid = os.environ.get(
+                "MANYREACH_ORG_ID_" + _cid3.upper().replace("-", "_"), "").strip()
+            if _env_oid:
+                _space_org[_cid3] = _env_oid
+                continue
+            _hit = kvstore.cache_get(f"mrorg:v1:{_cid3}")
+            if _hit:
+                if _hit != "-":
+                    _space_org[_cid3] = str(_hit)
+                continue
+            if _budget_left() < 10:
+                continue  # cache froid + render serré → org par défaut ce coup-ci
+            _oid = ""
+            try:
+                _c3 = _MRC3(api_key=_key3, timeout=6.0)
+                try:
+                    _oid = str((_c3.account_context() or {}).get("id") or "")
+                finally:
+                    _c3.close()
+            except Exception:  # noqa: BLE001
+                _oid = ""
+            kvstore.cache_set(f"mrorg:v1:{_cid3}", _oid or "-", 7 * 24 * 3600)
+            if _oid:
+                _space_org[_cid3] = _oid
+    except Exception:  # noqa: BLE001
+        pass
+
+    def _mr_org_for(a: dict) -> str:
+        """Id d'organisation ManyReach pour les liens de CETTE entrée."""
+        return _space_org.get(str(_eff_client_id(a) or ""), _mr_org_default)
+
     def _alert_row(a: dict) -> str:
         intent = a.get("intent", "")
         intent_label, intent_color = _INTENT_FR.get(intent, (intent, "#8a8579"))
@@ -1453,7 +1496,7 @@ def _render(client_filter: str | None = None) -> str:
         # search=from:{email} reproduit ce que Rudy tape dans la barre d'inbox.
         # Si on a aussi un campaign_id (cas du reply lié à une campagne mais
         # prospect non retrouvé directement), on l'ajoute pour narrower la vue.
-        mr_org = os.environ.get("MANYREACH_ORG_ID", "7288")
+        mr_org = _mr_org_for(a)   # espace du prospect (sinon Unibox par défaut)
         reply_from = str(a.get("from", ""))
         # Email INITIAL du prospect (celui que ManyReach connaît / à qui réécrire).
         # 'from' = l'adresse qui A RÉPONDU, parfois orpheline (boîte perso, alias
@@ -1783,7 +1826,7 @@ def _render(client_filter: str | None = None) -> str:
             badge = ('<span class="sent-tag sent-no" title="Aucune réponse envoyée '
                      '(le bot a jugé inutile de répondre) — à creuser si le message était cordial">Sans réponse</span>')
         # Lien ManyReach vers la conversation (comme les alertes).
-        mr_org = os.environ.get("MANYREACH_ORG_ID", "7288")
+        mr_org = _mr_org_for(a)   # espace du prospect (sinon Unibox par défaut)
         _pemail = urllib.parse.quote(str(a.get("prospect_email") or a.get("from") or ""))
         _camp = a.get("campaign_id") or a.get("campaignId") or ""
         _scope = f"&campaign={_camp}&type=campaign" if _camp else "&campaign=&type="

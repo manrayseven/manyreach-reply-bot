@@ -508,6 +508,25 @@ class ManyReachClient:
     def get_campaign(self, campaign_id: int) -> dict:
         return self._request("GET", f"/campaigns/{campaign_id}")
 
+    # ----- Compte / espace de la clé -----
+
+    def account_context(self) -> dict:
+        """Compte auquel appartient CETTE clé : {keyType, id, title, …}.
+
+        Pour une clé d'ESPACE, `id` est l'id du workspace — nécessaire pour que
+        les liens « Conversation » du dashboard ouvrent la bonne Unibox (sinon
+        ManyReach retombe sur l'organisation par défaut, Rudy 02/10). Le chemin
+        REST n'est pas documenté : on essaie les variantes connues, et on renvoie
+        {} si aucune ne répond (le dashboard garde alors l'org par défaut)."""
+        for path in ("/account", "/accounts/me", "/me"):
+            try:
+                data = self._request("GET", path)
+            except Exception:  # noqa: BLE001
+                continue
+            if isinstance(data, dict) and data.get("id"):
+                return data
+        return {}
+
     def fetch_full_body(self, from_email: str, subject: str,
                         message_id: str | None = None) -> str:
         """Récupère le CORPS COMPLET d'un reply (fullBodies=true). L'API tronque
