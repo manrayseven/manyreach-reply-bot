@@ -187,6 +187,25 @@ def _short(s: str, n: int = 180) -> str:
     return s if len(s) <= n else s[: n - 1] + "…"
 
 
+def _interleave_fresh(by_recent: list) -> list:
+    """Alterne la plus RECENTE et la plus ANCIENNE de la fenêtre fraîche.
+
+    « Plus récent d'abord » protégeait les réponses du moment mais affamait les
+    autres : un lead arrivé à 9h52 repassait derrière chaque nouvelle réponse et
+    n'a été traité qu'à 18h (école Château Gombert, 05/10). En alternant, les
+    deux extrémités de la file avancent et aucune ne peut stagner.
+    """
+    out: list = []
+    i, j = 0, len(by_recent) - 1
+    while i <= j:
+        out.append(by_recent[i])
+        i += 1
+        if i <= j:
+            out.append(by_recent[j])
+            j -= 1
+    return out
+
+
 def _alert_context(mr, prospect, thread, reply) -> dict:
     """Champs figés dans l'alerte pour l'email de transfert : conversation
     complète, fiche société/contact, nom de campagne. Ne lève jamais (une alerte
@@ -575,15 +594,22 @@ def main() -> int:
         _FRESH_WINDOW_H = float(os.environ.get("FRESH_WINDOW_H", "8"))
         if _replies:
             _cut = datetime.now(timezone.utc) - timedelta(hours=_FRESH_WINDOW_H)
-            _fresh = sorted(
+            _by_recent = sorted(
                 [r for r in _replies if r.created_at >= _cut],
-                key=lambda r: r.created_at, reverse=True,   # la plus RECENTE d'abord
+                key=lambda r: r.created_at, reverse=True,
             )
+            # ALTERNANCE RECENTE / PLUS ANCIENNE DU FRAIS (Rudy 05/10, cas ecole
+            # Chateau Gombert). Le « plus recent d'abord » protegeait les reponses
+            # du moment, mais AFFAMAIT les autres : un lead arrive a 9h52 est
+            # repasse derriere chaque nouvelle reponse et n'a ete traite qu'a 18h.
+            # On prend donc alternativement la plus recente et la plus ancienne de
+            # la fenetre : les deux extremites avancent, aucune ne peut stagner.
+            _fresh = _interleave_fresh(_by_recent)
             _old = [r for r in _replies if r.created_at < _cut]  # deja du plus ancien
             if _fresh:
                 print(
                     f"  ↑ priorite au frais : {len(_fresh)} reponse(s) de moins de "
-                    f"{_FRESH_WINDOW_H:.0f} h, la plus recente d'abord, "
+                    f"{_FRESH_WINDOW_H:.0f} h, en alternance recente/ancienne, "
                     f"puis {len(_old)} en attente"
                 )
             _replies = _fresh + _old

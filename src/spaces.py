@@ -51,6 +51,14 @@ def run_spaces(
         result["note"] = "aucune variable MANYREACH_API_KEY_<ID> definie"
         return result
 
+    # ROTATION (Rudy 05/10) : le 1er espace prend ~20 s et le suivant repart avec
+    # les miettes (« reporte (budget temps) »). Dans l'ordre alphabetique, cmaclim
+    # passait toujours en premier et laeris presque jamais. On decale le depart a
+    # chaque tour pour que chacun soit servi en premier a son tour.
+    if len(spaces) > 1:
+        _turn = int(time.time() // (60 * 30)) % len(spaces)
+        spaces = spaces[_turn:] + spaces[:_turn]
+
     limit = limit or os.environ.get("SPACES_LIMIT", "10")
     since_days = since_days or os.environ.get("SPACES_SINCE_DAYS", "10")
 
