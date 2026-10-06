@@ -1039,7 +1039,8 @@ def _render(client_filter: str | None = None) -> str:
             too_old = bool(_cutoff and err_at and err_at < _cutoff)
             if not resolved and not too_old and not _send_timeout and alert_id not in dismissed:
                 error_list.append(a)
-        elif intent == "wrong_person_redirect" and "envoyé" not in status:
+        elif (intent == "wrong_person_redirect"
+              and "envoyé" not in status and "ALERTE" not in status):
             # Jamais d'alerte pour ces cas → cachés rétroactivement (entries
             # loggées avant). Depuis le 15/09, une vraie personne « pas nous »
             # reçoit la réponse type : ces envois tombent dans sent_list plus bas.

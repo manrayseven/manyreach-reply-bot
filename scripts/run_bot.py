@@ -1626,6 +1626,42 @@ def main() -> int:
                         "client_id": (active_client or {}).get("id"),
                         "client_name": (active_client or {}).get("name"),
                     })
+                    # REDIRECTION = PISTE (Rudy 06/10, cas école des Oliviers :
+                    # « les locaux appartiennent à la mairie de Fréjus, c'est
+                    # l'interlocuteur à privilégier »). Le prospect nous donne le
+                    # VRAI décideur : la réponse polie part (demandé le 15/09),
+                    # mais il faut AUSSI une alerte pour aller le contacter.
+                    if classification.intent == "wrong_person_redirect":
+                        _ctx_r = _alert_context(mr, prospect, thread, reply)
+                        _hist_r = _ctx_r.pop("history", None)
+                        _key_r = f"{now_utc.isoformat()}|{(reply.from_email or '').lower()}"
+                        if _hist_r:
+                            kvstore.set_alert_context(_key_r, {"history": _hist_r})
+                        kvstore.log_action({
+                            "at": now_utc.isoformat(),
+                            "from": reply.from_email,
+                            "subject": reply.subject,
+                            "intent": "wrong_person_redirect",
+                            "status": "🔔 ALERTE — redirection à exploiter",
+                            "reply": _trim_quoted_history(_strip_html(reply.body))[:2000],
+                            "response": "(réponse type envoyée ; le contact indiqué reste à traiter)",
+                            "prospect_id": (prospect.prospect_id if prospect else None),
+                            "campaign_id": reply.campaign_id,
+                            "prospect_email": (prospect.email if prospect else None),
+                            "message_id": reply.message_id,
+                            "sender_mailbox": (original_outreach.from_email
+                                               if original_outreach else None),
+                            "client_id": (active_client or {}).get("id"),
+                            "client_name": (active_client or {}).get("name"),
+                            "prospect_phone": (
+                                classification.contact_phone
+                                or (prospect.raw.get("phone") if prospect and prospect.raw else None)
+                            ),
+                            "redirected_to": classification.redirected_to,
+                            "redirected_email": classification.redirected_email,
+                            **_ctx_r,
+                            "has_ctx": bool(_hist_r),
+                        })
 
                 # Marquer comme traité dès que le bot a TENTÉ de gérer le reply
                 # (classify + plan ont tourné). Même si l'envoi a été held en
