@@ -72,7 +72,14 @@ class handler(BaseHTTPRequestHandler):
         # repondu hors fenetre a 22h58 puis perdu). La phase de listing est tres
         # rapide (~0,2 s/page mesure) : on passe a 8 pages = 800 replies (~32 h de
         # volume). Le tri FIFO (le plus ANCIEN d'abord) fait le reste.
-        os.environ.setdefault("LIST_MAX_PAGES", "8")
+        # 08/10 : 8 → 4 pages. Le balayage par STATUT (run_bot) garantit
+        # desormais qu'aucune reponse CLASSEE par ManyReach ne peut sortir de la
+        # file, quel que soit le volume de bounces — c'est lui qui remplace les
+        # 8 pages. Le listing par recence ne sert plus qu'a attraper les reponses
+        # que ManyReach n'a pas encore classees (quelques minutes) : 400 replies
+        # suffisent largement, et les 4 appels economises (~0,8 s) repartent dans
+        # le budget d'iterations lourdes, qui est la vraie ressource rare.
+        os.environ.setdefault("LIST_MAX_PAGES", "4")
         result: dict = {"ok": True}
         try:
             import run_bot  # scripts/run_bot.py

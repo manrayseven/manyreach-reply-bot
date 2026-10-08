@@ -234,6 +234,24 @@ class ManyReachClient:
         "CollegueReplied", # → un collègue a répondu, à traiter
     )
 
+    # BALAYAGE PAR STATUT (Rudy 08/10). Le listing par récence ne voit que les
+    # LIST_MAX_PAGES × 100 replies les plus récents, soit ~1 h 45 un jour de forte
+    # volumétrie (08/10 : ~115 entrants/h, en majorité des bounces SpamHaus/Abusix).
+    # Un lead arrivé à 11h48 sortait donc de la fenêtre avant que le bot l'atteigne :
+    # jamais traité, aucune alerte, aucune trace. Les feeds filtrés par statut sont
+    # minuscules et sans bounce (1 page = 13 jours d'« Interested », 7 semaines de
+    # « MaybeLater ») : les balayer garantit qu'aucun lead ne peut être chassé de la
+    # file par un orage de bounces.
+    LEAD_STATUSES = (
+        "Interested",
+        "Neutral",
+        "MaybeLater",
+        "CollegueReplied",
+    )
+    # Négatifs (réponse type + referral) : même garantie de ne rien perdre, mais
+    # sans priorité dans la file — ils rejoignent le lot commun.
+    NEGATIVE_STATUSES = ("NotInterested",)
+
     def list_replies(
         self,
         campaign_id: int | None = None,

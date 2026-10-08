@@ -543,14 +543,69 @@ def main() -> int:
         # fenêtre) passe AVANT les frais du matin → plus jamais de starvation.
         # (Le tri sur ~quelques centaines d'items de metadata est instantané.)
         _replies = []
+        _seen_mids: set[str] = set()
+        _lead_mids: set[str] = set()
+        _status_mids: dict[str, set[str]] = {}   # statut ManyReach -> ids de reply
+
+        def _collect(gen, status: str = "", mark_lead: bool = False) -> int:
+            """Ajoute les replies du générateur, sans doublon. `status` = statut
+            ManyReach du feed d'où ils viennent (vide pour le listing par récence)."""
+            added = 0
+            for _r in gen:
+                _k = _pid(_r.message_id)
+                if status:
+                    _status_mids.setdefault(status, set()).add(_k)
+                if mark_lead:
+                    _lead_mids.add(_k)
+                if _k in _seen_mids:
+                    continue
+                _seen_mids.add(_k)
+                _replies.append(_r)
+                added += 1
+            return added
+
+        # BALAYAGE PAR STATUT (Rudy 08/10) — AVANT le listing par récence.
+        #
+        # Le listing par récence rend les N×100 replies les plus RÉCENTS, tous
+        # types confondus. Le 08/10 il arrivait ~115 réponses/h (orage de bounces
+        # SpamHaus/Abusix sur les expéditeurs OVH) pour une capacité de 1-2
+        # itérations lourdes par passage : la file contenait ~800 entrées quasi
+        # toutes « fraîches », et l'alternance récente/ancienne n'atteignait
+        # jamais le MILIEU. Deux leads (11h48 « pouvons-nous échanger ? » et
+        # 11h51 « Demain 11h ? ») n'ont donc jamais été traités : ni réponse, ni
+        # alerte, ni trace.
+        #
+        # Les feeds ManyReach filtrés par confirmedStatus sont minuscules et sans
+        # aucun bounce : une page de 100 = 13 jours d'« Interested », 7 semaines
+        # de « MaybeLater », la totalité des « Neutral ». On les balaie donc à
+        # chaque passage (1 appel par statut, ~0,2 s) : aucun lead ne peut plus
+        # être chassé de la file, quelle que soit la volumétrie de bounces. Le
+        # listing par récence reste utile derrière, pour les réponses que
+        # ManyReach n'a pas encore classées.
+        if not args.only_email and not confirmed_statuses:
+            for _st in _MRC.LEAD_STATUSES + _MRC.NEGATIVE_STATUSES:
+                try:
+                    _n = _collect(
+                        mr.list_replies(
+                            campaign_id=campaign_id,
+                            since=since,
+                            confirmed_statuses=(_st,),
+                            max_per_status=100,
+                        ),
+                        status=_st,
+                        mark_lead=(_st in _MRC.LEAD_STATUSES),
+                    )
+                    print(f"  ⊕ balayage {_st} : {_n} nouvelle(s) reponse(s)")
+                except Exception as _e:  # noqa: BLE001
+                    print(f"  !! balayage {_st} interrompu ({_e})")
+
         try:
-            for _rep in mr.list_replies(
+            _collect(mr.list_replies(
                 campaign_id=campaign_id,
                 since=since,
                 confirmed_statuses=confirmed_statuses,
                 email_from=args.only_email,
-            ):
-                _replies.append(_rep)
+            ))
         except Exception as _e:  # noqa: BLE001
             # 429 ou autre pendant la pagination → on garde ce qu'on a déjà
             # récupéré et on traite quand même (le reste passera au prochain run).
@@ -591,6 +646,21 @@ def main() -> int:
         # celle dont un humain attend une reponse maintenant. Le backlog (au-dela
         # de la fenetre) reste trie du plus ancien, et une reponse fraiche non
         # traitee y bascule en vieillissant — donc rien ne peut mourir de faim.
+        # LEADS D'ABORD (Rudy 08/10) : les replies remontés par le balayage
+        # « leads » passent devant tout le reste. Un négatif de plus ou de moins
+        # dans la journée ne change rien ; un « Demain 11h ? » qui attend, oui.
+        # Eux aussi en alternance récente/ancienne : les deux bouts avancent.
+        _lead_queue: list = []
+        if _lead_mids:
+            _lead_queue = _interleave_fresh(sorted(
+                [r for r in _replies if _pid(r.message_id) in _lead_mids],
+                key=lambda r: r.created_at, reverse=True,
+            ))
+            if _lead_queue:
+                _replies = [r for r in _replies
+                            if _pid(r.message_id) not in _lead_mids]
+                print(f"  ★ {len(_lead_queue)} lead(s) en tete de file")
+
         _FRESH_WINDOW_H = float(os.environ.get("FRESH_WINDOW_H", "8"))
         if _replies:
             _cut = datetime.now(timezone.utc) - timedelta(hours=_FRESH_WINDOW_H)
@@ -613,6 +683,7 @@ def main() -> int:
                     f"puis {len(_old)} en attente"
                 )
             _replies = _fresh + _old
+        _replies = _lead_queue + _replies
         print(f"Replies en file (fenêtre {args.since_days}j) : {len(_replies)}")
         # === TRAITEMENT D'UNE REPONSE (corps extrait tel quel de la boucle) ===
         # Seuls les 'continue' de niveau boucle sont devenus des 'return' ; les
@@ -1661,6 +1732,46 @@ def main() -> int:
                             "redirected_email": classification.redirected_email,
                             **_ctx_r,
                             "has_ctx": bool(_hist_r),
+                        })
+
+                    # « INTERESTED » SELON MANYREACH → TOUJOURS UNE ALERTE
+                    # (Rudy 08/10, cas CSEFORMA). Le prospect proposait un
+                    # partenariat à la commission : le bot l'a lu comme une
+                    # objection PLATE (auto-réponse, demandée le 11/08) et rien
+                    # n'est remonté. Le statut posé par ManyReach est un signal
+                    # DÉTERMINISTE, indépendant du jugement de l'IA : quand il dit
+                    # « Interested », la réponse auto part quand même, mais Rudy la
+                    # voit. Les intents ALERT_ONLY ne passent jamais ici (ils ont
+                    # déjà leur alerte et sortent plus haut).
+                    elif _pid(reply.message_id) in _status_mids.get("Interested", set()):
+                        _ctx_i = _alert_context(mr, prospect, thread, reply)
+                        _hist_i = _ctx_i.pop("history", None)
+                        _key_i = f"{now_utc.isoformat()}|{(reply.from_email or '').lower()}"
+                        if _hist_i:
+                            kvstore.set_alert_context(_key_i, {"history": _hist_i})
+                        kvstore.log_action({
+                            "at": now_utc.isoformat(),
+                            "from": reply.from_email,
+                            "subject": reply.subject,
+                            "intent": classification.intent,
+                            "status": "🔔 ALERTE — marqué « Interested » dans ManyReach",
+                            "reply": _trim_quoted_history(_strip_html(reply.body))[:2000],
+                            "response": _resp_txt[:1800] if not draft.skip_send else
+                                        "(pas de réponse auto — à traiter à la main)",
+                            "prospect_id": (prospect.prospect_id if prospect else None),
+                            "campaign_id": reply.campaign_id,
+                            "prospect_email": (prospect.email if prospect else None),
+                            "message_id": reply.message_id,
+                            "sender_mailbox": (original_outreach.from_email
+                                               if original_outreach else None),
+                            "client_id": (active_client or {}).get("id"),
+                            "client_name": (active_client or {}).get("name"),
+                            "prospect_phone": (
+                                classification.contact_phone
+                                or (prospect.raw.get("phone") if prospect and prospect.raw else None)
+                            ),
+                            **_ctx_i,
+                            "has_ctx": bool(_hist_i),
                         })
 
                 # Marquer comme traité dès que le bot a TENTÉ de gérer le reply
