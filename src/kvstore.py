@@ -516,3 +516,35 @@ def acquire_send_lock(message_id: str, ttl_seconds: int = 600) -> bool:
     key = f"bot:send_lock:{message_id}"
     res = _cmd("SET", key, "1", "EX", str(ttl_seconds), "NX")
     return res is not None  # "OK" = créé = on a le lock
+
+
+# PROSPECTS DÉJÀ REMONTÉS EN ALERTE (Rudy 13/10, cas bieresicsas). Une alerte et
+# une réponse auto sont EXCLUSIVES : si le bot a alerté sur un prospect, il ne
+# doit plus jamais lui envoyer de modèle. `is_lead_in_progress` le faisait déjà,
+# mais en relisant les tags du prospect — donc aveugle si la fiche lue est en
+# retard d'une passe (ce qui s'est produit : même réponse traitée deux fois, une
+# fois en alerte, une fois en refus poli). Cette marque-ci est écrite par le bot
+# lui-même au moment de l'alerte : elle ne peut pas être en retard.
+ALERTED_PREFIX = "bot:alerted:"
+ALERTED_TTL = 365 * 24 * 3600
+
+
+def mark_alerted(*emails: str) -> None:
+    """Mémorise qu'une alerte a été levée pour ce(s) prospect(s)."""
+    if not kv_available():
+        return
+    for em in emails:
+        e = (em or "").lower().strip()
+        if e:
+            _cmd("SET", ALERTED_PREFIX + e, "1", "EX", str(ALERTED_TTL))
+
+
+def was_alerted(*emails: str) -> bool:
+    """True si l'un de ces emails a déjà fait l'objet d'une alerte."""
+    if not kv_available():
+        return False
+    for em in emails:
+        e = (em or "").lower().strip()
+        if e and _cmd("GET", ALERTED_PREFIX + e) is not None:
+            return True
+    return False

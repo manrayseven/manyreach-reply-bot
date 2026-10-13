@@ -133,6 +133,25 @@ _FORWARDING_RE = re.compile(
 # RÉPONSE PAR CHIFFRE aux cold mails « Répondez 1, 2 ou 3 » : le corps se réduit
 # au chiffre (« 1 », « 1. », « réponse 2 », « 3 ! »).
 _DIGIT_CHOICE_RE = re.compile(r"^(?:r[ée]ponse\s*[:°]?\s*)?([123])\s*[.)!,-]?$", re.IGNORECASE)
+
+# PORTE OUVERTE (Rudy 13/10) : le prospect propose, demande ou questionne — il
+# attend une suite. Sert à filtrer les « Interested » de ManyReach, dont le
+# statut est bruité : un refus net (« je ne travaille qu'en local, j'ai déjà de
+# nombreuses demandes ») n'a rien à faire dans les alertes, alors qu'une
+# contre-proposition (« je serais ravi d'échanger ») si. On exige donc un signal
+# de suite, pas la seule étiquette de ManyReach.
+_OPEN_DOOR_RE = re.compile(
+    r"(\?"                                   # une question posée
+    r"|[ée]chang(er|eons|erions)"
+    r"|discut(er|ons|erions)"
+    r"|(vous |me |nous )?(rappel|appel)(er|ez|le|lerai|lez)"
+    r"|rendez-?vous|rdv|visio|t[ée]l[ée]phon"
+    r"|disponibilit|cr[ée]neau"
+    r"|en savoir plus|plus d'(infos|informations)|pr[ée]cisions"
+    r"|tarif|devis|proposition|partenariat|collaborat"
+    r"|envoyez-?(moi|nous)|transmettez|faites-?moi parvenir"
+    r"|je suis int[ée]ress|nous sommes int[ée]ress|[çc]a m'int[ée]resse"
+    r")", re.IGNORECASE)
 # … et le cold mail proposait bien cette convention (sinon un « 1 » isolé ne veut
 # rien dire et suit le chemin normal).
 _OPTIONS_CONVENTION_RE = re.compile(
@@ -1306,12 +1325,27 @@ def main() -> int:
                 # TOUJOURS revenir en alerte : c'est une conversation humaine en
                 # cours, jamais du silence ni une réponse type. Seuls STOP /
                 # hostile restent traités comme tels.
+                # MÉMOIRE D'ALERTE (Rudy 13/10, cas bieresicsas) : le tag du
+                # prospect peut être en retard d'une passe — la même réponse a été
+                # traitée deux fois, une fois en alerte (tag bot:info-requested),
+                # une fois en refus poli (modèle envoyé). Rudy : « ils n'auraient
+                # pas dû être répondus s'ils sont en alerte ». On double donc le
+                # test par une marque écrite en KV AU MOMENT de l'alerte, qui ne
+                # peut pas être en retard.
+                _already_alerted = False
+                if kvstore is not None and kvstore.kv_available():
+                    try:
+                        _already_alerted = kvstore.was_alerted(
+                            reply.from_email, (prospect.email if prospect else ""))
+                    except Exception:  # noqa: BLE001
+                        _already_alerted = False
                 if (
-                    is_lead_in_progress(prospect)
+                    (is_lead_in_progress(prospect) or _already_alerted)
                     and classification.intent not in ALERT_ONLY
                     and classification.intent not in ("unsubscribe", "hostile")
                 ):
-                    print(f"  ⚠️ Piste en cours (tag bot) : {classification.intent} → ALERTE")
+                    _why = "tag bot" if is_lead_in_progress(prospect) else "alerte déjà levée"
+                    print(f"  ⚠️ Piste en cours ({_why}) : {classification.intent} → ALERTE")
                     classification = _dc_replace(
                         classification, intent="ask_more_info",
                         confidence=max(classification.confidence, 0.8),
@@ -1494,6 +1528,9 @@ def main() -> int:
                             **_ctx,
                             "has_ctx": bool(_ctx_hist),
                         })
+                        # Verrou : plus aucune réponse auto à ce prospect (13/10).
+                        kvstore.mark_alerted(
+                            reply.from_email, (prospect.email if prospect else ""))
                     if not dry_run:
                         _mark_done(reply.message_id)
                     processed_count += 1
@@ -1733,6 +1770,8 @@ def main() -> int:
                             **_ctx_r,
                             "has_ctx": bool(_hist_r),
                         })
+                        kvstore.mark_alerted(
+                            reply.from_email, (prospect.email if prospect else ""))
 
                     # « INTERESTED » SELON MANYREACH → TOUJOURS UNE ALERTE
                     # (Rudy 08/10, cas CSEFORMA). Le prospect proposait un
@@ -1743,7 +1782,17 @@ def main() -> int:
                     # « Interested », la réponse auto part quand même, mais Rudy la
                     # voit. Les intents ALERT_ONLY ne passent jamais ici (ils ont
                     # déjà leur alerte et sortent plus haut).
-                    elif _pid(reply.message_id) in _status_mids.get("Interested", set()):
+                    # ⚠️ PORTE OUVERTE EXIGÉE (Rudy 13/10, cas bieresicsas). Le
+                    # statut « Interested » de ManyReach est bruité : « je ne
+                    # travaille qu'en local, j'ai déjà de nombreuses demandes » est
+                    # un refus net, le modèle de refus part — et Rudy n'en veut PAS
+                    # dans ses alertes. On n'alerte donc que si le prospect laisse
+                    # une porte ouverte (il propose, demande, ou pose une question),
+                    # ce qui est le cas de CSEFORMA (« je serais ravi d'échanger »)
+                    # et pas des refus plats.
+                    elif (_pid(reply.message_id) in _status_mids.get("Interested", set())
+                          and _OPEN_DOOR_RE.search(
+                              _trim_quoted_history(_strip_html(reply.body))[:1200] or "")):
                         _ctx_i = _alert_context(mr, prospect, thread, reply)
                         _hist_i = _ctx_i.pop("history", None)
                         _key_i = f"{now_utc.isoformat()}|{(reply.from_email or '').lower()}"
@@ -1773,6 +1822,8 @@ def main() -> int:
                             **_ctx_i,
                             "has_ctx": bool(_hist_i),
                         })
+                        kvstore.mark_alerted(
+                            reply.from_email, (prospect.email if prospect else ""))
 
                 # Marquer comme traité dès que le bot a TENTÉ de gérer le reply
                 # (classify + plan ont tourné). Même si l'envoi a été held en
