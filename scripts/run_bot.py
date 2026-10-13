@@ -140,6 +140,32 @@ _DIGIT_CHOICE_RE = re.compile(r"^(?:r[ée]ponse\s*[:°]?\s*)?([123])\s*[.)!,-]?$
 # nombreuses demandes ») n'a rien à faire dans les alertes, alors qu'une
 # contre-proposition (« je serais ravi d'échanger ») si. On exige donc un signal
 # de suite, pas la seule étiquette de ManyReach.
+# MODÈLE DE CLÔTURE DÉJÀ ENVOYÉ (Rudy 13/10, cas Coshéa Intérieurs). Première
+# phrase des modèles de refus (WC et Cmaclim) — cf. src/fixed_replies.py. Sert à
+# reconnaître, dans le fil, que le bot a DÉJÀ clôturé poliment la conversation.
+_CLOSURE_MARK_RE = re.compile(
+    r"c[’']est not[ée],?\s*merci d[’']avoir pris le temps de (nous )?r[ée]pondre",
+    re.IGNORECASE)
+
+
+def _closure_already_sent(thread, before) -> bool:
+    """True si le modèle de refus est déjà parti dans ce fil avant `before`.
+
+    Le modèle se termine par « Auriez-vous en tête un ou des contacts qui
+    rencontrent ces problématiques ? ». Un prospect qui répond APRÈS répond à
+    CETTE question : lui renvoyer le même modèle est un bug (c'est arrivé), et
+    le classer « mauvaise personne » parce qu'il cite des noms en est un autre.
+    """
+    for _m in (thread or []):
+        if getattr(_m, "type", "") not in ("Sent", "SentManual"):
+            continue
+        if before is not None and _m.created_at >= before:
+            continue
+        if _CLOSURE_MARK_RE.search(_strip_html(_m.body or "")):
+            return True
+    return False
+
+
 _OPEN_DOOR_RE = re.compile(
     r"(\?"                                   # une question posée
     r"|[ée]chang(er|eons|erions)"
@@ -148,7 +174,9 @@ _OPEN_DOOR_RE = re.compile(
     r"|rendez-?vous|rdv|visio|t[ée]l[ée]phon"
     r"|disponibilit|cr[ée]neau"
     r"|en savoir plus|plus d'(infos|informations)|pr[ée]cisions"
-    r"|tarif|devis|proposition|partenariat|collaborat"
+    # « proposition » est volontairement absent : « merci pour votre proposition,
+    # mais… » est une formule de REFUS, pas une ouverture.
+    r"|tarif|devis|partenariat|collaborat"
     r"|envoyez-?(moi|nous)|transmettez|faites-?moi parvenir"
     r"|je suis int[ée]ress|nous sommes int[ée]ress|[çc]a m'int[ée]resse"
     r")", re.IGNORECASE)
@@ -1319,12 +1347,52 @@ def main() -> int:
                         confidence=max(classification.confidence, 0.8),
                     )
 
+                # FIL DÉJÀ CLÔTURÉ (Rudy 13/10, cas Coshéa Intérieurs). Elle
+                # refuse poliment → le modèle de clôture part, c'est correct. Elle
+                # répond gentiment À LA QUESTION du modèle (« les personnes que je
+                # connais ont déjà quelqu'un ») → le bot lui renvoie LE MÊME
+                # MODÈLE 18 min plus tard, puis un 3e message, et la classe
+                # « mauvaise personne » parce qu'elle cite des noms. Trois envois
+                # automatiques en 48 min. Le cap anti-ping-pong (2) ne mordait
+                # qu'au 3e.
+                # Une fois le modèle de clôture parti, le fil est TERMINÉ : plus
+                # d'envoi, plus d'alerte. Seule une vraie relance du prospect
+                # (intent de lead ET porte ouverte) peut le rouvrir.
+                _reply_txt_clean = _trim_quoted_history(_strip_html(reply.body))[:1200]
+                if _closure_already_sent(thread, reply.created_at) and not (
+                    classification.intent in ALERT_ONLY
+                    and _OPEN_DOOR_RE.search(_reply_txt_clean or "")
+                ):
+                    print("  >> MODÈLE DE CLÔTURE DÉJÀ ENVOYÉ — fil terminé, silence")
+                    log_entry["intent"] = "closed_thread"
+                    log_entry["actions"] = ["silent (modèle de clôture déjà envoyé)"]
+                    logf.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
+                    if kvstore and kvstore.kv_available():
+                        kvstore.log_action({
+                            "at": now_utc.isoformat(),
+                            "from": reply.from_email,
+                            "subject": reply.subject,
+                            "intent": "ack_only",
+                            "status": "silencieux (fil déjà clôturé — modèle de refus "
+                                      "déjà envoyé, le prospect répond par politesse)",
+                            "reply": _reply_txt_clean[:500],
+                            "response": "(pas de réponse — conversation terminée)",
+                            "prospect_email": (prospect.email if prospect else None),
+                            "client_id": (active_client or {}).get("id"),
+                            "client_name": (active_client or {}).get("name"),
+                        })
+                    if not dry_run:
+                        _mark_done(reply.message_id)
+                    skipped_count += 1
+                    return
+
                 # PISTE EN COURS (Rudy 16/09, cas école Major) : un prospect déjà
                 # remonté en alerte (tag bot de piste) qui réécrit — complément
                 # d'info, précision, même « merci » ou « non finalement » — doit
                 # TOUJOURS revenir en alerte : c'est une conversation humaine en
                 # cours, jamais du silence ni une réponse type. Seuls STOP /
                 # hostile restent traités comme tels.
+                #
                 # MÉMOIRE D'ALERTE (Rudy 13/10, cas bieresicsas) : le tag du
                 # prospect peut être en retard d'une passe — la même réponse a été
                 # traitée deux fois, une fois en alerte (tag bot:info-requested),
