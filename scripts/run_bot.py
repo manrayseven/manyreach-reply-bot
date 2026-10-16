@@ -143,8 +143,14 @@ _DIGIT_CHOICE_RE = re.compile(r"^(?:r[ée]ponse\s*[:°]?\s*)?([123])\s*[.)!,-]?$
 # MODÈLE DE CLÔTURE DÉJÀ ENVOYÉ (Rudy 13/10, cas Coshéa Intérieurs). Première
 # phrase des modèles de refus (WC et Cmaclim) — cf. src/fixed_replies.py. Sert à
 # reconnaître, dans le fil, que le bot a DÉJÀ clôturé poliment la conversation.
+# Plusieurs marqueurs, car le prompt AUTORISE le drafter à varier l'ouverture
+# (« Entendu », « Bien reçu »…) : se fier à la seule phrase « C'est noté » raterait
+# les variantes rédigées par l'IA. Les DEUX outils, eux, sont obligatoires et
+# toujours cités ensemble — c'est la signature la plus stable du modèle.
 _CLOSURE_MARK_RE = re.compile(
-    r"c[’']est not[ée],?\s*merci d[’']avoir pris le temps de (nous )?r[ée]pondre",
+    r"(c[’']est not[ée],?\s*merci d[’']avoir pris le temps de (nous )?r[ée]pondre"
+    r"|auriez-vous en t[êe]te un ou des contacts"
+    r"|growpulser\.com[\s\S]{0,400}growposter\.com)",
     re.IGNORECASE)
 
 
@@ -179,7 +185,15 @@ _OPEN_DOOR_RE = re.compile(
     r"|tarif|devis|partenariat|collaborat"
     r"|envoyez-?(moi|nous)|transmettez|faites-?moi parvenir"
     r"|je suis int[ée]ress|nous sommes int[ée]ress|[çc]a m'int[ée]resse"
-    r")", re.IGNORECASE)
+    # ACCROCHE DU MODÈLE (Rudy 16/10) : le modèle de clôture se termine désormais
+    # par « voudriez-vous voir ce que cela pourrait donner ? ». Les « oui » à
+    # CETTE question sont des PISTES, pas de la politesse — sans ces marqueurs,
+    # la règle du fil clôturé les ferait taire.
+    r"|je veux bien|volontiers|avec plaisir|pourquoi pas"
+    r"|curieu(x|se)|montrez|faites[- ]moi voir"
+    r"|voir ce que (ça|cela|cel[àa])"
+    r"|^\s*oui\b"
+    r")", re.IGNORECASE | re.MULTILINE)
 # … et le cold mail proposait bien cette convention (sinon un « 1 » isolé ne veut
 # rien dire et suit le chemin normal).
 _OPTIONS_CONVENTION_RE = re.compile(
@@ -1356,13 +1370,28 @@ def main() -> int:
                 # automatiques en 48 min. Le cap anti-ping-pong (2) ne mordait
                 # qu'au 3e.
                 # Une fois le modèle de clôture parti, le fil est TERMINÉ : plus
-                # d'envoi, plus d'alerte. Seule une vraie relance du prospect
-                # (intent de lead ET porte ouverte) peut le rouvrir.
+                # d'envoi, plus d'alerte. Seule une marque d'intérêt explicite du
+                # prospect (porte ouverte) peut le rouvrir — et en ALERTE.
                 _reply_txt_clean = _trim_quoted_history(_strip_html(reply.body))[:1200]
-                if _closure_already_sent(thread, reply.created_at) and not (
-                    classification.intent in ALERT_ONLY
+                _closed = _closure_already_sent(thread, reply.created_at)
+                # Le modèle se termine par « voudriez-vous voir ce que cela
+                # pourrait donner ? » (Rudy 16/10). Un « oui, volontiers » à CETTE
+                # question est une PISTE : on rouvre, mais en ALERTE — jamais en
+                # renvoyant un modèle (règle du 13/10 : alerte ⇒ pas d'envoi).
+                _reopen = bool(
+                    _closed
                     and _OPEN_DOOR_RE.search(_reply_txt_clean or "")
-                ):
+                    and classification.intent not in
+                    ("unsubscribe", "hostile", "bounce_or_auto")
+                )
+                if _reopen and classification.intent not in ALERT_ONLY:
+                    print(f"  ↗ Fil clôturé mais le prospect rouvre "
+                          f"({classification.intent}) → ALERTE")
+                    classification = _dc_replace(
+                        classification, intent="ask_more_info",
+                        confidence=max(classification.confidence, 0.8),
+                    )
+                if _closed and not _reopen:
                     print("  >> MODÈLE DE CLÔTURE DÉJÀ ENVOYÉ — fil terminé, silence")
                     log_entry["intent"] = "closed_thread"
                     log_entry["actions"] = ["silent (modèle de clôture déjà envoyé)"]

@@ -38,20 +38,19 @@ WC_NEGATIVE_HTML = (
     "<p>Bonjour,</p>"
     "<p>C'est noté, merci d'avoir pris le temps de répondre, je ne vous dérange pas plus. "
     "Auriez-vous en tête un ou des contacts qui rencontrent ces problématiques ?</p>"
-    "<p>J'en profite pour présenter mes deux nouveaux outils :<br>"
+    # Rudy 16/10 : la REFONTE passe en 2e (avec le pré-design offert et sa
+    # question d'accroche), les deux outils ferment. Le bloc « applications IA
+    # sur mesure » + etudes-cas-ia.pdf est RETIRÉ.
+    "<p>Je propose également des refontes de sites (envoi avant tout paiement "
+    "d'un pré-design pour que vous puissiez visualiser votre nouveau site) à "
+    'petit prix <a href="https://www.webmarketing-conseil.fr/site-internet/">'
+    "https://www.webmarketing-conseil.fr/site-internet/</a> (voudriez-vous voir "
+    "ce que cela pourrait donner ?)</p>"
+    "<p>J'ai enfin sorti deux outils d'automatisation :<br>"
     '- <a href="https://www.growpulser.com">www.growpulser.com</a> pour automatiser la '
     "création et publication de contenus sur les réseaux sociaux.<br>"
     '- <a href="https://www.growposter.com">www.growposter.com</a> pour automatiser la '
     "création et publication de contenus SEO.</p>"
-    "<p>Je propose également une refonte de votre site sous 48 à 72h à petit prix (avec "
-    "modifications incluses pour vous permettre de le faire évoluer) "
-    '<a href="https://www.webmarketing-conseil.fr/site-internet/">'
-    "https://www.webmarketing-conseil.fr/site-internet/</a></p>"
-    "<p>Enfin, je développe des applications IA sur mesure pour votre métier (outils pour "
-    "gagner du temps sur vos tâches récurrentes, fluidifier l'utilisation de vos outils, "
-    "mieux gérer votre clientèle...) : voici mes dernières réalisations "
-    '<a href="https://www.webmarketing-conseil.fr/wp-content/uploads/2026/08/etudes-cas-ia.pdf">'
-    "https://www.webmarketing-conseil.fr/wp-content/uploads/2026/08/etudes-cas-ia.pdf</a></p>"
     "<p>Bien à vous,<br>Rudy Viard</p>"
 )
 

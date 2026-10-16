@@ -115,6 +115,27 @@ def test_fixed_draft_silent_setting():
     assert d2 is not None and not d2.skip_send
 
 
+def test_modele_wc_version_16_10():
+    """Version donnée par Rudy le 16/10 : 3 blocs, la refonte AVANT les outils,
+    et plus aucune mention d'applications IA ni de délai."""
+    html = WC_NEGATIVE_HTML
+    # Blocs présents, dans l'ordre : referral → refonte → outils.
+    i_ref = html.index("Auriez-vous en tête un ou des contacts")
+    i_site = html.index("refontes de sites")
+    i_tools = html.index("growpulser.com")
+    assert i_ref < i_site < i_tools, (i_ref, i_site, i_tools)
+    # L'argument central et la question d'accroche (c'est le but du message).
+    assert "pré-design" in html and "avant tout paiement" in html
+    assert "voudriez-vous voir ce que cela pourrait donner" in html.lower()
+    assert "growposter.com" in html and "site-internet/" in html
+    # Retirés le 16/10 — ne doivent jamais revenir.
+    assert "etudes-cas-ia" not in html
+    assert "applications IA" not in html
+    assert "48 à 72" not in html
+    # La phrase d'ouverture reste celle que reconnaît la règle du fil clôturé.
+    assert "C'est noté, merci d'avoir pris le temps de répondre" in html
+
+
 if __name__ == "__main__":
     from tests._runner import main as _main
     _main(globals())

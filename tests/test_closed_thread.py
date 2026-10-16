@@ -109,6 +109,33 @@ def test_une_vraie_relance_rouvre_le_fil():
     assert _OPEN_DOOR_RE.search("Envoyez-moi vos tarifs, ça m'intéresse")
 
 
+def test_oui_a_la_question_du_modele_rouvre_le_fil():
+    """Depuis le 16/10 le modèle demande « voudriez-vous voir ce que cela
+    pourrait donner ? ». Un oui à CETTE question est une piste, pas de la
+    politesse — il doit rouvrir le fil (en alerte, jamais en réponse auto)."""
+    for msg in (
+        "Oui, je veux bien voir ce que cela pourrait donner",
+        "Volontiers, montrez-moi",
+        "Pourquoi pas, je suis curieux",
+        "Avec plaisir",
+        "Oui",
+    ):
+        assert _OPEN_DOOR_RE.search(msg), msg
+
+
+def test_la_cloture_est_reconnue_meme_si_l_IA_varie_l_ouverture():
+    """Le prompt autorise le drafter à ouvrir autrement que par « C'est noté » :
+    la détection ne doit pas reposer sur cette seule phrase."""
+    variante = (
+        "<p>Entendu, merci de votre franchise, je ne vous dérange pas plus.</p>"
+        "<p>Auriez-vous en tête un ou des contacts qui rencontrent ces "
+        "problématiques ?</p>"
+        '<p>- <a href="https://www.growpulser.com">www.growpulser.com</a><br>'
+        '- <a href="https://www.growposter.com">www.growposter.com</a></p>'
+    )
+    assert _closure_already_sent([M("SentManual", variante, _t(15, 1))], _t(15, 7))
+
+
 if __name__ == "__main__":
     from tests._runner import main as _main
     _main(globals())
