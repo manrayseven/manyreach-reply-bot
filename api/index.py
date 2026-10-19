@@ -2625,6 +2625,13 @@ def _render(client_filter: str | None = None) -> str:
         <select name="client_id" class="report-sel">{_report_opts}</select>
         <button class="btn-outline" type="submit">🔎 Rattraper les alertes manquantes</button>
       </form>
+      <form method="POST" action="/{keyparam}" class="report-form" style="margin-left:8px"
+            onsubmit="var b=this.querySelector('button'); b.disabled=true; b.innerHTML='⏳ Réouverture...'; return true;">
+        <input type="hidden" name="action" value="recover_alerts">
+        <input type="hidden" name="mode" value="restore">
+        <select name="client_id" class="report-sel">{_report_opts}</select>
+        <button class="btn-outline" type="submit" title="Rouvrir les alertes masquées dont le prospect est encore une piste">↩ Rouvrir les masquées</button>
+      </form>
       <div class="action-help">Relit les fiches ManyReach du compte choisi et <b>reconstruit les alertes qui ne sont jamais arrivées ici</b> (le bot avait classé la réponse en piste, mais l'alerte s'est perdue). Sans effet sur celles déjà présentes ou fermées d'un ✕.</div>
     </div>
     <div class="action-toggle-row">
@@ -3200,6 +3207,8 @@ class handler(BaseHTTPRequestHandler):
             _cid_t = (form.get("client_id") or "").strip()
             # Pas de bascule d'onglet : Rudy veut rester où il est (19/10).
             _diag: list[str] = []
+            _restore = (form.get("mode") or "").strip() == "restore"
+            _restored = 0
             # Déjà alertés = on ne recrée rien pour eux (on regarde les ALERTES,
             # pas tout le journal : un prospect peut avoir une ligne "silencieux"
             # et pourtant aucune alerte — c'est exactement le cas à rattraper).
@@ -3272,6 +3281,29 @@ class handler(BaseHTTPRequestHandler):
                                     continue
                                 if _em in _have:
                                     _skip += 1
+                                    # MODE RESTAURATION (Rudy 19/10) : les quatre
+                                    # alertes Laeris étaient en base, correctement
+                                    # rattachées, mais MASQUÉES — alors qu'il ne
+                                    # les avait jamais vues. Ce mode rouvre celles
+                                    # dont le prospect porte encore un tag de
+                                    # piste. Explicite, jamais automatique : Rudy
+                                    # ferme aussi des alertes légitimement, et on
+                                    # ne va pas lui ressortir tout son historique.
+                                    if _restore:
+                                        _exr = _have[_em]
+                                        _exidr = (f"{_exr.get('at', '')}|"
+                                                  f"{(_exr.get('from') or '').lower()}")
+                                        if _exidr in _dism:
+                                            try:
+                                                kvstore.restore_alert(_exidr)
+                                                _restored += 1
+                                                if len(_diag) < 24:
+                                                    _diag.append(
+                                                        "&nbsp;&nbsp;↩ rouverte : "
+                                                        + html.escape(_em))
+                                            except Exception:  # noqa: BLE001
+                                                pass
+                                        continue
                                     # POURQUOI elle ne s'affiche pas : on sort la
                                     # fiche de l'alerte trouvée, telle quelle.
                                     _ex = _have[_em]
@@ -3346,7 +3378,8 @@ class handler(BaseHTTPRequestHandler):
             _diag_html = (
                 '<div style="font-family:Arial,Helvetica,sans-serif;max-width:680px">'
                 f'<p style="font-size:15px"><b>{_done_n} alerte(s) reconstruite(s)</b>'
-                '</p><ul style="font-size:14px;line-height:1.7">'
+                + (f' · <b>{_restored} rouverte(s)</b>' if _restore else "")
+                + '</p><ul style="font-size:14px;line-height:1.7">'
                 + "".join(f"<li>{d}</li>" for d in _diag)
                 + '</ul><p style="font-size:13px;color:#6b6457">Une fiche « avait '
                 'déjà une alerte » n\'est jamais recréée : si elle n\'apparaît pas '
