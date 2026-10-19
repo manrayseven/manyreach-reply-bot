@@ -106,7 +106,7 @@ def log_action(entry: dict) -> None:
         _cmd("LTRIM", ALERTS_KEY, "0", str(MAX_ALERTS - 1))
 
 
-def recent_alerts(n: int = MAX_ALERTS) -> list[dict]:
+def recent_alerts(n: int = MAX_ALERTS, stats: dict | None = None) -> list[dict]:
     """Alertes conservées dans la liste dédiée (plus récentes d'abord).
 
     Lecture PAR TRANCHES : _cmd avale toute erreur (timeout, réponse trop
@@ -116,18 +116,39 @@ def recent_alerts(n: int = MAX_ALERTS) -> list[dict]:
     """
     out: list[dict] = []
     _CH = 50   # tranches courtes : les anciennes alertes contiennent encore l'historique
+    _ok = _ko = _bad = 0
     for start in range(0, n, _CH):
         raw = _cmd("LRANGE", ALERTS_KEY, str(start), str(min(start + _CH, n) - 1))
         if not isinstance(raw, list):
-            break  # tranche en échec (ou fin de liste) → on garde ce qu'on a
+            # Tranche en échec (timeout, réponse trop grosse) OU fin de liste —
+            # _cmd avale tout et renvoie None, impossible de distinguer ici. On
+            # le COMPTE (Rudy 19/10) : une alerte écrite mais jamais affichée
+            # reste autrement invisible, et on cherche la cause à l'aveugle.
+            _ko += 1
+            break
+        _ok += 1
         for item in raw:
             try:
                 out.append(json.loads(item))
             except (json.JSONDecodeError, TypeError):
-                pass
+                _bad += 1
         if len(raw) < _CH:
             break  # fin de la liste
+    if stats is not None:
+        stats.update({"chunks_ok": _ok, "chunks_ko": _ko,
+                      "illisibles": _bad, "lues": len(out),
+                      "total": alerts_count()})
     return out
+
+
+def alerts_count() -> int:
+    """Nombre d'alertes RÉELLEMENT stockées (LLEN) — à comparer à ce que la
+    lecture par tranches rend. L'écart dit si on perd des alertes à la lecture."""
+    res = _cmd("LLEN", ALERTS_KEY)
+    try:
+        return int(res)
+    except (TypeError, ValueError):
+        return -1
 
 
 # CONTEXTE D'ALERTE (historique complet des échanges) : stocké À PART, une clé

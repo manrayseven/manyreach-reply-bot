@@ -972,8 +972,21 @@ def _render(client_filter: str | None = None) -> str:
     # liste KV dédiée (kvstore.recent_alerts) qu'on relit ici en complément.
     _alert_ids_seen: set[str] = set()
     _log_ids = {f"{a.get('at', '')}|{(a.get('from') or '').lower()}" for a in actions}
+    # SANTÉ DE LA LECTURE (Rudy 19/10). Une alerte écrite mais jamais affichée
+    # est invisible des deux côtés : rien dans le dashboard, rien dans les logs.
+    # On mesure donc l'écart entre ce que le KV CONTIENT et ce qu'on arrive à
+    # relire, et on l'affiche sous les alertes. Cas agnes.coppo : le bot avait
+    # écrit l'alerte (KVprocessed=OUI, statut Neutral, tag bot:lukewarm) et
+    # l'espace Laeris affichait pourtant 0.
+    _alert_stats: dict = {}
+    _raw_alerts = kvstore.recent_alerts(stats=_alert_stats) or []
+    _alert_stats["masquees"] = sum(
+        1 for a in _raw_alerts
+        if f"{a.get('at', '')}|{(a.get('from') or '').lower()}" in dismissed
+    )
+    _alert_stats["etrangeres"] = sum(1 for a in _raw_alerts if _is_foreign_entry(a))
     _extra_alerts = [
-        a for a in (kvstore.recent_alerts() or [])
+        a for a in _raw_alerts
         if not _is_foreign_entry(a)
         and f"{a.get('at', '')}|{(a.get('from') or '').lower()}" not in _log_ids
     ]
@@ -1995,6 +2008,27 @@ def _render(client_filter: str | None = None) -> str:
         return "".join(_out)
 
     alerts_html = _grouped(alerts, _alert_row, max(1, len(alerts)), "Aucune alerte pour cet espace.") if alerts else ""
+
+    # LIGNE DE SANTÉ (Rudy 19/10) : combien d'alertes le KV contient vraiment,
+    # combien on en relit, combien sont masquées. Sans elle, une alerte écrite
+    # mais jamais affichée ne laisse aucune trace nulle part.
+    _as = _alert_stats or {}
+    _tot_kv = _as.get("total", -1)
+    _anomalie = (_as.get("chunks_ko") or 0) > 0 or (
+        _tot_kv > 0 and _as.get("lues", 0) < _tot_kv)
+    _alert_health = (
+        '<div style="margin-top:14px;font-size:12px;color:'
+        + ("#b45309" if _anomalie else "#a39c8c") + '">'
+        + ("⚠️ " if _anomalie else "🔧 ")
+        + f"lecture des alertes : {_as.get('lues', 0)} relue(s) sur "
+        + (f"{_tot_kv} en base" if _tot_kv >= 0 else "un total inconnu")
+        + f" · {_as.get('masquees', 0)} masquée(s) par ✕"
+        + (f" · {_as['etrangeres']} hors périmètre" if _as.get("etrangeres") else "")
+        + (f" · {_as['illisibles']} illisible(s)" if _as.get("illisibles") else "")
+        + (" · <b>une tranche de lecture a échoué</b> : des alertes anciennes "
+           "sont invisibles, dis-le-moi" if (_as.get("chunks_ko") or 0) else "")
+        + "</div>"
+    )
     if not alerts_html:
         alerts_html = '<div class="empty-section">Aucune alerte à traiter — tu es à jour ✓</div>'
     sent_html = _grouped(sent_list, _sent_row, 40, "Aucun envoi pour cet espace.") if sent_list else ""
@@ -2618,6 +2652,7 @@ def _render(client_filter: str | None = None) -> str:
       Clique <b>↗ Conversation</b> pour ouvrir la fiche du prospect et répondre · <b>✕</b> pour cacher une ligne une fois traitée.
     </div>
     {alerts_html}
+    {_alert_health}
   </div>
 
   <div class="card">
