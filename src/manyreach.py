@@ -462,6 +462,35 @@ class ManyReachClient:
         items = (data or {}).get("items", [])
         return [Tag(tag_id=i["tagId"], title=i["title"]) for i in items]
 
+    def prospects_by_tag(
+        self,
+        tag_id: int,
+        page_size: int = 30,
+        max_pages: int = 2,
+    ) -> Iterable[Prospect]:
+        """Prospects portant ce tag — GET /tags/{id}/prospects.
+
+        Sert au RATTRAPAGE des alertes perdues (Rudy 19/10, espace Laeris) :
+        quand une alerte n'arrive pas au dashboard, le tag de piste posé par le
+        bot reste, lui, sur la fiche ManyReach. C'est la seule trace qui survit à
+        une écriture KV ratée — donc la seule façon de reconstruire l'alerte
+        après coup.
+        """
+        page = 1
+        while page <= max_pages:
+            data = self._request(
+                "GET", f"/tags/{tag_id}/prospects",
+                params={"limit": page_size, "page": page},
+            )
+            items = (data or {}).get("items", [])
+            if not items:
+                return
+            for item in items:
+                yield Prospect.from_api(item)
+            if len(items) < page_size:
+                return
+            page += 1
+
     def create_tag(self, title: str, description: str | None = None) -> Tag:
         payload: dict[str, Any] = {"title": title}
         if description:

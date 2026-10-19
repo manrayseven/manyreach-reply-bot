@@ -2581,6 +2581,15 @@ def _render(client_filter: str | None = None) -> str:
       </form>
       <div class="action-help">Compte rendu complet des <b>prospects transmis</b> au client choisi : synthèse en tête, puis le détail <b>mois par mois</b> (société, contact, campagne, conversation). Copiable dans un email ou imprimable en <b>PDF</b>.</div>
     </div>
+    <div class="report-row">
+      <form method="POST" action="/{keyparam}" class="report-form"
+            onsubmit="var b=this.querySelector('button'); b.disabled=true; b.innerHTML='⏳ Recherche...'; return true;">
+        <input type="hidden" name="action" value="recover_alerts">
+        <select name="client_id" class="report-sel">{_report_opts}</select>
+        <button class="btn-outline" type="submit">🔎 Rattraper les alertes manquantes</button>
+      </form>
+      <div class="action-help">Relit les fiches ManyReach du compte choisi et <b>reconstruit les alertes qui ne sont jamais arrivées ici</b> (le bot avait classé la réponse en piste, mais l'alerte s'est perdue). Sans effet sur celles déjà présentes ou fermées d'un ✕.</div>
+    </div>
     <div class="action-toggle-row">
       <div class="toggle-help">Stop / start du bot. En pause, il ne traite plus aucune réponse jusqu'à réactivation.</div>
       <form method="POST" action="/{keyparam}">
@@ -3101,6 +3110,114 @@ class handler(BaseHTTPRequestHandler):
                     "reply": "",
                     "response": "",
                     "client_id": cid,
+                })
+        elif action == "recover_alerts":
+            # RATTRAPAGE DES ALERTES PERDUES (Rudy 19/10, espace Laeris).
+            # Le bot avait bien classé trois réponses en pistes — les tags bot:*
+            # sont sur les fiches ManyReach — mais AUCUNE alerte n'est arrivée au
+            # dashboard (Laeris affichait 0). Le tag, lui, survit à une écriture
+            # KV ratée : c'est la seule trace exploitable après coup. On relit
+            # donc les prospects porteurs d'un tag de piste et on reconstruit
+            # l'alerte manquante depuis leur dernière réponse.
+            # Idempotent : un prospect qui a déjà une alerte (ou dont l'alerte a
+            # été fermée d'un ✕) est sauté — relancer ne crée jamais de doublon.
+            from datetime import datetime as _dt, timezone as _tz
+            from src.actions import ALERT_ONLY as _AO, INTENT_PROSPECT_UPDATE as _IPU
+            from src.classifier import _strip_html as _sh, _trim_quoted_history as _tq
+            from src.manyreach import ManyReachClient as _MRC2, workspace_api_keys as _wak4
+            _tag2intent = {
+                _t: _i for _i in _AO
+                for _t in (_IPU.get(_i) or (None, None, []))[2]
+            }
+            _wk4 = _wak4()
+            _cid_t = (form.get("client_id") or "").strip()
+            _post_client = _cid_t or _post_client
+            # Déjà alertés = on ne recrée rien pour eux (on regarde les ALERTES,
+            # pas tout le journal : un prospect peut avoir une ligne "silencieux"
+            # et pourtant aucune alerte — c'est exactement le cas à rattraper).
+            _have = set()
+            for _src in (kvstore.recent_alerts(),
+                         kvstore.recent_actions(kvstore.MAX_LOG_ENTRIES)):
+                for _a in (_src or []):
+                    if (_a.get("intent") in ALERT_INTENTS
+                            or "ALERTE" in str(_a.get("status", ""))):
+                        for _k in ("prospect_email", "from"):
+                            _v = str(_a.get(_k) or "").lower().strip()
+                            if _v:
+                                _have.add(_v)
+            _dism = kvstore.get_dismissed_alerts() or set()
+            _names = {c.get("id"): c.get("name") for c in (kvstore.get_clients() or [])}
+            # Compte visé, sinon tous : le compte principal puis chaque espace.
+            if _cid_t:
+                _targets = [_cid_t]
+            else:
+                _targets = [None] + sorted(_wk4)
+            _MAXREC = int(os.environ.get("RECOVER_ALERTS_MAX", "15"))
+            _done_n, _errs = 0, []
+            for _tc in _targets:
+                if _done_n >= _MAXREC:
+                    break
+                try:
+                    _key = _wk4.get(_tc) if _tc else None
+                    _m2 = (_MRC2(api_key=_key, timeout=8.0) if _key
+                           else _MRC2(timeout=8.0))
+                    with _m2 as _mr2:
+                        _lead_tags = [t for t in _mr2.list_tags()
+                                      if t.title in _tag2intent]
+                        for _tg in _lead_tags:
+                            if _done_n >= _MAXREC:
+                                break
+                            for _p in _mr2.prospects_by_tag(_tg.tag_id, max_pages=1):
+                                if _done_n >= _MAXREC:
+                                    break
+                                _em = (_p.email or "").lower().strip()
+                                if not _em or _em in _have:
+                                    continue
+                                _thr = _mr2.get_prospect_thread(_p.prospect_id)
+                                _reps = sorted(
+                                    [x for x in _thr if x.type == "Reply"],
+                                    key=lambda x: x.created_at)
+                                if not _reps:
+                                    continue
+                                _last = _reps[-1]
+                                _aid = f"{_last.created_at.isoformat()}|{_em}"
+                                if _aid in _dism:
+                                    continue
+                                _raw = _p.raw or {}
+                                kvstore.log_action({
+                                    "at": _last.created_at.isoformat(),
+                                    "from": _p.email,
+                                    "subject": _last.subject,
+                                    "intent": _tag2intent.get(_tg.title, "ask_more_info"),
+                                    "status": "🔔 ALERTE — rattrapée depuis ManyReach",
+                                    "reply": _tq(_sh(_last.body or ""))[:2000],
+                                    "response": "(alerte reconstruite : le bot avait "
+                                                "classé cette réponse en piste)",
+                                    "prospect_id": _p.prospect_id,
+                                    "campaign_id": _last.campaign_id,
+                                    "prospect_email": _p.email,
+                                    "message_id": _last.message_id,
+                                    "client_id": _tc,
+                                    "client_name": _names.get(_tc),
+                                    "prospect_phone": _raw.get("phone"),
+                                    "company": _p.company or "",
+                                    "industry": _p.industry or "",
+                                    "job": _p.job_position or "",
+                                    "city": str(_raw.get("city") or ""),
+                                })
+                                kvstore.mark_alerted(_p.email)
+                                _have.add(_em)
+                                _done_n += 1
+                except Exception as _e:  # noqa: BLE001
+                    _errs.append(f"{_tc or 'principal'}: {str(_e)[:120]}")
+            _st = (f"🔎 Rattrapage : {_done_n} alerte(s) reconstruite(s)"
+                   + (f" — erreurs {'; '.join(_errs)}" if _errs else ""))
+            if kvstore.kv_available():
+                kvstore.log_action({
+                    "at": _dt.now(_tz.utc).isoformat(),
+                    "from": "", "subject": "🔎 Rattraper les alertes manquantes",
+                    "intent": "manual_reply" if not _errs else "error",
+                    "status": _st, "reply": "", "response": "",
                 })
         elif action == "handoff_report":
             # Compte rendu des MISES EN RELATION d'un compte (Rudy 01/10) :
