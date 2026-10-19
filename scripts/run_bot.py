@@ -1480,34 +1480,75 @@ def main() -> int:
                 # et les négatifs deviennent simplement silencieux.
                 _is_wc = not space_id and not (
                     active_client and not active_client.get("is_default"))
+                # ack_only n'est PAS exclu : « merci, bonne journée » reste un
+                # humain qui écrit, et Rudy veut voir toutes les touches d'un
+                # espace. Seuls bounces, désinscriptions et hostiles se taisent.
                 if (not _is_wc
                         and classification.intent not in ALERT_ONLY
-                        and classification.intent not in ALWAYS_SILENT):
+                        and classification.intent not in
+                        ("unsubscribe", "hostile", "bounce_or_auto")):
                     _space_lbl = space_id or (active_client or {}).get("id") or "?"
-                    print(f"  >> ESPACE {_space_lbl} — pas de réponse auto hors "
-                          f"Webmarketing Conseil ({classification.intent})")
+                    print(f"  >> ESPACE {_space_lbl} — pas de réponse auto, "
+                          f"ALERTE ({classification.intent})")
+                    # TOUTES LES TOUCHES REMONTENT (Rudy 19/10). Puisque le bot
+                    # n'envoie plus rien dans un espace, le silence ferait perdre
+                    # la réponse : personne ne la voit. Un humain a écrit, donc
+                    # Rudy (ou son client) doit la voir — y compris un refus
+                    # poli, qui reste une information pour le client. Seuls les
+                    # bounces, désinscriptions et hostiles restent silencieux :
+                    # ils sont écartés plus haut par leur propre branche.
+                    _plan_sp = plan_actions(
+                        reply=reply, prospect=prospect,
+                        classification=classification, draft=None,
+                        min_autosend_confidence=min_conf, has_calendar_slots=False,
+                    )
+                    _plan_sp.actions = [a for a in _plan_sp.actions
+                                        if a.kind in ("update_prospect", "add_tag")]
+                    if _plan_sp.actions:
+                        try:
+                            execute_plan(_plan_sp, reply, mr, dry_run=dry_run,
+                                         tag_cache=tag_cache)
+                        except Exception as _e:  # noqa: BLE001
+                            print(f"  !! status update fail: {_e}")
                     log_entry["intent"] = classification.intent
-                    log_entry["actions"] = [f"silent (espace {_space_lbl} : pas de "
-                                            f"modèle propre, aucun envoi)"]
+                    log_entry["actions"] = [f"alerte (espace {_space_lbl}, aucun envoi)"]
                     logf.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
                     if kvstore and kvstore.kv_available():
+                        _ctx_sp = _alert_context(mr, prospect, thread, reply)
+                        _hist_sp = _ctx_sp.pop("history", None)
+                        _key_sp = f"{now_utc.isoformat()}|{(reply.from_email or '').lower()}"
+                        if _hist_sp:
+                            kvstore.set_alert_context(_key_sp, {"history": _hist_sp})
                         kvstore.log_action({
                             "at": now_utc.isoformat(),
                             "from": reply.from_email,
                             "subject": reply.subject,
                             "intent": classification.intent,
-                            "status": f"silencieux (espace {_space_lbl} — pas de "
-                                      f"réponse auto hors Webmarketing Conseil)",
-                            "reply": _trim_quoted_history(_strip_html(reply.body))[:500],
-                            "response": "(aucun envoi : cet espace n'a pas encore "
-                                        "son modèle de réponse)",
+                            "status": "🔔 ALERTE — réponse à traiter (aucune réponse "
+                                      "auto sur cet espace)",
+                            "reply": _trim_quoted_history(_strip_html(reply.body))[:2000],
+                            "response": "(le bot n'envoie rien sur cet espace : à toi "
+                                        "de répondre ou de transmettre au client)",
+                            "prospect_id": (prospect.prospect_id if prospect else None),
+                            "campaign_id": reply.campaign_id,
                             "prospect_email": (prospect.email if prospect else None),
+                            "message_id": reply.message_id,
+                            "sender_mailbox": (original_outreach.from_email
+                                               if original_outreach else None),
                             "client_id": (active_client or {}).get("id") or space_id,
                             "client_name": (active_client or {}).get("name"),
+                            "prospect_phone": (
+                                classification.contact_phone
+                                or (prospect.raw.get("phone") if prospect and prospect.raw else None)
+                            ),
+                            **_ctx_sp,
+                            "has_ctx": bool(_hist_sp),
                         })
+                        kvstore.mark_alerted(
+                            reply.from_email, (prospect.email if prospect else ""))
                     if not dry_run:
                         _mark_done(reply.message_id)
-                    skipped_count += 1
+                    processed_count += 1
                     return
 
                 print(f"    key_phrase: {_short(classification.key_phrase, 120)}")

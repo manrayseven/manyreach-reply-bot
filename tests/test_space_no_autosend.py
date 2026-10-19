@@ -57,9 +57,29 @@ def test_le_garde_fou_deterministe_existe_dans_la_boucle():
     assert "classification.intent not in ALERT_ONLY" in bloc
     # …et les bounces garder leur propre branche (sinon un journal noyé : 94 %
     # des entrants de Laeris sont des avis de non-remise).
-    assert "classification.intent not in ALWAYS_SILENT" in bloc
+    assert '("unsubscribe", "hostile", "bounce_or_auto")' in bloc
     # Le garde-fou doit précéder la rédaction (économise aussi les tokens).
     assert i < src.index("draft = fixed_draft(")
+
+
+def test_toutes_les_touches_d_un_espace_remontent_en_alerte():
+    """Rudy 19/10 : « je voudrais que pour la suite tu remontes bien toutes les
+    touches ». Puisqu'un espace n'envoie plus rien, le silence ferait disparaître
+    la réponse — personne ne la verrait. Tout humain qui écrit doit donc remonter,
+    refus poli compris : c'est une information pour le client.
+    """
+    src = (ROOT / "scripts" / "run_bot.py").read_text(encoding="utf-8")
+    i = src.index("TOUTES LES TOUCHES REMONTENT")
+    bloc = src[i:i + 2600]
+    # Une ALERTE, pas une ligne silencieuse.
+    assert "🔔 ALERTE — réponse à traiter" in bloc
+    # Avec la fiche complète, sinon « Mettre en relation » est inutilisable.
+    assert "_alert_context(mr, prospect, thread, reply)" in bloc
+    assert "set_alert_context" in bloc and "prospect_phone" in bloc
+    # Le statut ManyReach reste mis à jour (sans envoi).
+    assert "update_prospect" in bloc and "add_tag" in bloc
+    # Et le verrou alerte/réponse auto est posé.
+    assert "mark_alerted" in bloc
 
 
 if __name__ == "__main__":
