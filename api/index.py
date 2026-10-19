@@ -3203,7 +3203,10 @@ class handler(BaseHTTPRequestHandler):
             # Déjà alertés = on ne recrée rien pour eux (on regarde les ALERTES,
             # pas tout le journal : un prospect peut avoir une ligne "silencieux"
             # et pourtant aucune alerte — c'est exactement le cas à rattraper).
-            _have = set()
+            # email -> entrée d'alerte trouvée (et non plus un simple set) : quand
+            # on saute une fiche, on peut dire POURQUOI son alerte n'apparaît pas
+            # (Rudy 19/10 : « 4 avaient déjà une alerte » et l'espace en affiche 0).
+            _have: dict = {}
             for _src in (kvstore.recent_alerts(),
                          kvstore.recent_actions(kvstore.MAX_LOG_ENTRIES)):
                 for _a in (_src or []):
@@ -3211,8 +3214,15 @@ class handler(BaseHTTPRequestHandler):
                             or "ALERTE" in str(_a.get("status", ""))):
                         for _k in ("prospect_email", "from"):
                             _v = str(_a.get(_k) or "").lower().strip()
-                            if _v:
-                                _have.add(_v)
+                            if _v and _v not in _have:
+                                _have[_v] = _a
+
+            def _foreign_tokens(_a: dict) -> bool:
+                _blob = (f"{_a.get('status', '')} {_a.get('subject', '')} "
+                         f"{_a.get('response', '')} {_a.get('intent', '')}").lower()
+                return any(t in _blob for t in (
+                    "linkedin", "cookies manquants", "prospect_perso",
+                    "prospect-perso"))
             _dism = kvstore.get_dismissed_alerts() or set()
             _names = {c.get("id"): c.get("name") for c in (kvstore.get_clients() or [])}
             # Compte visé, sinon tous : le compte principal puis chaque espace.
@@ -3262,6 +3272,26 @@ class handler(BaseHTTPRequestHandler):
                                     continue
                                 if _em in _have:
                                     _skip += 1
+                                    # POURQUOI elle ne s'affiche pas : on sort la
+                                    # fiche de l'alerte trouvée, telle quelle.
+                                    _ex = _have[_em]
+                                    _exid = (f"{_ex.get('at', '')}|"
+                                             f"{(_ex.get('from') or '').lower()}")
+                                    _pq = []
+                                    if _exid in _dism:
+                                        _pq.append("masquée par ✕")
+                                    if _foreign_tokens(_ex):
+                                        _pq.append("écartée par le filtre "
+                                                   "linkedin/prospect_perso")
+                                    _pq.append(
+                                        f"client_id={_ex.get('client_id')!r} · "
+                                        f"intent={_ex.get('intent')!r} · "
+                                        f"statut={str(_ex.get('status', ''))[:40]!r} · "
+                                        f"du {str(_ex.get('at', ''))[:16]}")
+                                    if len(_diag) < 24:
+                                        _diag.append(
+                                            f"&nbsp;&nbsp;↳ {html.escape(_em)} : "
+                                            + html.escape(" — ".join(_pq)))
                                     continue
                                 _thr = _mr2.get_prospect_thread(_p.prospect_id)
                                 _reps = sorted(
