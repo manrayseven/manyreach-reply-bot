@@ -1469,6 +1469,47 @@ def main() -> int:
                         classification, intent="ask_more_info",
                         confidence=max(classification.confidence, 0.8),
                     )
+                # RÉPONSES AUTO : WEBMARKETING CONSEIL UNIQUEMENT (Rudy 19/10).
+                # Un prospect de l'espace Laeris a reçu le modèle de Webmarketing
+                # Conseil — growpulser, growposter, refonte de site. Faire la
+                # promotion des offres de Rudy depuis l'espace d'un CLIENT est
+                # inacceptable : le client parle à SES prospects, pas aux nôtres.
+                # Tant qu'un espace n'a pas son propre modèle validé par Rudy, il
+                # n'envoie plus rien. Les pistes continuent de remonter en alerte
+                # (ALERT_ONLY passe), les bounces restent gérés par leur branche,
+                # et les négatifs deviennent simplement silencieux.
+                _is_wc = not space_id and not (
+                    active_client and not active_client.get("is_default"))
+                if (not _is_wc
+                        and classification.intent not in ALERT_ONLY
+                        and classification.intent not in ALWAYS_SILENT):
+                    _space_lbl = space_id or (active_client or {}).get("id") or "?"
+                    print(f"  >> ESPACE {_space_lbl} — pas de réponse auto hors "
+                          f"Webmarketing Conseil ({classification.intent})")
+                    log_entry["intent"] = classification.intent
+                    log_entry["actions"] = [f"silent (espace {_space_lbl} : pas de "
+                                            f"modèle propre, aucun envoi)"]
+                    logf.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
+                    if kvstore and kvstore.kv_available():
+                        kvstore.log_action({
+                            "at": now_utc.isoformat(),
+                            "from": reply.from_email,
+                            "subject": reply.subject,
+                            "intent": classification.intent,
+                            "status": f"silencieux (espace {_space_lbl} — pas de "
+                                      f"réponse auto hors Webmarketing Conseil)",
+                            "reply": _trim_quoted_history(_strip_html(reply.body))[:500],
+                            "response": "(aucun envoi : cet espace n'a pas encore "
+                                        "son modèle de réponse)",
+                            "prospect_email": (prospect.email if prospect else None),
+                            "client_id": (active_client or {}).get("id") or space_id,
+                            "client_name": (active_client or {}).get("name"),
+                        })
+                    if not dry_run:
+                        _mark_done(reply.message_id)
+                    skipped_count += 1
+                    return
+
                 print(f"    key_phrase: {_short(classification.key_phrase, 120)}")
                 if classification.redirected_to:
                     print(f"    redirected_to: {classification.redirected_to}")
