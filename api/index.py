@@ -1061,7 +1061,7 @@ def _render(client_filter: str | None = None) -> str:
         elif "envoyé" in status:
             sent_list.append(a)
         elif intent in ("run_now", "diagnose", "manual_reply", "monthly_report",
-                         "handoff", "test_resend", "retry_alerts"):
+                         "handoff", "test_resend", "retry_alerts", "recover_report"):
             # actions manuelles / diagnostics (+ vieux intents Resend obsolètes
             # encore présents dans le log) → ne pas polluer les compteurs
             pass
@@ -1318,7 +1318,7 @@ def _render(client_filter: str | None = None) -> str:
     report_entry = None
     for a in actions_full:
         _rid = f"{a.get('at', '')}|{(a.get('from') or '').lower()}"
-        if (a.get("intent") in ("monthly_report", "handoff_report")
+        if (a.get("intent") in ("monthly_report", "handoff_report", "recover_report")
                 and _rid not in dismissed   # fermé par Rudy → on ne l'affiche plus
                 and (not sel_client or a.get("client_id") == sel_client)):
             report_entry = a
@@ -1386,8 +1386,11 @@ def _render(client_filter: str | None = None) -> str:
             "w.document.close();w.focus();setTimeout(function(){w.print();},400);"
         )
         _is_handoff = report_entry.get("intent") == "handoff_report"
-        _icon = "🤝" if _is_handoff else "📊"
-        _hint = ("Colle-le dans un email à ton client, ou imprime-le en PDF."
+        _is_recover = report_entry.get("intent") == "recover_report"
+        _icon = "🔎" if _is_recover else ("🤝" if _is_handoff else "📊")
+        _hint = ("Résultat du rattrapage, compte par compte."
+                 if _is_recover else
+                 "Colle-le dans un email à ton client, ou imprime-le en PDF."
                  if _is_handoff else
                  "Colle-le dans un email à ton client (Gmail garde la mise en "
                  "forme). Tu peux ajuster avant d'envoyer.")
@@ -3131,7 +3134,8 @@ class handler(BaseHTTPRequestHandler):
             }
             _wk4 = _wak4()
             _cid_t = (form.get("client_id") or "").strip()
-            _post_client = _cid_t or _post_client
+            # Pas de bascule d'onglet : Rudy veut rester où il est (19/10).
+            _diag: list[str] = []
             # Déjà alertés = on ne recrée rien pour eux (on regarde les ALERTES,
             # pas tout le journal : un prospect peut avoir une ligne "silencieux"
             # et pourtant aucune alerte — c'est exactement le cas à rattraper).
@@ -3157,27 +3161,50 @@ class handler(BaseHTTPRequestHandler):
             for _tc in _targets:
                 if _done_n >= _MAXREC:
                     break
+                _lbl = _names.get(_tc) or _tc or "Compte principal"
+                _scan = _skip = _norep = 0
                 try:
+                    # Un ESPACE a sa propre clé API : sans elle on lirait les
+                    # données du compte principal et on les étiquetterait au nom
+                    # de l'espace. On le dit au lieu de produire du faux.
+                    if _tc and _tc not in _wk4 and not any(
+                            c.get("id") == _tc and c.get("is_default")
+                            for c in (kvstore.get_clients() or [])):
+                        _diag.append(f"<b>{html.escape(_lbl)}</b> : aucune clé API "
+                                     f"d'espace (variable MANYREACH_API_KEY_"
+                                     f"{html.escape(str(_tc).upper())} absente) — "
+                                     f"rien à relire.")
+                        continue
                     _key = _wk4.get(_tc) if _tc else None
                     _m2 = (_MRC2(api_key=_key, timeout=8.0) if _key
                            else _MRC2(timeout=8.0))
                     with _m2 as _mr2:
                         _lead_tags = [t for t in _mr2.list_tags()
                                       if t.title in _tag2intent]
+                        if not _lead_tags:
+                            _diag.append(f"<b>{html.escape(_lbl)}</b> : aucun tag de "
+                                         f"piste sur ce compte — le bot n'y a encore "
+                                         f"classé aucune réponse en lead.")
+                            continue
                         for _tg in _lead_tags:
                             if _done_n >= _MAXREC:
                                 break
                             for _p in _mr2.prospects_by_tag(_tg.tag_id, max_pages=1):
                                 if _done_n >= _MAXREC:
                                     break
+                                _scan += 1
                                 _em = (_p.email or "").lower().strip()
-                                if not _em or _em in _have:
+                                if not _em:
+                                    continue
+                                if _em in _have:
+                                    _skip += 1
                                     continue
                                 _thr = _mr2.get_prospect_thread(_p.prospect_id)
                                 _reps = sorted(
                                     [x for x in _thr if x.type == "Reply"],
                                     key=lambda x: x.created_at)
                                 if not _reps:
+                                    _norep += 1
                                     continue
                                 _last = _reps[-1]
                                 _aid = f"{_last.created_at.isoformat()}|{_em}"
@@ -3208,16 +3235,37 @@ class handler(BaseHTTPRequestHandler):
                                 kvstore.mark_alerted(_p.email)
                                 _have.add(_em)
                                 _done_n += 1
+                    _diag.append(
+                        f"<b>{html.escape(_lbl)}</b> : {_scan} fiche(s) avec un tag "
+                        f"de piste examinée(s) — {_skip} avaient déjà une alerte, "
+                        f"{_norep} sans réponse exploitable.")
                 except Exception as _e:  # noqa: BLE001
-                    _errs.append(f"{_tc or 'principal'}: {str(_e)[:120]}")
+                    _errs.append(f"{_lbl} : {str(_e)[:160]}")
+                    _diag.append(f"<b>{html.escape(_lbl)}</b> : ❌ "
+                                 f"{html.escape(str(_e)[:160])}")
             _st = (f"🔎 Rattrapage : {_done_n} alerte(s) reconstruite(s)"
                    + (f" — erreurs {'; '.join(_errs)}" if _errs else ""))
+            # Compte rendu AFFICHÉ (19/10) : la première version ne logait qu'une
+            # ligne invisible dans le journal — Rudy a cliqué, rien ne bougeait et
+            # rien n'expliquait pourquoi. Le détail par compte sort maintenant
+            # dans la carte de rapport du dashboard.
+            _diag_html = (
+                '<div style="font-family:Arial,Helvetica,sans-serif;max-width:680px">'
+                f'<p style="font-size:15px"><b>{_done_n} alerte(s) reconstruite(s)</b>'
+                '</p><ul style="font-size:14px;line-height:1.7">'
+                + "".join(f"<li>{d}</li>" for d in _diag)
+                + '</ul><p style="font-size:13px;color:#6b6457">Une fiche « avait '
+                'déjà une alerte » n\'est jamais recréée : si elle n\'apparaît pas '
+                'dans la liste, c\'est que l\'alerte existe mais ne s\'affiche pas — '
+                'dis-le-moi, c\'est un autre problème.</p></div>'
+            )
             if kvstore.kv_available():
                 kvstore.log_action({
                     "at": _dt.now(_tz.utc).isoformat(),
-                    "from": "", "subject": "🔎 Rattraper les alertes manquantes",
-                    "intent": "manual_reply" if not _errs else "error",
-                    "status": _st, "reply": "", "response": "",
+                    "from": "", "subject": "🔎 Rattrapage des alertes manquantes",
+                    "intent": "recover_report",
+                    "status": _st, "reply": "", "response": _diag_html,
+                    "client_id": _cid_t or None,
                 })
         elif action == "handoff_report":
             # Compte rendu des MISES EN RELATION d'un compte (Rudy 01/10) :
