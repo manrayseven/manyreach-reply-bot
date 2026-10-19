@@ -2957,14 +2957,28 @@ class handler(BaseHTTPRequestHandler):
             from datetime import datetime as _dt, timezone as _tz
             diag_email = (form.get("only_email") or "").strip().lower()
             diag_result = ""
+            # TOUS LES COMPTES (Rudy 19/10). Le diagnostic n'interrogeait QUE le
+            # compte principal : cherchant trois prospects de l'espace Laeris, il
+            # a trouvé leurs homonymes de Webmarketing Conseil (mêmes adresses,
+            # fiches différentes) et répondu sur celles-là — « Reply : aucun »,
+            # exact pour le mauvais compte. On balaie donc le principal ET chaque
+            # espace, et on dit à chaque ligne de quel compte elle parle.
+            _diag_lines: list[str] = []
             if diag_email:
-                try:
-                    from src.manyreach import ManyReachClient
-                    with ManyReachClient() as mr:
-                        prospect = mr.find_prospect_by_email(diag_email)
-                        if not prospect:
-                            diag_result = f"❌ {diag_email} introuvable dans ManyReach (pas de prospect avec cet email)"
-                        else:
+                from src.manyreach import ManyReachClient, workspace_api_keys as _wak5
+                _wk5 = _wak5()
+                _names5 = {c.get("id"): c.get("name")
+                           for c in (kvstore.get_clients() or [])}
+                for _acc in [None] + sorted(_wk5):
+                    _lbl5 = (_names5.get(_acc) or _acc) if _acc else "Compte principal"
+                    try:
+                        _k5 = _wk5.get(_acc) if _acc else None
+                        _c5 = (ManyReachClient(api_key=_k5, timeout=8.0) if _k5
+                               else ManyReachClient(timeout=8.0))
+                        with _c5 as mr:
+                            prospect = mr.find_prospect_by_email(diag_email)
+                            if not prospect:
+                                continue
                             thread = mr.get_prospect_thread(prospect.prospect_id)
                             replies = sorted([m for m in thread if m.type == "Reply"], key=lambda m: m.created_at)
                             sents = sorted([m for m in thread if m.type in ("Sent", "SentManual")], key=lambda m: m.created_at)
@@ -2973,7 +2987,13 @@ class handler(BaseHTTPRequestHandler):
                             sent_after_reply = bool(last_reply and last_sent and last_sent.created_at > last_reply.created_at)
                             kv_processed = False
                             if last_reply and kvstore.kv_available():
-                                kv_processed = kvstore.is_kv_processed(last_reply.message_id)
+                                # Dans un ESPACE la clé d'idempotence est
+                                # préfixée (cf. _pid de run_bot) : sans le
+                                # préfixe, le diagnostic répondait toujours
+                                # « KVprocessed=non » pour un espace.
+                                _mid5 = last_reply.message_id
+                                kv_processed = kvstore.is_kv_processed(
+                                    f"{_acc}:{_mid5}" if _acc else _mid5)
                             # Le bot ne SAUTE que sur un statut TERMINAL (cf.
                             # run_bot : Unsub / Hostile). Il ne filtre PAS sur
                             # Interested/MeetingBooked/etc. — la liste "statuts
@@ -2993,8 +3013,8 @@ class handler(BaseHTTPRequestHandler):
                                 reasons.append(f"⛔ KV processed (déjà traité dans un run précédent)")
                             if not reasons:
                                 reasons.append("✅ Devrait être traité au prochain cron (5 min)")
-                            diag_result = (
-                                f"{diag_email} (id={prospect.prospect_id}) | "
+                            _diag_lines.append(
+                                f"[{_lbl5}] {diag_email} (id={prospect.prospect_id}) | "
                                 f"statut={prospect.sending_status} sendingActive={prospect.sending_active} | "
                                 f"Reply: {last_reply.created_at.isoformat() if last_reply else 'aucun'} | "
                                 f"Sent: {last_sent.created_at.isoformat() if last_sent else 'aucun'} | "
@@ -3002,8 +3022,14 @@ class handler(BaseHTTPRequestHandler):
                                 f"KVprocessed={'OUI' if kv_processed else 'non'} | "
                                 f"→ {' / '.join(reasons)}"
                             )
-                except Exception as e:  # noqa: BLE001
-                    diag_result = f"❌ Erreur diagnostic : {str(e)[:200]}"
+                    except Exception as e:  # noqa: BLE001
+                        _diag_lines.append(f"[{_lbl5}] ❌ {str(e)[:150]}")
+                if _diag_lines:
+                    diag_result = "\n".join(_diag_lines)
+                else:
+                    _ws5 = ", ".join(sorted(_wk5)) or "aucun espace configuré"
+                    diag_result = (f"❌ {diag_email} introuvable — ni dans le compte "
+                                   f"principal, ni dans les espaces ({_ws5})")
             else:
                 diag_result = "❌ email vide"
             if kvstore.kv_available():
@@ -3012,7 +3038,10 @@ class handler(BaseHTTPRequestHandler):
                     "from": "(diagnostic)",
                     "subject": f"📋 Diag {diag_email}",
                     "intent": "diagnose",
-                    "status": diag_result[:400],
+                    # Plusieurs comptes = plusieurs lignes : on les garde toutes
+                    # dans le statut (sur une ligne), sinon le diagnostic d'un
+                    # espace etait coupe par la troncature.
+                    "status": diag_result.replace("\n", "   •   ")[:900],
                     "reply": "",
                     "response": diag_result,
                 })
