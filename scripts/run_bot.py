@@ -183,7 +183,10 @@ _OPEN_DOOR_RE = re.compile(
     # « proposition » est volontairement absent : « merci pour votre proposition,
     # mais… » est une formule de REFUS, pas une ouverture.
     r"|tarif|devis|partenariat|collaborat"
-    r"|envoyez-?(moi|nous)|transmettez|faites-?moi parvenir"
+    r"|envoyez-?(moi|nous)|adress(er|ez)[- ]?(moi|nous)?|transmettez"
+    r"|faites?[- ](moi|nous) parvenir|faire parvenir"
+    r"|plaquette|brochure|documentation|catalogue|pr[ée]sentation"
+    r"|recontact|reprendr(ons|ai|a) contact"
     r"|je suis int[ée]ress|nous sommes int[ée]ress|[çc]a m'int[ée]resse"
     # ACCROCHE DU MODÈLE (Rudy 16/10) : le modèle de clôture se termine désormais
     # par « voudriez-vous voir ce que cela pourrait donner ? ». Les « oui » à
@@ -726,6 +729,17 @@ def main() -> int:
                 continue
             try:
                 if is_bounce_or_auto(_r):
+                    continue
+                # DANS UN ESPACE : toute réponse humaine est prioritaire, sans
+                # condition (Rudy 19/10, cas animation.vablc). « Vous pouvez nous
+                # adresser votre plaquette » est une demande limpide, mais aucun
+                # mot-clé ne la reconnaissait — elle est restée 30 min derrière
+                # des centaines d'avis de non-remise. Faire dépendre une piste
+                # d'une liste de mots est perdu d'avance ; un espace reçoit si
+                # peu de vraies réponses (20 sur 600 chez Laeris) qu'on peut
+                # toutes les traiter en priorité, sans trier.
+                if space_id:
+                    _lead_mids.add(_k)
                     continue
                 _txt = _trim_quoted_history(_strip_html(_r.body or ""))[:800]
                 if _txt and _OPEN_DOOR_RE.search(_txt):

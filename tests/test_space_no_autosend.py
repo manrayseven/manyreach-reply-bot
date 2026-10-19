@@ -62,6 +62,31 @@ def test_le_garde_fou_deterministe_existe_dans_la_boucle():
     assert i < src.index("draft = fixed_draft(")
 
 
+def test_dans_un_espace_toute_reponse_humaine_est_prioritaire():
+    """Rudy 19/10, cas animation.vablc : « Vous pouvez nous adresser votre
+    plaquette » est une demande limpide, mais aucun mot-clé ne la reconnaissait.
+    Elle est restée 30 minutes derrière des centaines d'avis de non-remise.
+    Dans un espace, la priorité ne dépend donc plus du vocabulaire.
+    """
+    src = (ROOT / "scripts" / "run_bot.py").read_text(encoding="utf-8")
+    i = src.index("DANS UN ESPACE : toute réponse humaine est prioritaire")
+    bloc = src[i:i + 900]
+    assert "if space_id:" in bloc and "_lead_mids.add(_k)" in bloc
+    # Les bounces restent exclus — sinon la priorité ne veut plus rien dire.
+    assert "is_bounce_or_auto" in src[max(0, i - 400):i]
+
+    # Le vocabulaire reste utile pour le compte principal : la demande de
+    # documentation doit y être reconnue.
+    from run_bot import _OPEN_DOOR_RE  # noqa: PLC0415
+    for msg in (
+        "Vous pouvez nous adresser votre plaquette et le cas échéant nous "
+        "reprendrons contact avec vous.",
+        "Merci de me faire parvenir votre documentation",
+        "Envoyez-nous votre brochure",
+    ):
+        assert _OPEN_DOOR_RE.search(msg), msg
+
+
 def test_toutes_les_touches_d_un_espace_remontent_en_alerte():
     """Rudy 19/10 : « je voudrais que pour la suite tu remontes bien toutes les
     touches ». Puisqu'un espace n'envoie plus rien, le silence ferait disparaître
