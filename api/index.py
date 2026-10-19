@@ -3203,6 +3203,17 @@ class handler(BaseHTTPRequestHandler):
                 _t: _i for _i in _AO
                 for _t in (_IPU.get(_i) or (None, None, []))[2]
             }
+            # ESPACES : toutes les touches, pas seulement les pistes (Rudy 19/10).
+            # Un espace n'envoie plus rien ; un refus poli y était donc traité en
+            # silence et devenait invisible (aubergecusance, plachaise,
+            # commande.vetc.lancry, classés bot:not-interested avant le
+            # correctif). On rattrape donc TOUS les tags du bot sauf ceux qui
+            # doivent rester muets.
+            _MUETS = ("unsubscribe", "hostile", "bounce_or_auto")
+            _tag2intent_espace = {
+                _t: _i for _i, _v in _IPU.items() if _i not in _MUETS
+                for _t in (_v[2] or [])
+            }
             _wk4 = _wak4()
             _cid_t = (form.get("client_id") or "").strip()
             # Pas de bascule d'onglet : Rudy veut rester où il est (19/10).
@@ -3262,8 +3273,12 @@ class handler(BaseHTTPRequestHandler):
                     _m2 = (_MRC2(api_key=_key, timeout=8.0) if _key
                            else _MRC2(timeout=8.0))
                     with _m2 as _mr2:
+                        # Sur un espace on ratisse toutes les touches ; sur le
+                        # compte principal, seulement les pistes (sinon on
+                        # remonterait des centaines de refus déjà répondus).
+                        _map2 = _tag2intent_espace if _tc else _tag2intent
                         _lead_tags = [t for t in _mr2.list_tags()
-                                      if t.title in _tag2intent]
+                                      if t.title in _map2]
                         if not _lead_tags:
                             _diag.append(f"<b>{html.escape(_lbl)}</b> : aucun tag de "
                                          f"piste sur ce compte — le bot n'y a encore "
@@ -3341,7 +3356,7 @@ class handler(BaseHTTPRequestHandler):
                                     "at": _last.created_at.isoformat(),
                                     "from": _p.email,
                                     "subject": _last.subject,
-                                    "intent": _tag2intent.get(_tg.title, "ask_more_info"),
+                                    "intent": _map2.get(_tg.title, "ask_more_info"),
                                     "status": "🔔 ALERTE — rattrapée depuis ManyReach",
                                     "reply": _tq(_sh(_last.body or ""))[:2000],
                                     "response": "(alerte reconstruite : le bot avait "
