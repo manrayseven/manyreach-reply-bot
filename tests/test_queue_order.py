@@ -78,6 +78,32 @@ def test_lead_sweep_is_listed_and_served_first():
         assert f'"{st}"' in mr, st
 
 
+def test_pistes_reperees_au_texte_quand_manyreach_ne_classe_rien():
+    """Rudy 19/10, espace Laeris : 954 réponses, et ManyReach n'en classe AUCUNE
+    (Interested = 0, Neutral = 0). Le balayage par statut — qui protège les leads
+    du compte principal — n'y sert donc à rien, et la file était noyée sous les
+    avis de non-remise. La détection au texte doit prendre le relais, sans appel
+    API supplémentaire.
+    """
+    src = (ROOT / "scripts" / "run_bot.py").read_text(encoding="utf-8")
+    # Le repérage au texte existe, utilise le même détecteur de porte ouverte,
+    # et écarte les bounces (sinon un avis de non-remise passerait en tête).
+    i_text = src.index("PISTES REPÉRÉES AU TEXTE")
+    bloc = src[i_text:i_text + 1400]
+    assert "_OPEN_DOOR_RE.search" in bloc, "detection au texte sans porte ouverte"
+    assert "is_bounce_or_auto" in bloc, "les bounces ne sont pas ecartes"
+    assert "_lead_mids.add" in bloc, "les pistes ne rejoignent pas la tete de file"
+    # …et il doit s'exécuter AVANT la construction de la file des leads.
+    assert i_text < src.index("_lead_queue = _interleave_fresh")
+
+    # Le message réel qui a été manqué doit être reconnu.
+    from run_bot import _OPEN_DOOR_RE  # noqa: PLC0415
+    assert _OPEN_DOOR_RE.search(
+        "Bonjour Rudy, Nous allons sûrement prévoir un évènement pour Noël dans "
+        "l'après-midi. Je veux bien avoir votre plaquette mais nous aurons "
+        "sûrement une limite de budget. Je vous remercie.")
+
+
 def test_dedup_keeps_one_entry_per_reply():
     """Le balayage et le listing par récence se recouvrent : sans déduplication,
     la même réponse serait traitée deux fois (deuxième envoi au même prospect).

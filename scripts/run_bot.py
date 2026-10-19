@@ -711,6 +711,28 @@ def main() -> int:
         # « leads » passent devant tout le reste. Un négatif de plus ou de moins
         # dans la journée ne change rien ; un « Demain 11h ? » qui attend, oui.
         # Eux aussi en alternance récente/ancienne : les deux bouts avancent.
+        # PISTES REPÉRÉES AU TEXTE (Rudy 19/10, espace Laeris).
+        # Le balayage par statut ne protège les leads que si ManyReach classe les
+        # réponses. Dans Laeris il n'en classe AUCUNE : sur 954 réponses,
+        # Interested = 0 et Neutral = 0. La file n'était donc triée que par
+        # fraîcheur — et noyée sous les avis de non-remise des expéditeurs
+        # bloqués. Un « je veux bien votre plaquette » attendait derrière des
+        # centaines de bounces, avec une seule itération lourde par passage.
+        # On repère donc les pistes sur le TEXTE du reply, déjà présent dans la
+        # liste : zéro appel API, et ça marche sans l'aide de ManyReach.
+        for _r in _replies:
+            _k = _pid(_r.message_id)
+            if _k in _lead_mids:
+                continue
+            try:
+                if is_bounce_or_auto(_r):
+                    continue
+                _txt = _trim_quoted_history(_strip_html(_r.body or ""))[:800]
+                if _txt and _OPEN_DOOR_RE.search(_txt):
+                    _lead_mids.add(_k)
+            except Exception:  # noqa: BLE001
+                continue
+
         _lead_queue: list = []
         if _lead_mids:
             _lead_queue = _interleave_fresh(sorted(
