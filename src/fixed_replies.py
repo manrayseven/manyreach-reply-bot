@@ -112,6 +112,29 @@ _AMBIGUITY_CUES = (
 
 _AFFIRMATIVE_RE = re.compile(r"\b(oui|ok|okay|d'accord|daccord|volontiers|avec plaisir)\b")
 
+# « NON » SEC (Rudy 22/10, cas antoine@victorie-music.com). Le prospect répond
+# « Non », rien d'autre. Aucun marqueur de _CLEAR_NO ne correspond (« non merci »,
+# « pas intéressé »…), donc le garde-fou anti-devinette renvoyait ça en ALERTE —
+# et le bot l'avait même classé « demande d'infos ». Rudy : « quand vraiment le
+# mec dit non, ne me fais pas remonter l'alerte, fais juste le process
+# automatique not interested et réponse auto ».
+# On retire les formules de politesse : s'il ne reste QUE le mot de refus, c'est
+# un refus, pas une ambiguïté.
+_POLITESSE_RE = re.compile(
+    r"\b(bonjour|bonsoir|madame|monsieur|messieurs|mesdames|merci|cordialement|"
+    r"salutations|sincerement|sincèrement|respectueusement|"
+    r"bonne (journee|journée|soiree|soirée|continuation|reception|réception)|"
+    r"desole|desolee|désolé|désolée|desoles|désolés)\b")
+
+
+def _is_bare_no(low: str) -> bool:
+    """True si le message se réduit à « non » une fois la politesse retirée."""
+    if "?" in (low or ""):
+        return False   # une question reste une question, jamais un refus sec
+    txt = _POLITESSE_RE.sub(" ", low or "")
+    txt = re.sub(r"[^a-zàâäéèêëîïôöùûüç]+", " ", txt).strip()
+    return txt in ("non", "no", "nan", "non non", "non non non")
+
 MAX_QUICK_LEN = 300
 
 
@@ -131,6 +154,10 @@ def quick_intent(clean_body: str, subject: str = "") -> str | None:
     if is_stop_signal(body, subject):
         return "unsubscribe"
     low = _norm(body)
+    # Un « non » sec passe AVANT les garde-fous d'ambiguïté : il n'y a rien à
+    # interpréter, et c'est justement ce qui le faisait remonter en alerte.
+    if _is_bare_no(low):
+        return "not_interested_polite"
     if len(low) > MAX_QUICK_LEN:
         return None
     if not any(m in low for m in _CLEAR_NO):

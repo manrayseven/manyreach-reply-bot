@@ -54,7 +54,12 @@ from src.classifier import Classifier, _strip_html, _trim_quoted_history, is_sto
 from src.conversation import build_history  # noqa: E402
 from src import clients as _clients  # noqa: E402
 from src.drafter import Drafter  # noqa: E402
-from src.fixed_replies import fixed_draft, quick_classification, quick_intent  # noqa: E402
+from src.fixed_replies import (  # noqa: E402
+    _is_bare_no,
+    fixed_draft,
+    quick_classification,
+    quick_intent,
+)
 from src.manyreach import (  # noqa: E402
     ManyReachClient,
     detect_antispam_challenge,
@@ -1372,7 +1377,13 @@ def main() -> int:
                         and len(_clean_body) < 250
                         and re.search(r"\b(pas|non|aucun|rien|jamais)\b", _cl) is not None
                     )
-                    _clear_no = len(_clean_body) >= 4 and (_has_marker or _short_confident_no)
+                    # « NON » SEC (Rudy 22/10, antoine@victorie-music.com) : le
+                    # message fait 3 caractères, le seuil en exigeait 4 — un refus
+                    # on ne peut plus net repartait donc en ALERTE, et le bot
+                    # l'avait même étiqueté « demande d'infos ». Rudy : « quand
+                    # vraiment le mec dit non, ne me fais pas remonter l'alerte ».
+                    _clear_no = _is_bare_no(_cl) or (
+                        len(_clean_body) >= 4 and (_has_marker or _short_confident_no))
                     if not _clear_no:
                         print("  ⚠️ not_interested SANS refus clair (msg ambigu/vide) → ALERTE (pas de réponse auto au pif)")
                         classification = _dc_replace(
