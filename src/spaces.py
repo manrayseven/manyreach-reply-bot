@@ -78,7 +78,16 @@ def run_spaces(
             if left < MIN_SLICE_S:
                 result["spaces"][space] = "reporte (budget temps)"
                 continue
-            os.environ["RUN_BUDGET_SECONDS"] = str(int(min(20.0, left)))
+            # PART ÉGALE (Rudy 30/10). Avant, le premier espace prenait 20 s et
+            # le second ressortait « reporte (budget temps) » : meme avec la
+            # rotation, chacun n'etait servi qu'un tour sur deux, soit une seule
+            # reponse traitee par heure. Un prospect de Laeris attendait donc
+            # jusqu'a une heure pour remonter. On partage desormais le budget
+            # entre les espaces RESTANTS : deux espaces = ~13 s chacun, ce qui
+            # tient au-dessus de MIN_SLICE_S et les sert TOUS a chaque tour.
+            _restants = len(spaces) - spaces.index(space)
+            _part = max(MIN_SLICE_S, left / max(1, _restants))
+            os.environ["RUN_BUDGET_SECONDS"] = str(int(min(20.0, _part)))
             sys.argv = [
                 "run_bot",
                 "--no-dry-run",

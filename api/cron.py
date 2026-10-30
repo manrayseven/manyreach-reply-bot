@@ -23,7 +23,10 @@ sys.path.insert(0, str(ROOT / "scripts"))
 # sur le budget du passage principal : ajouter un passage APRES coup ferait
 # depasser le timeout de 30 s du cron externe. On dedie donc un tour entier aux
 # espaces plutot que de partager l'enveloppe.
-SPACES_EVERY_MIN = float(os.environ.get("SPACES_EVERY_MIN", "30"))
+# 30 -> 20 (Rudy 30/10) : combine au partage egal du budget (src/spaces.py),
+# chaque espace est desormais servi toutes les ~20 min au lieu d'une fois par
+# heure. Le compte principal perd un tour sur quatre environ.
+SPACES_EVERY_MIN = float(os.environ.get("SPACES_EVERY_MIN", "20"))
 CRON_ENVELOPE_S = 26.0    # enveloppe totale visee (cron externe : timeout 30 s)
 
 
