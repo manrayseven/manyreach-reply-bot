@@ -3250,7 +3250,7 @@ class handler(BaseHTTPRequestHandler):
                 _targets = [_cid_t]
             else:
                 _targets = [None] + sorted(_wk4)
-            _MAXREC = int(os.environ.get("RECOVER_ALERTS_MAX", "15"))
+            _MAXREC = int(os.environ.get("RECOVER_ALERTS_MAX", "30"))
             _done_n, _errs = 0, []
             for _tc in _targets:
                 if _done_n >= _MAXREC:
@@ -3284,98 +3284,110 @@ class handler(BaseHTTPRequestHandler):
                                          f"piste sur ce compte — le bot n'y a encore "
                                          f"classé aucune réponse en lead.")
                             continue
+                        # DU PLUS RÉCENT AU PLUS ANCIEN (Rudy 30/10, cas Le Prieuré
+                        # de Beaupré). On ne lisait qu'UNE page de 30 fiches par
+                        # tag, servies de la plus ancienne à la plus récente : le
+                        # prospect le plus récent de l'espace — justement celui
+                        # qu'on cherche — tombait hors de portée. On ramasse donc
+                        # plusieurs pages, puis on traite les ids décroissants.
+                        _cands: list = []
+                        _vus: set = set()
                         for _tg in _lead_tags:
+                            for _p0 in _mr2.prospects_by_tag(_tg.tag_id, max_pages=4):
+                                if _p0.prospect_id in _vus:
+                                    continue
+                                _vus.add(_p0.prospect_id)
+                                _cands.append((_tg, _p0))
+                        _cands.sort(key=lambda t: t[1].prospect_id, reverse=True)
+                        for _tg, _p in _cands:
                             if _done_n >= _MAXREC:
                                 break
-                            for _p in _mr2.prospects_by_tag(_tg.tag_id, max_pages=1):
-                                if _done_n >= _MAXREC:
-                                    break
-                                _scan += 1
-                                _em = (_p.email or "").lower().strip()
-                                if not _em:
+                            _scan += 1
+                            _em = (_p.email or "").lower().strip()
+                            if not _em:
+                                continue
+                            if _em in _have:
+                                _skip += 1
+                                # MODE RESTAURATION (Rudy 19/10) : les quatre
+                                # alertes Laeris étaient en base, correctement
+                                # rattachées, mais MASQUÉES — alors qu'il ne
+                                # les avait jamais vues. Ce mode rouvre celles
+                                # dont le prospect porte encore un tag de
+                                # piste. Explicite, jamais automatique : Rudy
+                                # ferme aussi des alertes légitimement, et on
+                                # ne va pas lui ressortir tout son historique.
+                                if _restore:
+                                    _exr = _have[_em]
+                                    _exidr = (f"{_exr.get('at', '')}|"
+                                              f"{(_exr.get('from') or '').lower()}")
+                                    if _exidr in _dism:
+                                        try:
+                                            kvstore.restore_alert(_exidr)
+                                            _restored += 1
+                                            if len(_diag) < 24:
+                                                _diag.append(
+                                                    "&nbsp;&nbsp;↩ rouverte : "
+                                                    + html.escape(_em))
+                                        except Exception:  # noqa: BLE001
+                                            pass
                                     continue
-                                if _em in _have:
-                                    _skip += 1
-                                    # MODE RESTAURATION (Rudy 19/10) : les quatre
-                                    # alertes Laeris étaient en base, correctement
-                                    # rattachées, mais MASQUÉES — alors qu'il ne
-                                    # les avait jamais vues. Ce mode rouvre celles
-                                    # dont le prospect porte encore un tag de
-                                    # piste. Explicite, jamais automatique : Rudy
-                                    # ferme aussi des alertes légitimement, et on
-                                    # ne va pas lui ressortir tout son historique.
-                                    if _restore:
-                                        _exr = _have[_em]
-                                        _exidr = (f"{_exr.get('at', '')}|"
-                                                  f"{(_exr.get('from') or '').lower()}")
-                                        if _exidr in _dism:
-                                            try:
-                                                kvstore.restore_alert(_exidr)
-                                                _restored += 1
-                                                if len(_diag) < 24:
-                                                    _diag.append(
-                                                        "&nbsp;&nbsp;↩ rouverte : "
-                                                        + html.escape(_em))
-                                            except Exception:  # noqa: BLE001
-                                                pass
-                                        continue
-                                    # POURQUOI elle ne s'affiche pas : on sort la
-                                    # fiche de l'alerte trouvée, telle quelle.
-                                    _ex = _have[_em]
-                                    _exid = (f"{_ex.get('at', '')}|"
-                                             f"{(_ex.get('from') or '').lower()}")
-                                    _pq = []
-                                    if _exid in _dism:
-                                        _pq.append("masquée par ✕")
-                                    if _foreign_tokens(_ex):
-                                        _pq.append("écartée par le filtre "
-                                                   "linkedin/prospect_perso")
-                                    _pq.append(
-                                        f"client_id={_ex.get('client_id')!r} · "
-                                        f"intent={_ex.get('intent')!r} · "
-                                        f"statut={str(_ex.get('status', ''))[:40]!r} · "
-                                        f"du {str(_ex.get('at', ''))[:16]}")
-                                    if len(_diag) < 24:
-                                        _diag.append(
-                                            f"&nbsp;&nbsp;↳ {html.escape(_em)} : "
-                                            + html.escape(" — ".join(_pq)))
-                                    continue
-                                _thr = _mr2.get_prospect_thread(_p.prospect_id)
-                                _reps = sorted(
-                                    [x for x in _thr if x.type == "Reply"],
-                                    key=lambda x: x.created_at)
-                                if not _reps:
-                                    _norep += 1
-                                    continue
-                                _last = _reps[-1]
-                                _aid = f"{_last.created_at.isoformat()}|{_em}"
-                                if _aid in _dism:
-                                    continue
-                                _raw = _p.raw or {}
-                                kvstore.log_action({
-                                    "at": _last.created_at.isoformat(),
-                                    "from": _p.email,
-                                    "subject": _last.subject,
-                                    "intent": _map2.get(_tg.title, "ask_more_info"),
-                                    "status": "🔔 ALERTE — rattrapée depuis ManyReach",
-                                    "reply": _tq(_sh(_last.body or ""))[:2000],
-                                    "response": "(alerte reconstruite : le bot avait "
-                                                "classé cette réponse en piste)",
-                                    "prospect_id": _p.prospect_id,
-                                    "campaign_id": _last.campaign_id,
-                                    "prospect_email": _p.email,
-                                    "message_id": _last.message_id,
-                                    "client_id": _tc,
-                                    "client_name": _names.get(_tc),
-                                    "prospect_phone": _raw.get("phone"),
-                                    "company": _p.company or "",
-                                    "industry": _p.industry or "",
-                                    "job": _p.job_position or "",
-                                    "city": str(_raw.get("city") or ""),
-                                })
-                                kvstore.mark_alerted(_p.email)
-                                _have.add(_em)
-                                _done_n += 1
+                                # POURQUOI elle ne s'affiche pas : on sort la
+                                # fiche de l'alerte trouvée, telle quelle.
+                                _ex = _have[_em]
+                                _exid = (f"{_ex.get('at', '')}|"
+                                         f"{(_ex.get('from') or '').lower()}")
+                                _pq = []
+                                if _exid in _dism:
+                                    _pq.append("masquée par ✕")
+                                if _foreign_tokens(_ex):
+                                    _pq.append("écartée par le filtre "
+                                               "linkedin/prospect_perso")
+                                _pq.append(
+                                    f"client_id={_ex.get('client_id')!r} · "
+                                    f"intent={_ex.get('intent')!r} · "
+                                    f"statut={str(_ex.get('status', ''))[:40]!r} · "
+                                    f"du {str(_ex.get('at', ''))[:16]}")
+                                if len(_diag) < 24:
+                                    _diag.append(
+                                        f"&nbsp;&nbsp;↳ {html.escape(_em)} : "
+                                        + html.escape(" — ".join(_pq)))
+                                continue
+                            _thr = _mr2.get_prospect_thread(_p.prospect_id)
+                            _reps = sorted(
+                                [x for x in _thr if x.type == "Reply"],
+                                key=lambda x: x.created_at)
+                            if not _reps:
+                                _norep += 1
+                                continue
+                            _last = _reps[-1]
+                            _aid = f"{_last.created_at.isoformat()}|{_em}"
+                            if _aid in _dism:
+                                continue
+                            _raw = _p.raw or {}
+                            kvstore.log_action({
+                                "at": _last.created_at.isoformat(),
+                                "from": _p.email,
+                                "subject": _last.subject,
+                                "intent": _map2.get(_tg.title, "ask_more_info"),
+                                "status": "🔔 ALERTE — rattrapée depuis ManyReach",
+                                "reply": _tq(_sh(_last.body or ""))[:2000],
+                                "response": "(alerte reconstruite : le bot avait "
+                                            "classé cette réponse en piste)",
+                                "prospect_id": _p.prospect_id,
+                                "campaign_id": _last.campaign_id,
+                                "prospect_email": _p.email,
+                                "message_id": _last.message_id,
+                                "client_id": _tc,
+                                "client_name": _names.get(_tc),
+                                "prospect_phone": _raw.get("phone"),
+                                "company": _p.company or "",
+                                "industry": _p.industry or "",
+                                "job": _p.job_position or "",
+                                "city": str(_raw.get("city") or ""),
+                            })
+                            kvstore.mark_alerted(_p.email)
+                            _have[_em] = {}
+                            _done_n += 1
                     _diag.append(
                         f"<b>{html.escape(_lbl)}</b> : {_scan} fiche(s) avec un tag "
                         f"de piste examinée(s) — {_skip} avaient déjà une alerte, "
