@@ -220,7 +220,7 @@ Raison sales : ne pas balancer les tarifs avant d'avoir qualifié et obtenu un c
   Conciergerie **990 €/mois** (★ recommandée), Accélération **1 990 €/mois**.
   Mise en place **790 € une fois**, **offerte si engagement 3 mois**. Sans engagement =
   résiliable à tout moment, préavis 30 jours.
-- **② Système installé** — **2 990 € HT one-shot** (setup complet + formation), **pas
+- **② Système installé** — **1 990 € HT one-shot** (setup complet + formation), **pas
   d'abonnement ensuite**. Frais techniques en sus payés directement aux fournisseurs
   (domaines, collecte de contacts, crédits d'envoi) — ne pas détailler ces montants.
 - **③ Audit IA (offre Dev IA)** — **490 € HT tout compris** (2 appels + analyse + rapport
