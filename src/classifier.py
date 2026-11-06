@@ -12,6 +12,7 @@ from pathlib import Path
 import anthropic
 
 from .manyreach import Message
+from .llm_compat import HAIKU, accepts_temperature, options_for, text_of
 
 PROMPT_PATH = Path(__file__).parent / "prompts" / "classify.md"
 
@@ -233,7 +234,7 @@ class Classifier:
     def __init__(
         self,
         api_key: str | None = None,
-        model: str = "claude-haiku-4-5-20251001",
+        model: str = HAIKU,
     ):
         key = api_key or os.environ.get("ANTHROPIC_API_KEY")
         if not key:
@@ -299,9 +300,13 @@ class Classifier:
         # rien envoyé pendant ~40h (498 erreurs, silencieuses côté dashboard).
         # On réessaie donc SANS temperature plutôt que de laisser tomber le reply :
         # mieux vaut une classification non déterministe qu'un bot mort.
+        # Haiku 5.5 (nov. 2026) : temperature non par défaut = erreur 400, donc
+        # elle n'est envoyée qu'aux modèles qui l'acceptent. La stabilité vient de
+        # la réflexion coupée et du format JSON imposé par le prompt système.
         _kwargs = dict(
             model=self.model,
-            max_tokens=700,
+            max_tokens=900,  # +30 % de tokens pour le même texte sur Haiku 5.5
+            **options_for(self.model),
             system=[
                 {
                     "type": "text",
@@ -311,13 +316,16 @@ class Classifier:
             ],
             messages=[{"role": "user", "content": user_content}],
         )
-        try:
-            msg = self.client.messages.create(temperature=0, **_kwargs)
-        except TypeError as _e:  # SDK qui n'accepte plus `temperature`
-            if "temperature" not in str(_e):
-                raise
+        if not accepts_temperature(self.model):
             msg = self.client.messages.create(**_kwargs)
-        raw = msg.content[0].text.strip()
+        else:
+            try:
+                msg = self.client.messages.create(temperature=0, **_kwargs)
+            except TypeError as _e:  # SDK qui n'accepte plus `temperature`
+                if "temperature" not in str(_e):
+                    raise
+                msg = self.client.messages.create(**_kwargs)
+        raw = text_of(msg).strip()
         # Strip ```json fences if present
         if raw.startswith("```"):
             raw = re.sub(r"^```(?:json)?\s*", "", raw)

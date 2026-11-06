@@ -24,6 +24,8 @@ import json
 import re
 from typing import Any
 
+from .llm_compat import HAIKU, options_for, text_of
+
 # Un "client" = dict JSON-friendly. Champs :
 #   id            slug unique (ex. "rudy", "client-durand")
 #   name          nom affiché
@@ -179,7 +181,7 @@ def infer_client_llm(
     anthropic_client,
     clients: list[dict],
     original_outreach_text: str,
-    model: str = "claude-haiku-4-5-20251001",
+    model: str = HAIKU,
 ) -> tuple[str | None, float]:
     """Devine le client d'après le TEXTE du cold mail + les descriptions clients.
 
@@ -206,11 +208,12 @@ def infer_client_llm(
     try:
         msg = anthropic_client.messages.create(
             model=model,
-            max_tokens=120,
+            max_tokens=300,  # marge : +30 % de tokens sur Haiku 5.5
+            **options_for(model),
             system=sys,
             messages=[{"role": "user", "content": user}],
         )
-        raw = msg.content[0].text.strip()
+        raw = text_of(msg).strip()
         raw = re.sub(r"^```(?:json)?\s*", "", raw)
         raw = re.sub(r"\s*```\s*$", "", raw)
         data = json.loads(raw)

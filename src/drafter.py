@@ -6,6 +6,8 @@ import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
+
+from .llm_compat import HAIKU, options_for, text_of
 from typing import Any
 
 import anthropic
@@ -97,7 +99,7 @@ class Drafter:
         self.model = model
         # Modèle éco pour les intents simples (défaut Haiku 4.5). Override possible
         # via settings.yaml > models.drafter_simple.
-        self.simple_model = simple_model or "claude-haiku-4-5-20251001"
+        self.simple_model = simple_model or HAIKU
         self.system_prompt = PROMPT_PATH.read_text(encoding="utf-8")
 
     def draft(
@@ -233,10 +235,11 @@ Rédige maintenant la réponse selon les règles du system prompt et du style gu
         msg = self.client.messages.create(
             model=chosen_model,
             max_tokens=3000,
+            **options_for(chosen_model),
             system=system_blocks,
             messages=[{"role": "user", "content": user_content}],
         )
-        return self._parse(msg.content[0].text.strip())
+        return self._parse(text_of(msg).strip())
 
     def _parse(self, raw: str) -> Draft:
         """Parse la sortie JSON du modèle (tolérant) → Draft, + nettoyage tirets."""
@@ -307,7 +310,8 @@ Rédige maintenant la réponse selon les règles du system prompt et du style gu
         )
         msg = self.client.messages.create(
             model=self.simple_model,  # clôture simple → modèle éco
-            max_tokens=1200,
+            max_tokens=1500,  # marge : +30 % de tokens sur Haiku 5.5
+            **options_for(self.simple_model),
             system=[
                 {"type": "text", "text": sys_prompt, "cache_control": {"type": "ephemeral"}},
                 {
@@ -318,4 +322,4 @@ Rédige maintenant la réponse selon les règles du system prompt et du style gu
             ],
             messages=[{"role": "user", "content": user_content}],
         )
-        return self._parse(msg.content[0].text.strip())
+        return self._parse(text_of(msg).strip())

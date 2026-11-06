@@ -191,7 +191,8 @@ def test_classify_survives_sdk_without_temperature():
         def __init__(self):
             self.messages = _Messages()
 
-    c = Classifier()
+    # Le repli concerne les modèles qui acceptent temperature (Haiku 4.5 et avant).
+    c = Classifier(model="claude-haiku-4-5-20251001")
     c.client = _Client()
     reply = Message("m1", datetime.now(timezone.utc), "Reply", "1", None,
                     "p@x.fr", "r@x.fr", "Re: Question", "Non merci, pas interesse.")
@@ -199,6 +200,55 @@ def test_classify_survives_sdk_without_temperature():
     assert res.intent == "not_interested_polite"
     # 1er appel AVEC temperature (echoue), 2e SANS (reussit)
     assert c.client.messages.calls == [True, False], c.client.messages.calls
+
+
+def test_classify_haiku_5_5_sans_temperature_et_texte_apres_reflexion():
+    """Montée Haiku 5.5 (nov. 2026) : temperature non par défaut = erreur 400, et
+    la réponse peut commencer par un bloc de réflexion. Le classifier ne doit
+    jamais envoyer temperature à Haiku 5.5, doit couper la réflexion et lire le
+    bloc de type text, pas content[0]."""
+    import os
+    os.environ.setdefault("ANTHROPIC_API_KEY", "fake-for-test")
+    from datetime import datetime, timezone
+
+    from src.classifier import Classifier
+    from src.manyreach import Message
+
+    class _Thinking:
+        type = "thinking"
+        thinking = ""
+
+    class _Text:
+        type = "text"
+        text = ('{"intent":"not_interested_polite","confidence":0.95,'
+                '"key_phrase":"non merci","redirected_email":null,'
+                '"redirected_to":null,"language":"fr","reasoning":"t"}')
+
+    class _Msg:
+        content = [_Thinking(), _Text()]
+
+    class _Messages:
+        def __init__(self):
+            self.kwargs = []
+
+        def create(self, **kw):
+            self.kwargs.append(kw)
+            return _Msg()
+
+    class _Client:
+        def __init__(self):
+            self.messages = _Messages()
+
+    c = Classifier()
+    assert c.model == "claude-haiku-5-5"
+    c.client = _Client()
+    reply = Message("m1", datetime.now(timezone.utc), "Reply", "1", None,
+                    "p@x.fr", "r@x.fr", "Re: Question", "Non merci, pas interesse.")
+    res = c.classify(reply, original_outreach=None, previous_message="")
+    assert res.intent == "not_interested_polite"
+    kw = c.client.messages.kwargs[0]
+    assert "temperature" not in kw, kw
+    assert kw.get("thinking") == {"type": "disabled"}, kw
 
 
 if __name__ == "__main__":

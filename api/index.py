@@ -432,12 +432,13 @@ def _llm_report_sections(client: dict, g: dict, camp_names: dict | None = None) 
                 + "Detail par campagne :\n" + camp_txt)
         ca = anthropic.Anthropic(api_key=key, max_retries=2)
         msg = ca.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=600,
+            model="claude-haiku-5-5",
+            max_tokens=800,
+            thinking={"type": "disabled"},
             system=sys,
             messages=[{"role": "user", "content": user}],
         )
-        raw = msg.content[0].text.strip()
+        raw = next((b.text for b in msg.content if getattr(b, "type", "") == "text"), "").strip()
         raw = re.sub(r"^```(?:json)?\s*", "", raw)
         raw = re.sub(r"\s*```\s*$", "", raw)
         data = json.loads(raw)
@@ -621,10 +622,11 @@ def _llm_internal_tips(client: dict, g: dict) -> list[str] | None:
         user = f"Offre pitchée : {offer or 'non precisee'}\nChiffres du mois : {stats_txt}"
         ca = anthropic.Anthropic(api_key=key, max_retries=2)
         msg = ca.messages.create(
-            model="claude-haiku-4-5-20251001", max_tokens=500,
+            model="claude-haiku-5-5", max_tokens=650,
+            thinking={"type": "disabled"},
             system=sys, messages=[{"role": "user", "content": user}],
         )
-        raw = msg.content[0].text.strip()
+        raw = next((b.text for b in msg.content if getattr(b, "type", "") == "text"), "").strip()
         raw = re.sub(r"^```(?:json)?\s*", "", raw)
         raw = re.sub(r"\s*```\s*$", "", raw)
         tips = [str(x).strip() for x in (json.loads(raw).get("tips") or []) if str(x).strip()]
