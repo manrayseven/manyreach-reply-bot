@@ -1259,6 +1259,11 @@ def main() -> int:
                     "plus d'infos", "plus de détails", "plus de details",
                     "envoyez-moi", "envoyez moi", "votre plaquette", "une plaquette",
                     "vos tarifs", "votre tarif", "combien", "votre offre",
+                    # Parler de NOS honoraires, c'est se projeter dans la
+                    # prestation (Rudy 06/11). « budget » et « trésorerie » sont
+                    # volontairement ABSENTS : « je n'ai pas le budget » est le
+                    # refus de prix plat, que Rudy veut auto-répondu (11/08).
+                    "vos honoraires", "vos prestations", "votre devis",
                     "comment ça marche", "comment ca marche", "c'est quoi",
                     "c'est payant", "vous faites quoi", "de quoi s'agit",
                     "qui êtes-vous", "vous êtes qui", "j'ai reçu votre mail",
@@ -1293,6 +1298,21 @@ def main() -> int:
                     "ça m'intéresse", "ca m'intéresse", "cela m'intéresse",
                     "ça nous intéresse", "ca nous interesse", "je suis intéressé",
                     "nous sommes intéressé", "ce qui m'intéresse",
+                    # BESOIN EXPRIMÉ (Rudy 06/11, cas dita.madrid). Elle écrit
+                    # « qui tombe à pic, car je suis à la recherche d'une personne
+                    # avec vos compétences », liste deux chantiers précis, et sa
+                    # SEULE réserve est la trésorerie. Aucun marqueur ne la
+                    # reconnaissait : le classifieur a vu une objection de prix —
+                    # auto-répondue depuis le 11/08 — et lui a envoyé la clôture
+                    # polie « je ne vous dérange pas plus ». Un prospect qui
+                    # exprime un besoin n'est JAMAIS une clôture.
+                    "à la recherche", "a la recherche", "tombe à pic", "tombe a pic",
+                    "je cherche", "nous cherchons", "je recherche", "nous recherchons",
+                    "j'ai besoin", "nous avons besoin", "on a besoin",
+                    "vos compétences", "vos competences",
+                    "future collaboration", "collaborer avec vous",
+                    "travailler avec vous", "une collaboration",
+                    "votre aide", "m'accompagner", "nous accompagner",
                 )
                 _has_refusal = any(r in _body_full_low for r in _refusal_markers)
                 # LE PROSPECT RÉPOND AUX QUESTIONS DE QUALIFICATION (Rudy 24/09,
