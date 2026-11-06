@@ -83,6 +83,37 @@ _CLEAR_NO_MARKERS = (
     "stop", "désabonn", "desabonn", "désinscri", "desinscri",
 )
 
+# DÉJÀ ÉQUIPÉ, dit PLATEMENT : c'est un refus net, même sans négation. Rudy veut
+# ces cas auto-gérés depuis le 11/08 (seules les objections ARGUMENTÉES doivent
+# remonter) — sans cette liste, l'inversion du 06/11 les enverrait tous en
+# alerte et noierait le dashboard.
+_FLAT_REFUSAL_MARKERS = (
+    "déjà équipé", "deja equipe", "déjà un prestataire", "deja un prestataire",
+    "déjà une agence", "deja une agence", "déjà quelqu'un", "deja quelqu'un",
+    "avons déjà", "avons deja", "j'ai déjà", "j'ai deja", "on a déjà", "on a deja",
+    "en interne", "notre service communication", "service communication",
+    "notre agence", "mon agence", "notre prestataire", "mon prestataire",
+    "on s'en occupe", "je m'en occupe", "nous nous en occupons",
+    "déjà fait", "deja fait", "déjà géré", "deja gere",
+    # Refus de prix PLAT : objection sèche, sans besoin exprimé à côté. Un
+    # prospect ENGAGÉ qui parle d'argent est capté bien avant, par les signaux
+    # d'opportunité (cas dita.madrid) — ici il ne reste que le refus sec.
+    "trop cher", "trop onéreux", "trop onereux", "hors budget",
+    "pas les moyens", "pas le budget", "budget serré", "budget serre",
+)
+
+# INVERSION (Rudy 06/11) : « auto-réponds sur les refus SANS AMBIGUÏTÉ ».
+# Le garde-fou anti-devinette ne protégeait que not_interested_polite ; les deux
+# objections "plates" partaient en réponse auto sur la seule foi du classifieur.
+# C'est ce qui a clôturé dita.madrid, qui disait chercher quelqu'un comme Rudy.
+# Désormais ces trois intents doivent TOUS montrer un refus explicite, sinon
+# alerte. Le coût d'une alerte de trop est faible ; celui d'un lead clôturé non.
+_AUTOSEND_NEEDS_CLEAR_NO = frozenset({
+    "not_interested_polite",
+    "objection_price",
+    "objection_already_have_solution",
+})
+
 # HEURE / DATE dans la réponse du prospect → signal RDV FORT (feedback Rudy 18/08 :
 # "si le prospect répond par une heure et/ou une date, il passe en ALERTE, je traite
 # à la main, pour ne pas manquer une piste"). On matche :
@@ -1381,9 +1412,10 @@ def main() -> int:
                 # net (message vide, ambigu, pas compris) → il DEVINE → on bascule
                 # en ALERTE (ask_more_info) pour que Rudy tranche, plutôt qu'une
                 # réponse auto au pif (cas Visoanska : msg "vide" → réponse bidon).
-                if classification.intent == "not_interested_polite" and not _digit_choice:
+                if classification.intent in _AUTOSEND_NEEDS_CLEAR_NO and not _digit_choice:
                     _cl = _clean_body.lower()
-                    _has_marker = any(m in _cl for m in _CLEAR_NO_MARKERS)
+                    _has_marker = (any(m in _cl for m in _CLEAR_NO_MARKERS)
+                                   or any(m in _cl for m in _FLAT_REFUSAL_MARKERS))
                     # ROBUSTESSE (feedback Rudy 13/08 : "Cela nous interesse pas").
                     # Les refus se formulent de 1000 façons (ordre des mots, sans
                     # "ne", fautes/accents) : plutôt que de courir après chaque
@@ -1405,7 +1437,8 @@ def main() -> int:
                     _clear_no = _is_bare_no(_cl) or (
                         len(_clean_body) >= 4 and (_has_marker or _short_confident_no))
                     if not _clear_no:
-                        print("  ⚠️ not_interested SANS refus clair (msg ambigu/vide) → ALERTE (pas de réponse auto au pif)")
+                        print(f"  ⚠️ {classification.intent} SANS refus explicite "
+                              f"→ ALERTE (pas de réponse auto au pif)")
                         classification = _dc_replace(
                             classification, intent="ask_more_info",
                             confidence=max(classification.confidence, 0.6),
