@@ -1570,8 +1570,12 @@ def _render(client_filter: str | None = None) -> str:
                 f'<a class="alert-mr" href="{mr_url}" target="_blank" rel="noopener" '
                 f'title="Ouvrir la conversation dans l\'inbox ManyReach (campagne {html.escape(str(mr_camp))})">↗ Conversation</a>'
             )
-        elif msgid:
+        else:
             # Orphelin → bouton qui OUVRE le champ de réponse in-app (envoi via API).
+            # SANS CONDITION sur msgid depuis le 11/11 (cas philippemessager29) :
+            # quand l'id du message manquait, il ne restait QUE le mailto et Rudy
+            # ne pouvait pas répondre depuis le dashboard. L'id est désormais
+            # retrouvé au moment de l'envoi, à partir de l'adresse du prospect.
             _btns.append(
                 f'<a class="alert-mr" href="#" onclick="{_open_box}" '
                 f'title="Écrire une réponse envoyée dans le fil ManyReach (email orphelin)">✍ Répondre</a>'
@@ -1795,7 +1799,7 @@ def _render(client_filter: str | None = None) -> str:
         # campagne) que l'UI ManyReach n'affiche pas. Les classiques se répondent
         # via le lien "↗ ManyReach" (vraie conversation).
         reply_box = ""
-        if hors_campagne and msgid:
+        if hors_campagne:
             ph = "Ta réponse à " + prospect_email + (f" (envoyée via {sender_mailbox})" if sender_mailbox else "")
             reply_box = f"""
           <details class="alert-reply">
@@ -1803,6 +1807,8 @@ def _render(client_filter: str | None = None) -> str:
             <form method="POST" action="/{keyparam}" onsubmit="var b=this.querySelector('button');b.disabled=true;b.innerHTML='⏳ Envoi...';return true;">
               <input type="hidden" name="action" value="reply_manyreach">
               <input type="hidden" name="message_id" value="{html.escape(msgid)}">
+              <input type="hidden" name="prospect_email" value="{html.escape(prospect_email)}">
+              <input type="hidden" name="client_id" value="{html.escape(str(a.get('client_id') or ''))}">
               <input type="hidden" name="from_email" value="{html.escape(sender_mailbox)}">
               <input type="hidden" name="alert_id" value="{alert_id}">
               <textarea name="body" rows="4" placeholder="{html.escape(ph)}" required></textarea>
@@ -2746,17 +2752,48 @@ class handler(BaseHTTPRequestHandler):
             body_txt = (form.get("body") or "").strip()
             from_email = (form.get("from_email") or "").strip() or None
             alert_id = (form.get("alert_id") or "").strip()
+            _pem = (form.get("prospect_email") or "").strip()
+            _rcid = (form.get("client_id") or "").strip()
             log_status = ""
+            # ID RETROUVÉ À L'ENVOI (Rudy 11/11, cas philippemessager29). Certaines
+            # alertes n'ont pas d'id de message : il ne restait alors que le
+            # mailto, donc aucune façon de répondre depuis le dashboard. On va le
+            # chercher dans le fil du prospect — dans SON compte, espace compris.
+            if not mid and _pem:
+                try:
+                    from src.manyreach import (ManyReachClient as _MRC3,
+                                               workspace_api_keys as _wak6)
+                    _k6 = _wak6().get(_rcid) if _rcid else None
+                    _c6 = (_MRC3(api_key=_k6, timeout=10.0) if _k6
+                           else _MRC3(timeout=10.0))
+                    with _c6 as _mr6:
+                        _last6 = None
+                        for _m6 in _mr6.list_replies(email_from=_pem):
+                            if _last6 is None or _m6.created_at > _last6.created_at:
+                                _last6 = _m6
+                        if _last6 is not None:
+                            mid = _last6.message_id
+                            if not from_email:
+                                from_email = _last6.to_email or None
+                except Exception as _e6:  # noqa: BLE001
+                    log_status = f"❌ Réponse ManyReach : fil introuvable ({str(_e6)[:120]})"
             if not mid or not body_txt:
-                log_status = "❌ Réponse ManyReach : message_id ou texte manquant"
+                log_status = log_status or (
+                    "❌ Réponse ManyReach : aucun message auquel répondre pour "
+                    f"{_pem or 'ce prospect'} — réponds depuis ton client mail")
             else:
                 # texte saisi → HTML (sauts de ligne → <br>), en échappant le HTML.
                 body_html = html.escape(body_txt).replace("\n", "<br>")
                 try:
-                    from src.manyreach import ManyReachClient
+                    from src.manyreach import (ManyReachClient,
+                                               workspace_api_keys as _wak7)
+                    # Clé de l'ESPACE si l'alerte en vient : avec la clé du compte
+                    # principal, l'envoi échouerait (11/11).
+                    _k7 = _wak7().get(_rcid) if _rcid else None
                     # 40s (budget Vercel = 60s) : un envoi ManyReach dépasse
                     # souvent 20s. À 12s ça timeoutait alors que l'email PARTAIT.
-                    with ManyReachClient(timeout=40.0) as _mr:
+                    with (ManyReachClient(api_key=_k7, timeout=40.0) if _k7
+                          else ManyReachClient(timeout=40.0)) as _mr:
                         _mr.send_reply(
                             message_id=mid,
                             body_html=body_html,
