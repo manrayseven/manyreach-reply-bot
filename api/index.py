@@ -684,12 +684,11 @@ def _handoff_email_html(company: str, detail_line: str, contact_line: str,
     for h in hist:
         who = e(str(h.get("who") or ""))
         when = e(str(h.get("when") or ""))
+        # PLUS AUCUNE COUPE (Rudy 10/11) : nos messages étaient tronqués à 240
+        # caracteres avec un « [...] ». Le recap d'un prospect sert a comprendre
+        # l'echange et a le transmettre au client — un message coupe en plein
+        # milieu oblige a rouvrir ManyReach, ce qui lui retire sa raison d'etre.
         _raw = str(h.get("text") or "")
-        # NOS messages servent de CONTEXTE, pas de contenu principal : on les
-        # raccourcit pour ne pas noyer les reponses du prospect (un cold mail fait
-        # 600-700 caracteres). Les reponses du PROSPECT restent INTEGRALES.
-        if str(h.get("who") or "").lower() == "vous" and len(_raw) > 240:
-            _raw = _raw[:240].rsplit(" ", 1)[0] + " [...]"
         txt = e(_raw).replace("\n", "<br>")
         _mine = who.lower() == "vous"
         _color = "#8c8678" if _mine else "#0d7a5f"  # Prospect vert, Vous gris
@@ -777,7 +776,8 @@ def _handoff_record(alert_id: str, client_id: str, email: str,
         "detail": _rt(detail),
         "contact": _rt(who + (f" - {coords}" if coords else "")),
         "campaign": _rt(str(a.get("campaign_name") or a.get("campaign_id") or "")),
-        "message": _rt(str(a.get("reply") or ""))[:1500],
+        # Entier aussi dans la fiche archivee du transfert (Rudy 10/11).
+        "message": _rt(str(a.get("reply") or "")),
         "history": [{**h, "text": _rt(str(h.get("text") or ""))} for h in hist][:16],
         "intent": str(a.get("intent") or ""),
     }
@@ -1665,7 +1665,8 @@ def _render(client_filter: str | None = None) -> str:
                 (f"tél {_phone}" if _phone else ""), (prospect_email or "")
             ] if x)
             _contact = _who + (f" - {_coords}" if _coords else "")
-            _msg = str(a.get("reply") or "").strip()[:900]
+            # Message du prospect entier (Rudy 10/11) : plus de coupe a 900.
+            _msg = str(a.get("reply") or "").strip()
             _recap_lines = [
                 "PROSPECT INTÉRESSÉ - transfert automatique",
                 "",
