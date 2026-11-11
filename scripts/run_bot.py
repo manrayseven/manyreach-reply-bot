@@ -170,6 +170,27 @@ _FORWARDING_RE = re.compile(
 # au chiffre (« 1 », « 1. », « réponse 2 », « 3 ! »).
 _DIGIT_CHOICE_RE = re.compile(r"^(?:r[ée]ponse\s*[:°]?\s*)?([123])\s*[.)!,-]?$", re.IGNORECASE)
 
+# CHANGEMENT D'ADRESSE / DÉPART (Rudy 11/11) : ces réponses ne valent ni alerte
+# ni réponse auto. Volontairement ÉTROIT — il faut que ce soit évident. Les
+# mêmes familles que Lead Finder, qui exploite la nouvelle adresse de son côté
+# (Lead Finder AI/src/pipeline/nouvelle-adresse.ts).
+_ADDRESS_CHANGE_RE = re.compile(
+    r"(changement d['’]adresse"
+    r"|nouvelle adresse (mail|e-?mail|de contact|électronique|electronique)"
+    r"|(adresse|boite|boîte) (mail |e-?mail )?(a chang|ne sera plus|n['’]est plus "
+    r"(valable|active|utilisée|utilisee|d['’]actualité|d['’]actualite))"
+    r"|(écrire|ecrire|écrivez|ecrivez|contactez|joindre)[^.!?]{0,30}"
+    r"(désormais|desormais|dorénavant|dorenavant)"
+    r"|(désormais|desormais|dorénavant|dorenavant)[^.!?]{0,30}"
+    r"(à l['’]adresse|a l['’]adresse|sur l['’]adresse)"
+    r"|a changé de propriétaire|a change de proprietaire"
+    r"|ne (fais|fait|travaille) plus (partie|chez|pour|au sein)"
+    r"|a quitté (la société|la societe|l['’]entreprise|ses fonctions|l['’]effectif)"
+    r"|n['’]est plus (en poste|dans l['’]entreprise|dans la société|parmi nous)"
+    r"|nouvel interlocuteur"
+    r"|no longer (with|works? (at|for)|employed)|left the company"
+    r")", re.IGNORECASE)
+
 # PORTE OUVERTE (Rudy 13/10) : le prospect propose, demande ou questionne — il
 # attend une suite. Sert à filtrer les « Interested » de ManyReach, dont le
 # statut est bruité : un refus net (« je ne travaille qu'en local, j'ai déjà de
@@ -1163,6 +1184,40 @@ def main() -> int:
                 # partait donc en alerte « illisible » au lieu d'être traité.
                 # Rudy 29/09 : « 1 » = pas intéressé → il reçoit quand même la
                 # réponse type (avant : unsubscribe = silence + blacklist).
+                # CHANGEMENT D'ADRESSE / DÉPART (Rudy 11/11). « L'adresse mail de
+                # l'A.L.I a changé, écrivez désormais à … », « Photo WilliamB a
+                # changé de propriétaire, notre nouvelle adresse est … ». Ces
+                # réponses n'appellent ni alerte ni réponse : elles encombraient
+                # le dashboard, et Rudy les marquait « Unsub » pour s'en
+                # débarrasser — ce qui bloquait ensuite Lead Finder, pour qui un
+                # Unsub ne se contourne jamais. La nouvelle adresse était perdue.
+                # On se tait donc ici, SANS toucher au statut du prospect : c'est
+                # Lead Finder qui réinscrit la nouvelle adresse dans la même
+                # campagne (deux passages par jour) puis désinscrit l'ancienne.
+                if _ADDRESS_CHANGE_RE.search(_clean_check):
+                    print("  >> CHANGEMENT D'ADRESSE / DÉPART — silencieux "
+                          "(la nouvelle adresse est reprise par Lead Finder)")
+                    log_entry["intent"] = "bounce_or_auto"
+                    log_entry["actions"] = ["silent (changement d'adresse / départ)"]
+                    logf.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
+                    if kvstore and kvstore.kv_available():
+                        kvstore.log_action({
+                            "at": now_utc.isoformat(),
+                            "from": reply.from_email,
+                            "subject": reply.subject,
+                            "intent": "bounce_or_auto",
+                            "status": "silencieux (changement d'adresse / départ — "
+                                      "nouvelle adresse reprise par Lead Finder)",
+                            "reply": _clean_check[:500],
+                            "response": "(aucune réponse, aucune alerte)",
+                            "prospect_email": (prospect.email if prospect else None),
+                            "client_id": (active_client or {}).get("id") or space_id,
+                        })
+                    if not dry_run:
+                        _mark_done(reply.message_id)
+                    skipped_count += 1
+                    return
+
                 _digit_choice = None
                 _dm = _DIGIT_CHOICE_RE.match(_clean_check)
                 if _dm and original_outreach and _OPTIONS_CONVENTION_RE.search(
