@@ -90,6 +90,31 @@ def test_un_humain_qui_mentionne_lautomatique_nest_pas_silencie():
         assert not is_bounce_or_auto(M("x@y.fr", "Re: Question", corps)), corps
 
 
+def test_la_regle_du_delai_existe_et_exige_les_DEUX_conditions():
+    """Cas Margaux Terrou (11/11) : un répondeur qui ne se déclare PAS. Après
+    quatre rattrapages de formulation dans la journée, la détection ne repose
+    plus seulement sur le vocabulaire — un message long ET immédiat est un
+    répondeur, quoi qu'il dise.
+
+    Les deux conditions doivent rester liées : un message court et immédiat est
+    une vraie réponse (« oui », « rappelez-moi »), et un message long arrivé
+    deux jours plus tard aussi.
+    """
+    src = (Path(__file__).resolve().parents[1] / "scripts" / "run_bot.py").read_text(
+        encoding="utf-8")
+    i = src.index("RÉPONDEUR DÉTECTÉ PAR LE DÉLAI")
+    bloc = src[i:i + 1600]
+    assert "_AUTO_MIN_CHARS" in bloc and "_AUTO_MAX_DELAY_S" in bloc
+    # Le ET, pas le OU : les deux seuils dans la même condition.
+    assert "and len(_clean_check) >= _AUTO_MIN_CHARS" in bloc
+    assert "0 <= _delai <= _AUTO_MAX_DELAY_S" in bloc
+    # Mesuré sur NOS envois antérieurs au reply, jamais sur un envoi postérieur.
+    assert "m.created_at <= reply.created_at" in bloc
+    # Réglable sans redéploiement.
+    assert 'os.environ.get("AUTO_REPLY_MIN_CHARS"' in src
+    assert 'os.environ.get("AUTO_REPLY_MAX_DELAY_S"' in src
+
+
 if __name__ == "__main__":
     from tests._runner import main as _main
     _main(globals())

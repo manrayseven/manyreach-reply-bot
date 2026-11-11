@@ -195,6 +195,12 @@ _ADDRESS_CHANGE_RE = re.compile(
     r"|no longer (with|works? (at|for)|employed)|left the company"
     r")", re.IGNORECASE)
 
+# RÉPONDEUR RECONNU AU DÉLAI (Rudy 11/11) : long ET immédiat. Les deux ensemble,
+# jamais l'un sans l'autre — un humain qui répond en trois minutes répond court,
+# un message long met des heures à s'écrire. Réglables sans redéploiement.
+_AUTO_MIN_CHARS = int(os.environ.get("AUTO_REPLY_MIN_CHARS", "400"))
+_AUTO_MAX_DELAY_S = float(os.environ.get("AUTO_REPLY_MAX_DELAY_S", "300"))
+
 # PORTE OUVERTE (Rudy 13/10) : le prospect propose, demande ou questionne — il
 # attend une suite. Sert à filtrer les « Interested » de ManyReach, dont le
 # statut est bruité : un refus net (« je ne travaille qu'en local, j'ai déjà de
@@ -1198,11 +1204,38 @@ def main() -> int:
                 # On se tait donc ici, SANS toucher au statut du prospect : c'est
                 # Lead Finder qui réinscrit la nouvelle adresse dans la même
                 # campagne (deux passages par jour) puis désinscrit l'ancienne.
+                #
+                # RÉPONDEUR DÉTECTÉ PAR LE DÉLAI (Rudy 11/11). Quatre rattrapages
+                # de formulation dans la journée : « ceci est un message
+                # automatique », puis « ce message EST une réponse automatique »,
+                # puis un répondeur qui ne se déclare pas du tout (Margaux
+                # Terrou). Courir après le vocabulaire est perdu d'avance.
+                # Le DÉLAI, lui, ne ment pas : personne n'écrit 400 caractères
+                # dans les cinq minutes qui suivent un email qu'il n'attendait
+                # pas. Les deux conditions ensemble (long ET immédiat) ne laissent
+                # passer aucune vraie réponse : un humain qui répond vite répond
+                # court (« oui », « non merci », « rappelez-moi »).
+                _silence = None
                 if _ADDRESS_CHANGE_RE.search(_clean_check):
-                    print("  >> CHANGEMENT D'ADRESSE / DÉPART — silencieux "
-                          "(la nouvelle adresse est reprise par Lead Finder)")
+                    _silence = "changement d'adresse / départ"
+                else:
+                    try:
+                        _prev_sent = [m for m in (thread or [])
+                                      if m.type in ("Sent", "SentManual")
+                                      and m.created_at <= reply.created_at]
+                        if _prev_sent and len(_clean_check) >= _AUTO_MIN_CHARS:
+                            _delai = (reply.created_at - max(
+                                m.created_at for m in _prev_sent)).total_seconds()
+                            if 0 <= _delai <= _AUTO_MAX_DELAY_S:
+                                _silence = (f"répondeur automatique "
+                                            f"({int(_delai)} s après notre envoi, "
+                                            f"{len(_clean_check)} caractères)")
+                    except Exception:  # noqa: BLE001
+                        pass
+                if _silence:
+                    print(f"  >> SILENCIEUX — {_silence}")
                     log_entry["intent"] = "bounce_or_auto"
-                    log_entry["actions"] = ["silent (changement d'adresse / départ)"]
+                    log_entry["actions"] = [f"silent ({_silence})"]
                     logf.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
                     if kvstore and kvstore.kv_available():
                         kvstore.log_action({
@@ -1210,8 +1243,7 @@ def main() -> int:
                             "from": reply.from_email,
                             "subject": reply.subject,
                             "intent": "bounce_or_auto",
-                            "status": "silencieux (changement d'adresse / départ — "
-                                      "nouvelle adresse reprise par Lead Finder)",
+                            "status": f"silencieux ({_silence})",
                             "reply": _clean_check[:500],
                             "response": "(aucune réponse, aucune alerte)",
                             "prospect_email": (prospect.email if prospect else None),
