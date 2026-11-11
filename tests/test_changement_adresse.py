@@ -58,9 +58,21 @@ def test_les_deux_cas_du_11_11_sont_silencieux():
 def test_les_departs_sont_couverts():
     for msg in (
         "Monsieur Durand ne fait plus partie de nos effectifs.",
-        "Je vous informe que j'ai quitté la société le mois dernier.",
         "Votre contact n'est plus en poste, voici le nouvel interlocuteur.",
         "He no longer works at this company.",
+    ):
+        assert _ADDRESS_CHANGE_RE.search(msg), msg
+
+
+def test_le_depart_a_la_premiere_personne():
+    """Cas bp2mmerel (11/11) : la règle attendait « A quitté la société », il
+    écrivait « J'AI quitté la société ». On matche le verbe, pas l'auxiliaire."""
+    for msg in (
+        "Bonjour, Je vous informe que j'ai quitté la société. Je vous invite à "
+        "transférer votre mail à Maryline MEREL, mmerel@bp2mformation.fr",
+        "J'ai quitté mes fonctions au mois de septembre.",
+        "Elle a quitté l'entreprise, merci de contacter son successeur.",
+        "Je quitte la structure à la fin du mois.",
     ):
         assert _ADDRESS_CHANGE_RE.search(msg), msg
 

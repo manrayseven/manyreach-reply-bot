@@ -185,7 +185,11 @@ _ADDRESS_CHANGE_RE = re.compile(
     r"(à l['’]adresse|a l['’]adresse|sur l['’]adresse)"
     r"|a changé de propriétaire|a change de proprietaire"
     r"|ne (fais|fait|travaille) plus (partie|chez|pour|au sein)"
-    r"|a quitté (la société|la societe|l['’]entreprise|ses fonctions|l['’]effectif)"
+    # Le verbe seul, sans son auxiliaire (Rudy 11/11, cas bp2mmerel) : la règle
+    # attendait « A quitté la société », il écrivait « J'AI quitté la société ».
+    # `quitt[ée]` couvre « quitté » comme « quitte ».
+    r"|quitt[ée] (la société|la societe|l['’]entreprise|l['’]effectif"
+    r"|mes fonctions|ses fonctions|la structure|le cabinet|mon poste|son poste)"
     r"|n['’]est plus (en poste|dans l['’]entreprise|dans la société|parmi nous)"
     r"|nouvel interlocuteur"
     r"|no longer (with|works? (at|for)|employed)|left the company"
