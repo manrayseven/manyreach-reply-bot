@@ -881,6 +881,28 @@ BOUNCE_BODY_PATTERNS = (
     "no longer with",
     "is no longer employed",
     "has left the company",
+    # RÉPONDEURS AUTOMATIQUES QUI SE DÉCLARENT (Rudy 11/11, cas amandineverne).
+    # « Ceci est un message automatique » : la phrase n'était surveillée que dans
+    # l'OBJET, or celui-ci était un « Re: » neutre. Le corps, lui, le disait dès
+    # la première ligne. Ces messages remontaient en alerte — et celui-ci citait
+    # l'email d'une consœur, ce qui déclenchait en plus la règle « un contact
+    # donné est une piste ». Formulations EXPLICITES seulement : « message
+    # automatique » tout court silencierait un humain qui s'en excuse.
+    "ceci est un message automatique",
+    "ceci est une réponse automatique",
+    "ceci est une reponse automatique",
+    "il s'agit d'un message automatique",
+    "message généré automatiquement",
+    "message genere automatiquement",
+    "généré automatiquement",
+    "genere automatiquement",
+    "merci de ne pas répondre à ce message",
+    "merci de ne pas repondre a ce message",
+    "ne pas répondre à cet email",
+    "ne pas repondre a cet email",
+    "this is an automated",
+    "automated response",
+    "do not reply to this",
     # DE
     "ich bin abwesend",
     "bin im urlaub",
