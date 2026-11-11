@@ -888,6 +888,15 @@ BOUNCE_BODY_PATTERNS = (
     # l'email d'une consœur, ce qui déclenchait en plus la règle « un contact
     # donné est une piste ». Formulations EXPLICITES seulement : « message
     # automatique » tout court silencierait un humain qui s'en excuse.
+    # Tournures en « est un/une … » plutôt qu'en « ceci est » (Rudy 11/11, cas
+    # evalequin : « Ce message est une réponse automatique générée à la
+    # réception de votre mail »). Le verbe est le point commun, pas le sujet.
+    "est un message automatique",
+    "est une réponse automatique",
+    "est une reponse automatique",
+    "réponse automatique générée",
+    "reponse automatique generee",
+    "ce message automatique",
     "ceci est un message automatique",
     "ceci est une réponse automatique",
     "ceci est une reponse automatique",

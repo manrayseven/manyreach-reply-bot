@@ -54,6 +54,20 @@ def test_le_repondeur_damandine_est_silencieux():
         M("amandineverne@gmail.com", "Re: Votre page d'accueil", AMANDINE))
 
 
+def test_la_tournure_en_est_une_reponse_automatique():
+    """Cas evalequin (11/11) : « Ce message EST une réponse automatique générée
+    à la réception de votre mail ». Les motifs attendaient « ceci est » — c'est
+    le verbe qui est le point commun, pas le sujet."""
+    corps = (
+        "Bonjour, Ce message est une réponse automatique générée à la réception "
+        "de votre mail. Je vous informe que mon activité libérale "
+        "d'ergothérapeute est actuellement en pause. La reprise de mon activité "
+        "est prévue au début de l'année 2027. Dans ce cas, ce message "
+        "automatique fait foi et aucune autre réponse ne sera apportée."
+    )
+    assert is_bounce_or_auto(M("evalequin.ergo@gmail.com", "Re: Fiche Google", corps))
+
+
 def test_les_autres_declarations_sont_couvertes():
     for corps in (
         "Cet accusé de réception est généré automatiquement. Le cabinet est fermé.",
