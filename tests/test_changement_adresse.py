@@ -55,6 +55,24 @@ def test_les_deux_cas_du_11_11_sont_silencieux():
     assert _ADDRESS_CHANGE_RE.search(ALI)
 
 
+def test_boite_morte_sans_le_mot_desormais():
+    """Cas arbolibre69 (12/11) : « Cette adresse e-mail n'est plus CONSULTÉE
+    depuis un certain temps. Merci de nous adresser votre demande à : … ».
+    Deux manques à la fois — « consultée » absent de la liste des participes, et
+    la redirection exprimée sans le mot « désormais » qu'exigeait la règle."""
+    assert _ADDRESS_CHANGE_RE.search(
+        "Bonjour, Cette adresse e-mail n'est plus consultée depuis un certain "
+        "temps. Merci de nous adresser votre demande à : Charlotte COURTILLET "
+        "- Collaboratrice bureau d'études arboricoles ARBOLIBRE "
+        "contact@arbolibre.fr 07 56 47 35 92")
+    for msg in (
+        "Cette boîte mail n'est plus relevée.",
+        "Mon adresse n'est plus suivie, merci de transmettre vos messages à Paul.",
+        "Merci de faire parvenir votre demande au service commercial.",
+    ):
+        assert _ADDRESS_CHANGE_RE.search(msg), msg
+
+
 def test_les_departs_sont_couverts():
     for msg in (
         "Monsieur Durand ne fait plus partie de nos effectifs.",

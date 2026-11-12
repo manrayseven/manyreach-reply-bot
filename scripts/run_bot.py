@@ -177,8 +177,16 @@ _DIGIT_CHOICE_RE = re.compile(r"^(?:r[ée]ponse\s*[:°]?\s*)?([123])\s*[.)!,-]?$
 _ADDRESS_CHANGE_RE = re.compile(
     r"(changement d['’]adresse"
     r"|nouvelle adresse (mail|e-?mail|de contact|électronique|electronique)"
-    r"|(adresse|boite|boîte) (mail |e-?mail )?(a chang|ne sera plus|n['’]est plus "
-    r"(valable|active|utilisée|utilisee|d['’]actualité|d['’]actualite))"
+    # « n'est plus … » : la liste des participes était trop courte (Rudy 12/11,
+    # cas arbolibre69 — « cette adresse e-mail n'est plus CONSULTÉE depuis un
+    # certain temps »). On couvre les façons de dire qu'une boîte est morte.
+    r"|(adresse|boite|boîte) (e-?mail |mail )?(a chang|ne sera plus|n['’]est plus "
+    r"(valable|active|utilisée|utilisee|consultée|consultee|relevée|relevee"
+    r"|surveillée|surveillee|suivie|lue|en service|d['’]actualité|d['’]actualite))"
+    # « Merci de nous adresser votre demande à : … » — redirection explicite,
+    # sans le mot « désormais » que la règle exigeait jusqu'ici.
+    r"|(adresser|envoyer|transmettre|faire parvenir)[^.!?]{0,20}"
+    r"(votre|vos|toute) (demande|demandes|message|messages|courrier|requête)"
     r"|(écrire|ecrire|écrivez|ecrivez|contactez|joindre)[^.!?]{0,30}"
     r"(désormais|desormais|dorénavant|dorenavant)"
     r"|(désormais|desormais|dorénavant|dorenavant)[^.!?]{0,30}"
