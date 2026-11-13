@@ -284,6 +284,39 @@ def _etape_alertes(enveloppe_s: float) -> dict:
     old_argv = sys.argv
     old_budget = os.environ.get("RUN_BUDGET_SECONDS")
     try:
+        # PISTES EN UN SEUL APPEL (pipeline Upstash) : une alerte = 4 commandes
+        # KV, et 90 alertes une par une ne tenaient pas dans un tour.
+        pistes = [c for c in cands if c["statut"] != "NotInterested" and c["email"] not in fait]
+        if pistes:
+            import httpx
+            maintenant = datetime.now(timezone.utc).isoformat()
+            cmds = []
+            for c in pistes:
+                jour = c["at"][8:10] + "/" + c["at"][5:7]
+                entree = json.dumps({
+                    "at": maintenant,
+                    "from": c["email"],
+                    "subject": c["subject"],
+                    "intent": "ask_more_info",
+                    "status": f"🔔 ALERTE — réponse non remontée du {jour} "
+                              f"(ManyReach : {STATUTS_FR.get(c['statut'], c['statut'])})",
+                    "reply": c["reply"],
+                    "response": "(rien d'envoyé — à traiter par Rudy)",
+                    "replied": False,
+                    "campaign_id": c["campaign_id"],
+                    "prospect_email": c["email"],
+                    "message_id": c["message_id"],
+                }, ensure_ascii=False)
+                cmds += [["LPUSH", kv.ACTION_LOG_KEY, entree], ["LPUSH", kv.ALERTS_KEY, entree],
+                         ["SADD", FAIT, c["email"]]]
+            cmds += [["LTRIM", kv.ACTION_LOG_KEY, "0", str(kv.MAX_LOG_ENTRIES - 1)],
+                     ["LTRIM", kv.ALERTS_KEY, "0", str(kv.MAX_ALERTS - 1)]]
+            r = httpx.post(kv._URL.rstrip("/") + "/pipeline",
+                           headers={"Authorization": f"Bearer {kv._TOKEN}"},
+                           json=cmds, timeout=20.0)
+            r.raise_for_status()
+            out["alertes"] = len(pistes)
+            fait |= {c["email"] for c in pistes}
         for c in cands:
             if c["email"] in fait:
                 continue
