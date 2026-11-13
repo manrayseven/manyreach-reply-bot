@@ -135,8 +135,13 @@ def _etape_liste() -> dict:
     from src.manyreach import ManyReachClient, is_bounce_or_auto
 
     kv = _kv()
+    kv._cmd("DEL", "bot:rattrapage2:tri")   # curseur du cycle précédent
     fin = time.time() + 50   # la fonction Vercel s'arrête à 60 s
-    depuis = datetime.now(timezone.utc) - timedelta(days=JOURS)
+    maintenant = datetime.now(timezone.utc)
+    depuis = maintenant - timedelta(days=JOURS)
+    # Le passage normal a 6 h pour traiter une réponse avant que le contrôle
+    # ne la considère comme perdue (évite les alertes en double).
+    trop_recent = (maintenant - timedelta(hours=6)).isoformat()
     orph_depuis = datetime.fromisoformat(ORPHELINS_DEPUIS)
     par_email: dict[str, dict] = {}
     with ManyReachClient() as mr:
@@ -148,6 +153,8 @@ def _etape_liste() -> dict:
                     continue
                 if "webmarketing" in e.split("@")[-1]:
                     continue  # nos propres boîtes (transferts, tests)
+                if m.created_at.isoformat() > trop_recent:
+                    continue
                 if e in par_email and par_email[e]["at"] >= m.created_at.isoformat():
                     continue
                 par_email[e] = {
@@ -297,12 +304,17 @@ def _etape_alertes(enveloppe_s: float) -> dict:
     fait = set(kv._cmd("SMEMBERS", FAIT) or [])
     out["restants"] = sum(1 for c in cands if c["email"] not in fait)
     if out["restants"] == 0:
-        kv._cmd("SET", ETAT, "fini", "EX", str(TTL))
+        # CONTRÔLE PERMANENT (Rudy 13/11 : « ça ne doit plus JAMAIS se
+        # répéter ») : l'état « fini » expire au bout de 24 h, et le cycle
+        # liste → tri → alertes recommence. Tout ce qui a déjà une réponse,
+        # une alerte ou un passage de rattrapage (FAIT) est écarté : seule une
+        # piste réellement perdue remonte.
+        kv._cmd("SET", ETAT, "fini", "EX", str(int(os.environ.get("RATTRAPAGE_CYCLE_S", "86400"))))
     return out
 
 
 def run_rattrapage(enveloppe_s: float = 24.0) -> dict:
-    etat = _kv()._cmd("GET", ETAT) or "liste"
+    etat = _kv()._cmd("GET", ETAT) or "liste"   # absent = nouveau cycle
     if etat == "liste":
         return _etape_liste()
     if etat == "tri":
