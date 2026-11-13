@@ -179,6 +179,23 @@ def _etape_liste() -> dict:
     return {"etape": "liste", "candidats": len(cands)}
 
 
+def _empreinte(message_id: str) -> str:
+    import hashlib
+    return hashlib.sha256(str(message_id).encode()).hexdigest()[:20]
+
+
+def _tri_pre_calcule() -> set[str] | None:
+    """Tri fait sur le poste de Rudy le 13/11 (config/rattrapage_ids.txt) :
+    utilisé UNE fois, pour le premier cycle, afin que les alertes arrivent tout
+    de suite au lieu de ~2 h de lecture des envois depuis Vercel."""
+    f = ROOT / "config" / "rattrapage_ids.txt"
+    if not f.exists() or _kv()._cmd("GET", "bot:rattrapage2:pre_utilise"):
+        return None
+    ids = {l.strip() for l in f.read_text(encoding="utf-8").splitlines()
+           if l.strip() and not l.startswith("#")}
+    return ids or None
+
+
 def _etape_tri(enveloppe_s: float) -> dict:
     from datetime import datetime
     from src.manyreach import ManyReachClient, Message
@@ -186,6 +203,22 @@ def _etape_tri(enveloppe_s: float) -> dict:
     kv = _kv()
     debut = time.time()
     cands = _get_json(CANDIDATS, [])
+    pre = _tri_pre_calcule()
+    if pre is not None:
+        kv._cmd("SET", "bot:rattrapage2:pre_utilise", "1")
+        # Réponses de Rudy envoyées depuis le tri : le contrôle quotidien les
+        # écartera ; les refus orphelins gardent leur passage par le bot.
+        deja: dict[str, str] = {}
+        for a in kv.recent_alerts():
+            e = str(a.get("from") or "").lower().strip()
+            if e and str(a.get("at") or "") > deja.get(e, ""):
+                deja[e] = str(a.get("at") or "")
+        restants = [c for c in cands
+                    if c["statut"] == "NotInterested"
+                    or (_empreinte(c["message_id"]) in pre and deja.get(c["email"], "") < c["at"])]
+        _set_json(CANDIDATS, restants)
+        kv._cmd("SET", ETAT, "alertes", "EX", str(TTL))
+        return {"etape": "tri", "pre_calcule": True, "a_remonter": len(restants)}
     plus_ancien = min((c["at"] for c in cands), default=None)
     # Lecture des réponses envoyées REPRISE d'un tour à l'autre : un mois de
     # SentManual ne tient pas dans une enveloppe de 24 s.
@@ -254,6 +287,8 @@ def _etape_alertes(enveloppe_s: float) -> dict:
         for c in cands:
             if c["email"] in fait:
                 continue
+            if time.time() - debut > enveloppe_s - 3:
+                break   # le reste au tour suivant
             if c["statut"] != "NotInterested":
                 # Piste : alerte d'office, sans IA ni envoi. Rien ne doit pouvoir
                 # la faire taire une seconde fois.
