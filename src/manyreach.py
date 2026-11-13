@@ -919,7 +919,141 @@ BOUNCE_BODY_PATTERNS = (
     "aus gesundheitlichen gründen abwesend",
     "krankheitsbedingt abwesend",
     "nicht mehr bei",
+    # ---- Rudy 13/11 : automatiques qui remontaient encore en alerte (revue des
+    # 1 427 réponses du 09 au 13/11). Formulations que seul un robot écrit.
+    # Avertissements de retard d'envoi (sendmail) : rien à faire, le mail repart.
+    "this is a warning message only",
+    "this is a warning only",
+    "you do not need to resend",
+    # Échecs d'envoi rédigés en français par l'hébergeur.
+    "message d'echec automatiquement",
+    "message d'échec automatiquement",
+    "automatiquement envoye par nos systemes",
+    "automatiquement envoyé par nos systèmes",
+    "message automatisé",
+    "message automatise",
+    # Absences : déplacement, indisponibilité datée, allemand / anglais.
+    "en déplacement à l'étranger",
+    "en deplacement a l'etranger",
+    "indisponible jusqu",
+    "not in the office",
+    "wieder im büro",
+    "wieder im buero",
+    # Boîte abandonnée / personne partie / nouvelle adresse.
+    "n'est plus consultée",
+    "n'est plus consultee",
+    "n'est plus valide",
+    "n'est plus lue",
+    "j'ai quitté la société",
+    "j'ai quitté l'entreprise",
+    "j'ai quitté mes fonctions",
+    "ai quitté mes fonctions",
+    "nouvelle adresse mail",
+    "nouvelle adresse e-mail",
+    "nouvelle adresse email",
+    "notre nouvelle adresse",
+    "changement d'adresse mail",
+    "changement d'adresse e-mail",
+    "désormais adresser vos mails",
+    "desormais adresser vos mails",
+    "adresse mail de la société",
+    # Accusés de réception adressés à une clientèle (jamais écrits à un
+    # démarcheur par un humain).
+    "chers patients",
+    "chères patientes",
+    "cheres patientes",
+    "chers clients",
+    "chères clientes",
+    "délai de traitement des mails",
+    "delai de traitement des mails",
 )
+
+# Accusés de réception automatiques (Rudy 13/11 : pharmacie, ostéo, avocats,
+# couvreur…). Une formule d'accusé SEULE ne suffit pas : « Bonjour bien reçu,
+# pouvez-vous me contacter » est un humain intéressé, « J'accuse bonne réception
+# … je ne donnerai pas suite » un refus à traiter. Il faut l'accusé ET une
+# promesse de délai type répondeur (« dans les meilleurs délais », « sera
+# traité », « jours ouvrés »…). Ni l'un ni l'autre n'est écrit ainsi par un
+# humain qui répond à une prospection.
+ACK_RECEPTION_MARKERS = (
+    "bonne réception",
+    "bonne reception",
+    "accuse réception",
+    "accuse reception",
+    "accusé de réception",
+    "accuse de reception",
+    "bien reçu",
+    "bien recu",
+    "bien été reçu",
+    "bien ete recu",
+    "bien été réceptionn",
+    "bien ete receptionn",
+    "bien réceptionn",
+    "est bien arrivé",
+    "est bien arrive",
+    "bien été pris en compte",
+    "de nous avoir contacté",
+    "de nous avoir contacte",
+)
+ACK_DELAY_MARKERS = (
+    "meilleurs délais",
+    "meilleurs delais",
+    "plus brefs délais",
+    "plus brefs delais",
+    "plus bref délai",
+    "plus bref delai",
+    "délai de réponse",
+    "delai de reponse",
+    "délai de traitement",
+    "delai de traitement",
+    "sera traité",
+    "sera traitée",
+    "sera traite",
+    "seront traités",
+    "jours ouvrés",
+    "jours ouvres",
+    "faisons le maximum",
+    "traiterai avec",
+    "traitons votre demande",
+)
+
+# Objets de répondeurs (le sujet est réécrit par le robot, un humain répond
+# en « Re: <sujet de Rudy> »).
+AUTO_SUBJECT_EXTRA = (
+    "warning: could not send",
+    "delayed mail",
+    "impossible d'envoyer l'email",
+    "automatische antwort",
+    "accusé de réception",
+    "accuse de reception",
+    "accusé réception",
+    "généré automatiquement",
+    "genere automatiquement",
+    "bien reçu",
+    "bien été reçue",
+    "bien été reçu",
+    "message reçu",
+    "pris en compte",
+    "nouvelle adresse",
+    "changement d'adresse",
+    "interlocuteur non disponible",
+    "déplacement étranger",
+)
+
+
+def _clean_head(body: str) -> str:
+    """Texte lisible du message, citation coupée, sans le préambule HTML/CSS.
+
+    Le corps brut commence souvent par des centaines de caractères de styles
+    (« Normal 110 false 21 false… », balises <style>) : les 800 premiers
+    caractères bruts ne contenaient alors AUCUN mot du message, et un
+    répondeur pourtant listé passait en alerte (cas lejardindelucette, 13/11).
+    Import local : classifier importe ce module."""
+    try:
+        from .classifier import _strip_html, _trim_quoted_history
+        return _trim_quoted_history(_strip_html(body or "")).lower()
+    except Exception:  # noqa: BLE001
+        return ""
 
 
 def is_bounce_or_auto(msg: Message) -> bool:
@@ -941,9 +1075,24 @@ def is_bounce_or_auto(msg: Message) -> bool:
         return True
     # Body check : on regarde les 800 premiers chars (= avant les signatures /
     # quotes), suffisant pour les patterns OOO / changement d'adresse.
+    for pat in AUTO_SUBJECT_EXTRA:
+        if pat in subject:
+            return True
     body_head = body[:800]
     for pat in BOUNCE_BODY_PATTERNS:
         if pat in body_head:
+            return True
+    # Même contrôle sur le texte NETTOYÉ (HTML retiré, citation coupée) : c'est
+    # lui que Rudy lit dans le dashboard. Apostrophes typographiques ramenées
+    # à l'apostrophe droite des motifs.
+    clean = _clean_head(msg.body or "")[:800].replace("’", "'")
+    if clean:
+        for pat in BOUNCE_BODY_PATTERNS:
+            if pat in clean:
+                return True
+        if any(a in clean for a in ACK_RECEPTION_MARKERS) and any(
+            d in clean for d in ACK_DELAY_MARKERS
+        ):
             return True
     return False
 

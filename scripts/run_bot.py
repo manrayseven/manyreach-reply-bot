@@ -81,6 +81,9 @@ _CLEAR_NO_MARKERS = (
     "ne donnerons pas suite", "bonne continuation", "merci mais non",
     "not interested", "no thanks", "no thank", "pas d'intérêt", "pas d'interet",
     "stop", "désabonn", "desabonn", "désinscri", "desinscri",
+    # Rudy 13/11 (mêmes ajouts que _CLEAR_NO de src/fixed_replies.py).
+    "non je vous remercie", "pas nécessaire", "pas necessaire", "décliner",
+    "decliner", "pas d'actualité", "pas d'actualite", "on oublie",
 )
 
 # DÉJÀ ÉQUIPÉ, dit PLATEMENT : c'est un refus net, même sans négation. Rudy veut
@@ -459,6 +462,18 @@ def main() -> int:
         ),
     )
     parser.add_argument(
+        "--rattrapage",
+        type=str,
+        default=None,
+        help=(
+            "Retraite les replies de cette adresse comme un passage NORMAL "
+            "(alerte pour les pistes, réponse auto seulement là où le bot "
+            "l'enverrait seul), en levant les filtres qui les avaient écartés "
+            "(orphelin, backlog, délai). JAMAIS d'envoi forcé, contrairement à "
+            "--only-email. Incident du 12-13/11 (api/rattrapage.py)."
+        ),
+    )
+    parser.add_argument(
         "--ignore-window",
         action="store_true",
         help=(
@@ -468,6 +483,8 @@ def main() -> int:
         ),
     )
     args = parser.parse_args()
+    if args.rattrapage:
+        args.only_email = args.rattrapage
 
     settings = load_settings(args.settings)
 
@@ -673,7 +690,8 @@ def main() -> int:
                 pass
 
     if args.only_email:
-        print(f">>> MODE TEST CONTRÔLÉ : uniquement {args.only_email} (envoi forcé si --no-dry-run)")
+        print(f">>> MODE {'RATTRAPAGE' if args.rattrapage else 'TEST CONTRÔLÉ'} : uniquement {args.only_email}"
+              f"{'' if args.rattrapage else ' (envoi forcé si --no-dry-run)'}")
         confirmed_statuses = None  # ignore status filter, target the email directly
 
     with ManyReachClient(api_key=space_key) as mr, log_file.open("w", encoding="utf-8") as logf:
@@ -868,6 +886,22 @@ def main() -> int:
                 return
             # (Le pré-filtre groupé MGET ci-dessus a déjà écarté les déjà-traités
             # → plus besoin d'un GET KV par reply ici.)
+            # RATTRAPAGE (13/11) : on ne reprend que ce que le bot a PERDU —
+            # jamais vu, ou classé « orphelin » (le bug du 429) — et les refus
+            # nets restés sans réponse (désormais auto-traités). Une réponse déjà
+            # remontée en alerte n'est pas retraitée : pas d'alerte en double.
+            if args.rattrapage and kvstore is not None and kvstore.kv_available():
+                _deja = kvstore.is_kv_processed(_pid(reply.message_id))
+                _orph = bool(kvstore._cmd(
+                    "GET", f"bot:orphan_sent_email:{(reply.from_email or '').lower().strip()}"))
+                if _deja and not _orph:
+                    _q = quick_intent(
+                        _trim_quoted_history(_strip_html(reply.body or "")).strip(),
+                        reply.subject)
+                    if _q != "not_interested_polite":
+                        print("  >> Rattrapage : déjà traité (alerte ou réponse) — skip")
+                        skipped_count += 1
+                        return
 
             print("─" * 80)
             print(f"REPLY  from={reply.from_email}  campaign={reply.campaign_id}")
@@ -1025,7 +1059,7 @@ def main() -> int:
                 # éphémère sur Vercel.
                 if (
                     prospect is not None
-                    and not args.only_email
+                    and (not args.only_email or args.rattrapage)
                     and not args.reprocess
                     and prospect.sending_status in ("Unsub", "Hostile")
                 ):
@@ -1137,7 +1171,7 @@ def main() -> int:
                 PROSPECT_REPLY_CAP = int(os.environ.get("PROSPECT_REPLY_CAP", "2"))
                 _cap_reached = False
                 if (
-                    not args.only_email
+                    (not args.only_email or args.rattrapage)
                     and not args.reprocess
                     and thread
                     and len(thread) >= 3  # au moins 1 cold + 1 reply + 1 réponse bot
@@ -1996,6 +2030,10 @@ def main() -> int:
                 draft = fixed_draft(
                     classification, active_client, space_id=space_id,
                     silent_on_not_interested=silent_on_not_interested,
+                    # Rudy 13/11 : refus d'un site → modèle Google Maps,
+                    # sinon modèle refonte (choix par campagne puis texte).
+                    campaign_id=reply.campaign_id,
+                    refus=_trim_quoted_history(_strip_html(reply.body or "")),
                 )
                 if draft is not None:
                     print(f"  >> {draft.notes}")
@@ -2034,7 +2072,10 @@ def main() -> int:
                 )
 
                 # Controlled test: force-send for the explicitly targeted email
-                if args.only_email and draft and draft.body_html and not draft.skip_send:
+                # Le rattrapage n'est PAS un envoi choisi par Rudy : on garde la
+                # décision normale (alerte pour une piste, jamais un brouillon IA
+                # envoyé à sa place).
+                if args.only_email and not args.rattrapage and draft and draft.body_html and not draft.skip_send:
                     plan.auto_send = True
                     plan.review_reason = ""
                     print("  >>> TEST: envoi forcé pour ce prospect ciblé")
@@ -2095,6 +2136,9 @@ def main() -> int:
                 logf.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
 
                 # Journal cloud pour le dashboard (no-op si pas de KV)
+                # Valeur par défaut sans KV (passage local) : sinon _sent_ok
+                # n'existe pas plus bas → UnboundLocalError.
+                _sent_ok = False
                 if kvstore and kvstore.kv_available():
                     _resp_txt = ""
                     if draft and draft.body_html:
