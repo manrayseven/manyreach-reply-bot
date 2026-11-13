@@ -363,6 +363,21 @@ class handler(BaseHTTPRequestHandler):
     """Appel manuel possible (même secret que /api/cron) : force un tour."""
 
     def do_GET(self):
+        # /api/rattrapage?statut : chiffres seulement (aucune adresse, aucun
+        # texte), pour vérifier que le contrôle tourne sans exposer de secret.
+        if "statut" in (self.path or ""):
+            try:
+                kv = _kv()
+                self._json(200, {
+                    "etape": kv._cmd("GET", ETAT) or "liste",
+                    "candidats": len(_get_json(CANDIDATS, [])),
+                    "traites_total": kv._cmd("SCARD", FAIT),
+                    "tri_pre_calcule_utilise": bool(kv._cmd("GET", "bot:rattrapage2:pre_utilise")),
+                    "alertes_dashboard": kv.alerts_count(),
+                })
+            except Exception as e:  # noqa: BLE001
+                self._json(200, {"ok": False, "error": type(e).__name__})
+            return
         secret = os.environ.get("CRON_SECRET")
         if secret and self.headers.get("Authorization", "") != f"Bearer {secret}":
             self._json(401, {"ok": False, "error": "unauthorized"})
