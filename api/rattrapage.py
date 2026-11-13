@@ -122,7 +122,7 @@ def rattrapage_du() -> bool:
         kv = _kv()
         if not kv.kv_available():
             return False
-        if (kv._cmd("GET", ETAT) or "liste") == "fini":
+        if (kv._cmd("GET", ETAT) or "liste") == "fini" and not _complement_du():
             return False
         return kv._cmd("SET", TOUR, "1", "EX", str(ECART_S), "NX") == "OK"
     except Exception:  # noqa: BLE001
@@ -273,6 +273,85 @@ def _etape_tri(enveloppe_s: float) -> dict:
     return {"etape": "tri", "pages_lues": page, "a_remonter": len(restants)}
 
 
+def _pousser_pistes(pistes: list[dict]) -> int:
+    """Pistes en UN SEUL appel (pipeline Upstash) : une alerte = 4 commandes
+    KV, et 90 alertes une par une ne tenaient pas dans un tour."""
+    from datetime import datetime, timezone
+    import httpx
+
+    kv = _kv()
+    maintenant = datetime.now(timezone.utc).isoformat()
+    cmds = []
+    for c in pistes:
+        jour = c["at"][8:10] + "/" + c["at"][5:7]
+        entree = json.dumps({
+            "at": maintenant,
+            "from": c["email"],
+            "subject": c["subject"],
+            "intent": "ask_more_info",
+            "status": f"🔔 ALERTE — réponse non remontée du {jour} "
+                      f"(ManyReach : {STATUTS_FR.get(c['statut'], c['statut'])})",
+            "reply": c["reply"],
+            "response": "(rien d'envoyé — à traiter par Rudy)",
+            "replied": False,
+            "campaign_id": c["campaign_id"],
+            "prospect_email": c["email"],
+            "message_id": c["message_id"],
+        }, ensure_ascii=False)
+        cmds += [["LPUSH", kv.ACTION_LOG_KEY, entree], ["LPUSH", kv.ALERTS_KEY, entree],
+                 ["SADD", FAIT, c["email"]]]
+    cmds += [["LTRIM", kv.ACTION_LOG_KEY, "0", str(kv.MAX_LOG_ENTRIES - 1)],
+             ["LTRIM", kv.ALERTS_KEY, "0", str(kv.MAX_ALERTS - 1)]]
+    r = httpx.post(kv._URL.rstrip("/") + "/pipeline",
+                   headers={"Authorization": f"Bearer {kv._TOKEN}"},
+                   json=cmds, timeout=20.0)
+    r.raise_for_status()
+    return len(pistes)
+
+
+# Complément du 13/11 (Rudy : « tu peux récupérer celles de moins de 2 mois ? ») :
+# les pistes de 31 à 62 jours, triées sur le poste (config/rattrapage_ids_62.txt,
+# empreintes seulement : le dépôt est public). Passe UNE fois, sans attendre la
+# fin du cycle en cours.
+COMPLEMENT = "bot:rattrapage2:complement62"
+
+
+def _complement_du() -> bool:
+    f = ROOT / "config" / "rattrapage_ids_62.txt"
+    return f.exists() and not _kv()._cmd("GET", COMPLEMENT)
+
+
+def _complement_62() -> dict:
+    from datetime import datetime, timedelta, timezone
+    from src.classifier import _strip_html, _trim_quoted_history
+    from src.manyreach import ManyReachClient
+
+    kv = _kv()
+    ids = {l.strip() for l in (ROOT / "config" / "rattrapage_ids_62.txt").read_text(encoding="utf-8").splitlines()
+           if l.strip() and not l.startswith("#")}
+    fin = time.time() + 45
+    depuis = datetime.now(timezone.utc) - timedelta(days=63)
+    fait = set(kv._cmd("SMEMBERS", FAIT) or [])
+    trouves: dict[str, dict] = {}
+    with ManyReachClient() as mr:
+        for st in PISTES:
+            for m in _replies_depuis(mr, st, depuis, fin):
+                if _empreinte(m.message_id) not in ids:
+                    continue
+                e = (m.from_email or "").lower().strip()
+                if not e or e in fait:
+                    continue
+                trouves[e] = {
+                    "email": e, "statut": st, "at": m.created_at.isoformat(),
+                    "message_id": m.message_id, "campaign_id": m.campaign_id,
+                    "subject": m.subject,
+                    "reply": _trim_quoted_history(_strip_html(m.body or ""))[:2000],
+                }
+    n = _pousser_pistes(list(trouves.values())) if trouves else 0
+    kv._cmd("SET", COMPLEMENT, str(n), "EX", str(90 * 24 * 3600))
+    return {"etape": "complement62", "attendus": len(ids), "alertes": n}
+
+
 def _etape_alertes(enveloppe_s: float) -> dict:
     from datetime import datetime, timezone
 
@@ -288,34 +367,7 @@ def _etape_alertes(enveloppe_s: float) -> dict:
         # KV, et 90 alertes une par une ne tenaient pas dans un tour.
         pistes = [c for c in cands if c["statut"] != "NotInterested" and c["email"] not in fait]
         if pistes:
-            import httpx
-            maintenant = datetime.now(timezone.utc).isoformat()
-            cmds = []
-            for c in pistes:
-                jour = c["at"][8:10] + "/" + c["at"][5:7]
-                entree = json.dumps({
-                    "at": maintenant,
-                    "from": c["email"],
-                    "subject": c["subject"],
-                    "intent": "ask_more_info",
-                    "status": f"🔔 ALERTE — réponse non remontée du {jour} "
-                              f"(ManyReach : {STATUTS_FR.get(c['statut'], c['statut'])})",
-                    "reply": c["reply"],
-                    "response": "(rien d'envoyé — à traiter par Rudy)",
-                    "replied": False,
-                    "campaign_id": c["campaign_id"],
-                    "prospect_email": c["email"],
-                    "message_id": c["message_id"],
-                }, ensure_ascii=False)
-                cmds += [["LPUSH", kv.ACTION_LOG_KEY, entree], ["LPUSH", kv.ALERTS_KEY, entree],
-                         ["SADD", FAIT, c["email"]]]
-            cmds += [["LTRIM", kv.ACTION_LOG_KEY, "0", str(kv.MAX_LOG_ENTRIES - 1)],
-                     ["LTRIM", kv.ALERTS_KEY, "0", str(kv.MAX_ALERTS - 1)]]
-            r = httpx.post(kv._URL.rstrip("/") + "/pipeline",
-                           headers={"Authorization": f"Bearer {kv._TOKEN}"},
-                           json=cmds, timeout=20.0)
-            r.raise_for_status()
-            out["alertes"] = len(pistes)
+            out["alertes"] = _pousser_pistes(pistes)
             fait |= {c["email"] for c in pistes}
         for c in cands:
             if c["email"] in fait:
@@ -382,6 +434,8 @@ def _etape_alertes(enveloppe_s: float) -> dict:
 
 
 def run_rattrapage(enveloppe_s: float = 24.0) -> dict:
+    if _complement_du():
+        return _complement_62()
     etat = _kv()._cmd("GET", ETAT) or "liste"   # absent = nouveau cycle
     if etat == "liste":
         return _etape_liste()
@@ -406,6 +460,7 @@ class handler(BaseHTTPRequestHandler):
                     "candidats": len(_get_json(CANDIDATS, [])),
                     "traites_total": kv._cmd("SCARD", FAIT),
                     "tri_pre_calcule_utilise": bool(kv._cmd("GET", "bot:rattrapage2:pre_utilise")),
+                    "complement_62j": kv._cmd("GET", COMPLEMENT),
                     "alertes_dashboard": kv.alerts_count(),
                 })
             except Exception as e:  # noqa: BLE001
