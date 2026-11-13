@@ -1002,7 +1002,21 @@ def main() -> int:
                 try:
                     prospect = mr.find_prospect_by_email(reply.from_email)
                 except Exception as e:
-                    print(f"  !! find_prospect_by_email failed: {e}")
+                    # RECHERCHE RATEE != PROSPECT INCONNU (incident du 12-13/11).
+                    # Manyreach refusait par limite de debit (429, quota de 60
+                    # requetes/min partage avec la chaine Lead Finder) : prospect
+                    # restait None, la reponse passait en « orphan » et etait
+                    # marquee traitee pour toujours. Des dizaines de reponses
+                    # (« vous offrez quoi ? », « vous pouvez toujours me montrer »)
+                    # n'ont ainsi jamais ete ni repondues ni alertees. On ne
+                    # conclut donc RIEN d'un echec : on laisse la reponse en file,
+                    # le passage suivant (5 min) la reprendra.
+                    print(f"  !! find_prospect_by_email failed: {e} — reporte au prochain passage")
+                    log_entry["intent"] = "deferred_lookup_failed"
+                    log_entry["actions"] = [f"reporte : {e}"]
+                    logf.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
+                    skipped_count += 1
+                    return
 
                 # STATUT TERMINAL : si le prospect est déjà Unsub ou Hostile, on
                 # ne retraite pas (le bot l'a déjà géré dans un run précédent OU
