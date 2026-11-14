@@ -250,6 +250,14 @@ def _closure_already_sent(thread, before) -> bool:
     return False
 
 
+# Signes d'ouverture que _OPEN_DOOR_RE ne couvre pas (Rudy 14/11).
+_OUVERTURE_RE = re.compile(
+    r"(?i)(\boui\b|\bok pour\b|volontiers|je veux bien|je souhaite|curieu(x|se)"
+    r"|tombe à pic|tombe a pic|à la recherche|a la recherche|int[ée]ress[ée]e? par"
+    r"|contactez|me contacter|nous contacter|combien|\bprix\b|\b\d{1,2} ?h ?\d{0,2}\b"
+    r"|\b(lundi|mardi|mercredi|jeudi|vendredi|samedi)\b|\b0[1-9](?:[ .]?\d\d){4}\b)"
+)
+
 _OPEN_DOOR_RE = re.compile(
     r"(\?"                                   # une question posée
     r"|[ée]chang(er|eons|erions)"
@@ -1850,6 +1858,25 @@ def main() -> int:
                             kvstore.clear_held_seen(reply.message_id)
                     processed_count += 1
                     return
+
+                # === GARDE DES INTÉRESSÉS (Rudy 14/11) ===
+                # Le modèle de REFUS est parti à de vrais intéressés : « Bonjour
+                # aujourd'hui 14h45 ? », « avez-vous un N° de téléphone ? », « Oui je
+                # veux bien voir », « Qui tombe à pic ». L'IA les avait lus comme des
+                # refus. Règle mécanique : un négatif auto-envoyé qui n'a PAS été
+                # reconnu sans IA (quick_intent) et dont le texte porte un signe
+                # d'ouverture (question, oui, créneau, téléphone, tarif…) ne part
+                # pas : il remonte en alerte. Un refus plat reste auto-géré (cas
+                # bieresicsas du 13/10 : pas d'alerte pour un refus net).
+                if classification.intent in ("not_interested_polite", "objection_price",
+                                             "objection_already_have_solution"):
+                    _txt_g = _trim_quoted_history(_strip_html(reply.body or ""))[:1200]
+                    if (not quick_intent(_txt_g, reply.subject or "")
+                            and (_OPEN_DOOR_RE.search(_txt_g) or _OUVERTURE_RE.search(_txt_g))):
+                        import dataclasses as _dc
+                        print(f"  >> GARDE : « {classification.intent} » mais le texte "
+                              f"s'ouvre → alerte, aucun refus envoyé")
+                        classification = _dc.replace(classification, intent="interested_lukewarm")
 
                 # === RACCOURCI 1bis : ALERT_ONLY — leads chauds, RDV, plus tard ===
                 # Le bot NE répond PAS. Envoie une alerte email à Rudy avec toutes
