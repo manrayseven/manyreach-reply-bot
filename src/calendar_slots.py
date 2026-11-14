@@ -279,35 +279,3 @@ class CalendarClient:
         return self.service.events().insert(calendarId=self.calendar_id, body=event).execute()
 
 
-def build_meeting_title(offer: str, who: str) -> str:
-    """Format per Rudy's spec: '14.00 Call <offre> avec <entreprise/prénom>'.
-
-    The leading time is added by the caller (it knows the slot). This returns
-    'Call <offre> avec <who>'.
-    """
-    return f"Call {offer} avec {who}".strip()
-
-
-def build_meeting_description(
-    *,
-    email: str,
-    phone: str | None = None,
-    zoom_link: str | None = None,
-    website: str | None = None,
-    company: str | None = None,
-    notes: str | None = None,
-) -> str:
-    """Structured event description with the prospect's coordinates."""
-    lines = [f"Email : {email}"]
-    if phone:
-        lines.append(f"Téléphone : {phone}")
-    if zoom_link:
-        lines.append(f"Lien visio : {zoom_link}")
-    if website:
-        lines.append(f"Site : {website}")
-    if company:
-        lines.append(f"Entreprise : {company}")
-    if notes:
-        lines.append("")
-        lines.append(notes)
-    return "\n".join(lines)
