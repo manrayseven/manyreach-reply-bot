@@ -34,18 +34,12 @@ NEGATIVE_AUTO_INTENTS = frozenset({
 
 # --- Modèles (HTML simple : <p> / <br>, comme le drafter) ---------------------
 
-WC_NEGATIVE_HTML = (
+_WC_OUVERTURE = (
     "<p>Bonjour,</p>"
     "<p>C'est noté, merci d'avoir pris le temps de répondre, je ne vous dérange pas plus. "
     "Auriez-vous en tête un ou des contacts qui rencontrent ces problématiques ?</p>"
-    # Rudy 16/10 : la REFONTE passe en 2e (avec le pré-design offert et sa
-    # question d'accroche), les deux outils ferment. Le bloc « applications IA
-    # sur mesure » + etudes-cas-ia.pdf est RETIRÉ.
-    "<p>Je propose également des refontes de sites (envoi avant tout paiement "
-    "d'un pré-design pour que vous puissiez visualiser votre nouveau site) à "
-    'petit prix <a href="https://www.webmarketing-conseil.fr/site-internet/">'
-    "https://www.webmarketing-conseil.fr/site-internet/</a> (voudriez-vous voir "
-    "ce que cela pourrait donner ?)</p>"
+)
+_WC_OUTILS = (
     "<p>J'ai enfin sorti deux outils d'automatisation :<br>"
     '- <a href="https://www.growpulser.com">www.growpulser.com</a> pour automatiser la '
     "création et publication de contenus sur les réseaux sociaux.<br>"
@@ -53,6 +47,67 @@ WC_NEGATIVE_HTML = (
     "création et publication de contenus SEO.</p>"
     "<p>Bien à vous,<br>Rudy Viard</p>"
 )
+_WC_IA = (" ainsi que des développements IA (applications, outils métiers, "
+          "automatisations...).</p>")
+
+# Rudy 13/11 : DEUX modèles, selon ce que le prospect a refusé. Celui qui
+# refuse un site se voit proposer Google Maps ; tous les autres, la refonte.
+# Les développements IA reviennent dans les deux (ils avaient été retirés le
+# 16/10, Rudy les remet).
+WC_NEGATIVE_HTML = (
+    _WC_OUVERTURE
+    + "<p>Je propose également des refontes de sites (envoi avant tout paiement "
+    "d'un pré-design pour que vous puissiez visualiser votre nouveau site) à "
+    'petit prix <a href="https://www.webmarketing-conseil.fr/site-internet/">'
+    "https://www.webmarketing-conseil.fr/site-internet/</a> (voudriez-vous voir "
+    "ce que cela pourrait donner ?)" + _WC_IA
+    + _WC_OUTILS
+)
+WC_NEGATIVE_MAPS_HTML = (
+    _WC_OUVERTURE
+    + "<p>Je propose également du référencement sur Google Maps (afin d'apparaître "
+    "plus souvent en positions 1, 2 et 3 sur les requêtes locales où la carte "
+    "Google s'affiche)" + _WC_IA
+    + _WC_OUTILS
+)
+
+# Campagnes qui vendent un SITE (Création de Site et sa jumelle « boîtes
+# propres ») : un refus y vaut refus du site → modèle Google Maps. Campagnes
+# Google Maps : jamais le modèle Maps. Surchargeables sans redéploiement de
+# code via les variables d'environnement (liste d'identifiants séparés par des
+# virgules) quand de nouvelles campagnes apparaissent.
+def _ids(env: str, defaut: str) -> frozenset[int]:
+    import os
+    out = set()
+    for x in (os.environ.get(env) or defaut).split(","):
+        x = x.strip()
+        if x.isdigit():
+            out.add(int(x))
+    return frozenset(out)
+
+
+WC_SITE_CAMPAIGNS = _ids("WC_SITE_CAMPAIGNS", "110971,127319")
+WC_MAPS_CAMPAIGNS = _ids("WC_MAPS_CAMPAIGNS", "110967,127318")
+
+# Hors campagne « site », le prospect peut quand même refuser un site
+# (« je fais mon site moi-même », « j'ai déjà un site ») : on ne lui repropose
+# pas une refonte.
+_REFUS_SITE_RE = re.compile(r"\bsites?\b|\bsite\s?web\b|\bsite\s?internet\b")
+
+
+def wc_negative_html(campaign_id: int | str | None, refus: str = "") -> str:
+    """Modèle de refus Webmarketing Conseil adapté à ce qui a été refusé."""
+    try:
+        cid = int(campaign_id or 0)
+    except (TypeError, ValueError):
+        cid = 0
+    if cid in WC_SITE_CAMPAIGNS:
+        return WC_NEGATIVE_MAPS_HTML
+    if cid in WC_MAPS_CAMPAIGNS:
+        return WC_NEGATIVE_HTML
+    if _REFUS_SITE_RE.search(_norm(refus)):
+        return WC_NEGATIVE_MAPS_HTML
+    return WC_NEGATIVE_HTML
 
 CMACLIM_NEGATIVE_HTML = (
     "<p>Bonjour,</p>"
@@ -82,7 +137,37 @@ _CLEAR_NO = (
     "n'avons pas besoin", "pas concerné", "pas concerne", "ne souhaite pas",
     "ne souhaitons pas", "pas pour nous", "sans suite", "ne donnerai pas suite",
     "ne donnerons pas suite",
+    # Rudy 13/11 : refus nets restés sans réponse (« Non je vous remercie
+    # beaucoup », « je vais décliner », « on oublie »…).
+    "non je vous remercie", "non, je vous remercie", "non, merci", "non merci",
+    "ne m'intéresse pas", "ne m'interesse pas", "ne nous intéresse pas",
+    "pas nécessaire", "pas necessaire", "décliner", "decliner",
+    "pas d'actualité", "pas d'actualite", "on oublie",
 )
+
+# Fin du message utile : la signature (téléphone, site, adresse, « prise de
+# rendez-vous sur Doctolib »…) déclenchait les indices d'ambiguïté (« www. »,
+# « @ », « rendez », « http ») et faisait tout passer à l'IA, voire en alerte.
+_FORMULE_FIN_RE = re.compile(
+    r"\b(?:bien\s+)?cordialement\b|\bbien\s+[àa]\s+vous\b|\bsinc[èe]res\s+salutations\b"
+    r"|\brespectueusement\b|\b(?:tr[èe]s\s+)?(?:bonne|belle|excellente)\s+"
+    r"(?:journ[ée]e|soir[ée]e|fin\s+de\s+journ[ée]e|semaine|continuation|suite)\b"
+    r"|\bcdlt\b|\bcdt\b|\bbàv\b|^--|\s--\s|\benvoy[ée] de mon\b"
+)
+
+# « Merci, MAIS je ne suis pas intéressée » : ce « mais » est de la politesse,
+# pas une nuance. On ne l'ignore que s'il est suivi, dans la même phrase, d'un
+# refus net.
+_MAIS_POLI_RE = re.compile(
+    r"\bmais\b(?=[^.?!;]{0,40}?(?:pas\s+(?:du\s+tout\s+)?int[ée]ress|ne\s+m'int[ée]resse"
+    r"|non\s+merci|n'ai\s+pas\s+besoin|pas\s+besoin|ne\s+souhaite|d[ée]cliner))"
+)
+
+
+def _corps_utile(low: str) -> str:
+    """Le message jusqu'à la formule de fin (signature exclue)."""
+    m = _FORMULE_FIN_RE.search(low, 8)
+    return low[: m.start()] if m else low
 
 # Le MOINDRE de ces indices = cas potentiellement ambigu → on laisse l'IA
 # trancher. Volontairement large : un faux « ambigu » coûte un appel IA, un faux
@@ -104,6 +189,9 @@ _AMBIGUITY_CUES = (
     # agacement / plainte → hostile / désinscription, jamais une réponse commerciale
     "spam", "arrêt", "arret", "harcel", "plainte", "cnil", "rgpd", "signal", "supprim",
     "retir", "liste", "insist", "relance", "marre", "!!",
+    # « Stop. Je ne suis pas intéressée » : une demande d'arrêt, jamais le
+    # modèle commercial (cas virginielelong 13/11).
+    "stop",
     # intérêt (formes POSITIVES seulement : « ça ne m'intéresse pas » doit passer)
     "ça m'intéresse", "ca m'intéresse", "cela m'intéresse", "ça nous intéresse",
     "cela nous intéresse", "intéressant", "interessant", "curieu", "essayer",
@@ -158,13 +246,15 @@ def quick_intent(clean_body: str, subject: str = "") -> str | None:
     # interpréter, et c'est justement ce qui le faisait remonter en alerte.
     if _is_bare_no(low):
         return "not_interested_polite"
-    if len(low) > MAX_QUICK_LEN:
+    # Signature retirée, « mais » de politesse neutralisé (Rudy 13/11).
+    core = _MAIS_POLI_RE.sub(" ", _corps_utile(low))
+    if len(core) > MAX_QUICK_LEN:
         return None
-    if not any(m in low for m in _CLEAR_NO):
+    if not any(m in core for m in _CLEAR_NO):
         return None
-    if any(c in low for c in _AMBIGUITY_CUES):
+    if any(c in core for c in _AMBIGUITY_CUES):
         return None
-    if _AFFIRMATIVE_RE.search(low):
+    if _AFFIRMATIVE_RE.search(core):
         return None
     return "not_interested_polite"
 
@@ -200,8 +290,13 @@ def fixed_draft(
     client: dict | None,
     space_id: str | None = None,
     silent_on_not_interested: bool = False,
+    campaign_id: int | str | None = None,
+    refus: str = "",
 ) -> Draft | None:
-    """Réponse type prête à envoyer, ou None → le drafter IA prend le relais."""
+    """Réponse type prête à envoyer, ou None → le drafter IA prend le relais.
+
+    `campaign_id` et `refus` (texte nettoyé du prospect) choisissent, pour
+    Webmarketing Conseil, entre le modèle « refonte » et le modèle « Google Maps »."""
     if classification.intent not in NEGATIVE_AUTO_INTENTS:
         return None
     if not str(classification.language or "fr").lower().startswith("fr"):
@@ -212,5 +307,10 @@ def fixed_draft(
     if silent_on_not_interested and classification.intent == "not_interested_polite":
         return Draft(body_html=None, subject=None, skip_send=True,
                      notes="silent_on_not_interested (réglage) — sans IA")
+    if key == "wc":
+        html = wc_negative_html(campaign_id, refus)
+        variante = "wc-maps" if html is WC_NEGATIVE_MAPS_HTML else "wc-site"
+        return Draft(body_html=html, subject=None, skip_send=False,
+                     notes=f"réponse type fixe « {variante} » (sans IA)")
     return Draft(body_html=_TEMPLATES[key], subject=None, skip_send=False,
                  notes=f"réponse type fixe « {key} » (sans IA)")

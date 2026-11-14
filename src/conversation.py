@@ -19,8 +19,16 @@ from datetime import datetime
 
 from .classifier import _QUOTE_END_RE, _strip_html, _trim_quoted_history
 
-MAX_TEXT = 700      # réponses du prospect
-MAX_OURS = 400      # nos emails (contexte ; le transfert en montre 240)
+# PLUS DE MESSAGES COUPÉS (Rudy 10/11). Les réponses du prospect étaient
+# gardées sur 700 caractères et NOS emails sur 400, puis le récap de transfert
+# les recoupait à 240 avec un « [...] ». Un échange tronqué oblige à rouvrir
+# ManyReach : le récap perd son intérêt.
+# ⚠️ Ces valeurs décident du poids de l'historique stocké en KV. En septembre,
+# des contextes trop lourds faisaient échouer les lectures en silence et des
+# alertes disparaissaient. On monte donc les plafonds ET on réduit la taille des
+# lots de lecture (kvstore.get_alert_contexts) pour garder des réponses légères.
+MAX_TEXT = 2500     # réponses du prospect
+MAX_OURS = 2500     # nos emails (contexte)
 MAX_ITEMS = 16
 
 _MONTHS = {

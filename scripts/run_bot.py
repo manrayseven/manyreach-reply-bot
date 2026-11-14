@@ -81,6 +81,9 @@ _CLEAR_NO_MARKERS = (
     "ne donnerons pas suite", "bonne continuation", "merci mais non",
     "not interested", "no thanks", "no thank", "pas d'intérêt", "pas d'interet",
     "stop", "désabonn", "desabonn", "désinscri", "desinscri",
+    # Rudy 13/11 (mêmes ajouts que _CLEAR_NO de src/fixed_replies.py).
+    "non je vous remercie", "pas nécessaire", "pas necessaire", "décliner",
+    "decliner", "pas d'actualité", "pas d'actualite", "on oublie",
 )
 
 # DÉJÀ ÉQUIPÉ, dit PLATEMENT : c'est un refus net, même sans négation. Rudy veut
@@ -169,6 +172,45 @@ _FORWARDING_RE = re.compile(
 # RÉPONSE PAR CHIFFRE aux cold mails « Répondez 1, 2 ou 3 » : le corps se réduit
 # au chiffre (« 1 », « 1. », « réponse 2 », « 3 ! »).
 _DIGIT_CHOICE_RE = re.compile(r"^(?:r[ée]ponse\s*[:°]?\s*)?([123])\s*[.)!,-]?$", re.IGNORECASE)
+
+# CHANGEMENT D'ADRESSE / DÉPART (Rudy 11/11) : ces réponses ne valent ni alerte
+# ni réponse auto. Volontairement ÉTROIT — il faut que ce soit évident. Les
+# mêmes familles que Lead Finder, qui exploite la nouvelle adresse de son côté
+# (Lead Finder AI/src/pipeline/nouvelle-adresse.ts).
+_ADDRESS_CHANGE_RE = re.compile(
+    r"(changement d['’]adresse"
+    r"|nouvelle adresse (mail|e-?mail|de contact|électronique|electronique)"
+    # « n'est plus … » : la liste des participes était trop courte (Rudy 12/11,
+    # cas arbolibre69 — « cette adresse e-mail n'est plus CONSULTÉE depuis un
+    # certain temps »). On couvre les façons de dire qu'une boîte est morte.
+    r"|(adresse|boite|boîte) (e-?mail |mail )?(a chang|ne sera plus|n['’]est plus "
+    r"(valable|active|utilisée|utilisee|consultée|consultee|relevée|relevee"
+    r"|surveillée|surveillee|suivie|lue|en service|d['’]actualité|d['’]actualite))"
+    # « Merci de nous adresser votre demande à : … » — redirection explicite,
+    # sans le mot « désormais » que la règle exigeait jusqu'ici.
+    r"|(adresser|envoyer|transmettre|faire parvenir)[^.!?]{0,20}"
+    r"(votre|vos|toute) (demande|demandes|message|messages|courrier|requête)"
+    r"|(écrire|ecrire|écrivez|ecrivez|contactez|joindre)[^.!?]{0,30}"
+    r"(désormais|desormais|dorénavant|dorenavant)"
+    r"|(désormais|desormais|dorénavant|dorenavant)[^.!?]{0,30}"
+    r"(à l['’]adresse|a l['’]adresse|sur l['’]adresse)"
+    r"|a changé de propriétaire|a change de proprietaire"
+    r"|ne (fais|fait|travaille) plus (partie|chez|pour|au sein)"
+    # Le verbe seul, sans son auxiliaire (Rudy 11/11, cas bp2mmerel) : la règle
+    # attendait « A quitté la société », il écrivait « J'AI quitté la société ».
+    # `quitt[ée]` couvre « quitté » comme « quitte ».
+    r"|quitt[ée] (la société|la societe|l['’]entreprise|l['’]effectif"
+    r"|mes fonctions|ses fonctions|la structure|le cabinet|mon poste|son poste)"
+    r"|n['’]est plus (en poste|dans l['’]entreprise|dans la société|parmi nous)"
+    r"|nouvel interlocuteur"
+    r"|no longer (with|works? (at|for)|employed)|left the company"
+    r")", re.IGNORECASE)
+
+# RÉPONDEUR RECONNU AU DÉLAI (Rudy 11/11) : long ET immédiat. Les deux ensemble,
+# jamais l'un sans l'autre — un humain qui répond en trois minutes répond court,
+# un message long met des heures à s'écrire. Réglables sans redéploiement.
+_AUTO_MIN_CHARS = int(os.environ.get("AUTO_REPLY_MIN_CHARS", "400"))
+_AUTO_MAX_DELAY_S = float(os.environ.get("AUTO_REPLY_MAX_DELAY_S", "300"))
 
 # PORTE OUVERTE (Rudy 13/10) : le prospect propose, demande ou questionne — il
 # attend une suite. Sert à filtrer les « Interested » de ManyReach, dont le
@@ -420,6 +462,18 @@ def main() -> int:
         ),
     )
     parser.add_argument(
+        "--rattrapage",
+        type=str,
+        default=None,
+        help=(
+            "Retraite les replies de cette adresse comme un passage NORMAL "
+            "(alerte pour les pistes, réponse auto seulement là où le bot "
+            "l'enverrait seul), en levant les filtres qui les avaient écartés "
+            "(orphelin, backlog, délai). JAMAIS d'envoi forcé, contrairement à "
+            "--only-email. Incident du 12-13/11 (api/rattrapage.py)."
+        ),
+    )
+    parser.add_argument(
         "--ignore-window",
         action="store_true",
         help=(
@@ -429,6 +483,8 @@ def main() -> int:
         ),
     )
     args = parser.parse_args()
+    if args.rattrapage:
+        args.only_email = args.rattrapage
 
     settings = load_settings(args.settings)
 
@@ -634,7 +690,8 @@ def main() -> int:
                 pass
 
     if args.only_email:
-        print(f">>> MODE TEST CONTRÔLÉ : uniquement {args.only_email} (envoi forcé si --no-dry-run)")
+        print(f">>> MODE {'RATTRAPAGE' if args.rattrapage else 'TEST CONTRÔLÉ'} : uniquement {args.only_email}"
+              f"{'' if args.rattrapage else ' (envoi forcé si --no-dry-run)'}")
         confirmed_statuses = None  # ignore status filter, target the email directly
 
     with ManyReachClient(api_key=space_key) as mr, log_file.open("w", encoding="utf-8") as logf:
@@ -829,6 +886,22 @@ def main() -> int:
                 return
             # (Le pré-filtre groupé MGET ci-dessus a déjà écarté les déjà-traités
             # → plus besoin d'un GET KV par reply ici.)
+            # RATTRAPAGE (13/11) : on ne reprend que ce que le bot a PERDU —
+            # jamais vu, ou classé « orphelin » (le bug du 429) — et les refus
+            # nets restés sans réponse (désormais auto-traités). Une réponse déjà
+            # remontée en alerte n'est pas retraitée : pas d'alerte en double.
+            if args.rattrapage and kvstore is not None and kvstore.kv_available():
+                _deja = kvstore.is_kv_processed(_pid(reply.message_id))
+                _orph = bool(kvstore._cmd(
+                    "GET", f"bot:orphan_sent_email:{(reply.from_email or '').lower().strip()}"))
+                if _deja and not _orph:
+                    _q = quick_intent(
+                        _trim_quoted_history(_strip_html(reply.body or "")).strip(),
+                        reply.subject)
+                    if _q != "not_interested_polite":
+                        print("  >> Rattrapage : déjà traité (alerte ou réponse) — skip")
+                        skipped_count += 1
+                        return
 
             print("─" * 80)
             print(f"REPLY  from={reply.from_email}  campaign={reply.campaign_id}")
@@ -963,7 +1036,21 @@ def main() -> int:
                 try:
                     prospect = mr.find_prospect_by_email(reply.from_email)
                 except Exception as e:
-                    print(f"  !! find_prospect_by_email failed: {e}")
+                    # RECHERCHE RATEE != PROSPECT INCONNU (incident du 12-13/11).
+                    # Manyreach refusait par limite de debit (429, quota de 60
+                    # requetes/min partage avec la chaine Lead Finder) : prospect
+                    # restait None, la reponse passait en « orphan » et etait
+                    # marquee traitee pour toujours. Des dizaines de reponses
+                    # (« vous offrez quoi ? », « vous pouvez toujours me montrer »)
+                    # n'ont ainsi jamais ete ni repondues ni alertees. On ne
+                    # conclut donc RIEN d'un echec : on laisse la reponse en file,
+                    # le passage suivant (5 min) la reprendra.
+                    print(f"  !! find_prospect_by_email failed: {e} — reporte au prochain passage")
+                    log_entry["intent"] = "deferred_lookup_failed"
+                    log_entry["actions"] = [f"reporte : {e}"]
+                    logf.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
+                    skipped_count += 1
+                    return
 
                 # STATUT TERMINAL : si le prospect est déjà Unsub ou Hostile, on
                 # ne retraite pas (le bot l'a déjà géré dans un run précédent OU
@@ -972,7 +1059,7 @@ def main() -> int:
                 # éphémère sur Vercel.
                 if (
                     prospect is not None
-                    and not args.only_email
+                    and (not args.only_email or args.rattrapage)
                     and not args.reprocess
                     and prospect.sending_status in ("Unsub", "Hostile")
                 ):
@@ -1084,7 +1171,7 @@ def main() -> int:
                 PROSPECT_REPLY_CAP = int(os.environ.get("PROSPECT_REPLY_CAP", "2"))
                 _cap_reached = False
                 if (
-                    not args.only_email
+                    (not args.only_email or args.rattrapage)
                     and not args.reprocess
                     and thread
                     and len(thread) >= 3  # au moins 1 cold + 1 reply + 1 réponse bot
@@ -1163,6 +1250,66 @@ def main() -> int:
                 # partait donc en alerte « illisible » au lieu d'être traité.
                 # Rudy 29/09 : « 1 » = pas intéressé → il reçoit quand même la
                 # réponse type (avant : unsubscribe = silence + blacklist).
+                # CHANGEMENT D'ADRESSE / DÉPART (Rudy 11/11). « L'adresse mail de
+                # l'A.L.I a changé, écrivez désormais à … », « Photo WilliamB a
+                # changé de propriétaire, notre nouvelle adresse est … ». Ces
+                # réponses n'appellent ni alerte ni réponse : elles encombraient
+                # le dashboard, et Rudy les marquait « Unsub » pour s'en
+                # débarrasser — ce qui bloquait ensuite Lead Finder, pour qui un
+                # Unsub ne se contourne jamais. La nouvelle adresse était perdue.
+                # On se tait donc ici, SANS toucher au statut du prospect : c'est
+                # Lead Finder qui réinscrit la nouvelle adresse dans la même
+                # campagne (deux passages par jour) puis désinscrit l'ancienne.
+                #
+                # RÉPONDEUR DÉTECTÉ PAR LE DÉLAI (Rudy 11/11). Quatre rattrapages
+                # de formulation dans la journée : « ceci est un message
+                # automatique », puis « ce message EST une réponse automatique »,
+                # puis un répondeur qui ne se déclare pas du tout (Margaux
+                # Terrou). Courir après le vocabulaire est perdu d'avance.
+                # Le DÉLAI, lui, ne ment pas : personne n'écrit 400 caractères
+                # dans les cinq minutes qui suivent un email qu'il n'attendait
+                # pas. Les deux conditions ensemble (long ET immédiat) ne laissent
+                # passer aucune vraie réponse : un humain qui répond vite répond
+                # court (« oui », « non merci », « rappelez-moi »).
+                _silence = None
+                if _ADDRESS_CHANGE_RE.search(_clean_check):
+                    _silence = "changement d'adresse / départ"
+                else:
+                    try:
+                        _prev_sent = [m for m in (thread or [])
+                                      if m.type in ("Sent", "SentManual")
+                                      and m.created_at <= reply.created_at]
+                        if _prev_sent and len(_clean_check) >= _AUTO_MIN_CHARS:
+                            _delai = (reply.created_at - max(
+                                m.created_at for m in _prev_sent)).total_seconds()
+                            if 0 <= _delai <= _AUTO_MAX_DELAY_S:
+                                _silence = (f"répondeur automatique "
+                                            f"({int(_delai)} s après notre envoi, "
+                                            f"{len(_clean_check)} caractères)")
+                    except Exception:  # noqa: BLE001
+                        pass
+                if _silence:
+                    print(f"  >> SILENCIEUX — {_silence}")
+                    log_entry["intent"] = "bounce_or_auto"
+                    log_entry["actions"] = [f"silent ({_silence})"]
+                    logf.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
+                    if kvstore and kvstore.kv_available():
+                        kvstore.log_action({
+                            "at": now_utc.isoformat(),
+                            "from": reply.from_email,
+                            "subject": reply.subject,
+                            "intent": "bounce_or_auto",
+                            "status": f"silencieux ({_silence})",
+                            "reply": _clean_check[:500],
+                            "response": "(aucune réponse, aucune alerte)",
+                            "prospect_email": (prospect.email if prospect else None),
+                            "client_id": (active_client or {}).get("id") or space_id,
+                        })
+                    if not dry_run:
+                        _mark_done(reply.message_id)
+                    skipped_count += 1
+                    return
+
                 _digit_choice = None
                 _dm = _DIGIT_CHOICE_RE.match(_clean_check)
                 if _dm and original_outreach and _OPTIONS_CONVENTION_RE.search(
@@ -1883,6 +2030,10 @@ def main() -> int:
                 draft = fixed_draft(
                     classification, active_client, space_id=space_id,
                     silent_on_not_interested=silent_on_not_interested,
+                    # Rudy 13/11 : refus d'un site → modèle Google Maps,
+                    # sinon modèle refonte (choix par campagne puis texte).
+                    campaign_id=reply.campaign_id,
+                    refus=_trim_quoted_history(_strip_html(reply.body or "")),
                 )
                 if draft is not None:
                     print(f"  >> {draft.notes}")
@@ -1921,7 +2072,10 @@ def main() -> int:
                 )
 
                 # Controlled test: force-send for the explicitly targeted email
-                if args.only_email and draft and draft.body_html and not draft.skip_send:
+                # Le rattrapage n'est PAS un envoi choisi par Rudy : on garde la
+                # décision normale (alerte pour une piste, jamais un brouillon IA
+                # envoyé à sa place).
+                if args.only_email and not args.rattrapage and draft and draft.body_html and not draft.skip_send:
                     plan.auto_send = True
                     plan.review_reason = ""
                     print("  >>> TEST: envoi forcé pour ce prospect ciblé")
@@ -1982,6 +2136,9 @@ def main() -> int:
                 logf.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
 
                 # Journal cloud pour le dashboard (no-op si pas de KV)
+                # Valeur par défaut sans KV (passage local) : sinon _sent_ok
+                # n'existe pas plus bas → UnboundLocalError.
+                _sent_ok = False
                 if kvstore and kvstore.kv_available():
                     _resp_txt = ""
                     if draft and draft.body_html:

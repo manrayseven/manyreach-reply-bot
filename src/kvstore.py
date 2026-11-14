@@ -170,7 +170,11 @@ def get_alert_contexts(alert_ids: list[str]) -> dict[str, dict]:
     out: dict[str, dict] = {}
     if not kv_available() or not alert_ids:
         return out
-    _CH = 50
+    # Lots COURTS (Rudy 10/11) : les historiques ne sont plus tronqués, donc un
+    # contexte pèse jusqu'à ~40 Ko. Par 50, un MGET ramenait 2 Mo et échouait en
+    # silence — c'est exactement ce qui faisait disparaître des alertes en
+    # septembre. Par 12, une réponse reste sous le demi-méga.
+    _CH = 12
     for _i in range(0, len(alert_ids), _CH):
         batch = alert_ids[_i:_i + _CH]
         res = _cmd("MGET", *[ALERT_CTX_PREFIX + a for a in batch])

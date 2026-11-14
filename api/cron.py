@@ -54,6 +54,15 @@ def _spaces_due() -> bool:
         return False
 
 
+def _rattrapage_due() -> bool:
+    try:
+        sys.path.insert(0, str(ROOT / "api"))
+        from rattrapage import rattrapage_du
+        return rattrapage_du()
+    except Exception:  # noqa: BLE001
+        return False
+
+
 class handler(BaseHTTPRequestHandler):
     def do_GET(self):
         secret = os.environ.get("CRON_SECRET")
@@ -120,6 +129,13 @@ class handler(BaseHTTPRequestHandler):
                 from src.spaces import run_spaces
                 result["spaces"] = run_spaces(total_budget_s=CRON_ENVELOPE_S)
                 result["main"] = "saute (tour dedie aux espaces)"
+            elif _rattrapage_due():
+                # TOUR DEDIE AU RATTRAPAGE (incident 12-13/11, api/rattrapage.py) :
+                # au plus un tour toutes les 9 min, et seulement tant que la
+                # liste n'est pas epuisee.
+                from rattrapage import run_rattrapage
+                result["rattrapage"] = run_rattrapage(enveloppe_s=CRON_ENVELOPE_S - 2)
+                result["main"] = "saute (tour dedie au rattrapage)"
             else:
                 result["exit_code"] = run_bot.main()
         except SystemExit as e:

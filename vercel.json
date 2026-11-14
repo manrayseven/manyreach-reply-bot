@@ -11,6 +11,9 @@
     },
     "api/spaces.py": {
       "maxDuration": 60
+    },
+    "api/rattrapage.py": {
+      "maxDuration": 60
     }
   },
   "rewrites": [

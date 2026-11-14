@@ -293,6 +293,13 @@ site-internet) : applique le modèle négatif propre à ce client (voir
 Voici **la réponse type que Rudy envoie réellement aujourd'hui**. C'est le MODÈLE DE
 RÉFÉRENCE : garde **tous les blocs et tous les liens**, adapte seulement les tournures.
 
+🔀 **DEUX VARIANTES (Rudy 2026-11-13), selon ce que le prospect a refusé** :
+- il a refusé **un site** (campagne « Création de Site », ou il dit avoir déjà un site /
+  ne pas vouloir le refaire) → **variante GOOGLE MAPS** (bloc 2 ci-dessous remplacé) ;
+- **tous les autres refus** → **variante REFONTE** (modèle ci-dessous).
+
+Variante REFONTE :
+
 ```
 Bonjour,
 
@@ -302,7 +309,29 @@ Auriez-vous en tête un ou des contacts qui rencontrent ces problématiques ?
 Je propose également des refontes de sites (envoi avant tout paiement d'un pré-design
 pour que vous puissiez visualiser votre nouveau site) à petit prix
 https://www.webmarketing-conseil.fr/site-internet/ (voudriez-vous voir ce que cela
-pourrait donner ?)
+pourrait donner ?) ainsi que des développements IA (applications, outils métiers,
+automatisations...).
+
+J'ai enfin sorti deux outils d'automatisation :
+- www.growpulser.com pour automatiser la création et publication de contenus sur les
+  réseaux sociaux.
+- www.growposter.com pour automatiser la création et publication de contenus SEO.
+
+Bien à vous,
+Rudy Viard
+```
+
+Variante GOOGLE MAPS (seul le bloc 2 change) :
+
+```
+Bonjour,
+
+C'est noté, merci d'avoir pris le temps de répondre, je ne vous dérange pas plus.
+Auriez-vous en tête un ou des contacts qui rencontrent ces problématiques ?
+
+Je propose également du référencement sur Google Maps (afin d'apparaître plus souvent
+en positions 1, 2 et 3 sur les requêtes locales où la carte Google s'affiche) ainsi que
+des développements IA (applications, outils métiers, automatisations...).
 
 J'ai enfin sorti deux outils d'automatisation :
 - www.growpulser.com pour automatiser la création et publication de contenus sur les
@@ -318,7 +347,10 @@ Rudy Viard
 2. **Refonte de site** : le **pré-design envoyé AVANT tout paiement** est l'argument
    central, suivi du lien `https://www.webmarketing-conseil.fr/site-internet/` et de la
    question d'accroche « voudriez-vous voir ce que cela pourrait donner ? ». Cette
-   question est le but du message — ne la supprime jamais.
+   question est le but du message — ne la supprime jamais. Puis « ainsi que des
+   développements IA (applications, outils métiers, automatisations...) ».
+   **Variante Google Maps** : ce bloc devient le référencement Google Maps (positions
+   1, 2 et 3 sur les requêtes locales) + les mêmes développements IA, sans lien.
 3. **Les 2 outils**, dans cet ordre : `growpulser.com` (réseaux sociaux) PUIS
    `growposter.com` (contenus SEO). Ne cite jamais l'un sans l'autre.
 
@@ -328,8 +360,9 @@ visible sans `https://` — `<a href="https://www.growpulser.com">www.growpulser
 reste en URL complète.
 
 ⚠️ **Retirés de ce modèle — ne les ressors JAMAIS sur les négatifs** :
-- (2026-10-16) le bloc **« applications IA sur mesure »** et le lien
-  `etudes-cas-ia.pdf` ; le délai **« 48 à 72h »** (plus aucune promesse de délai).
+- (2026-10-16) le lien `etudes-cas-ia.pdf` ; le délai **« 48 à 72h »** (plus aucune
+  promesse de délai). Les développements IA sont revenus le 13/11, sous la seule forme
+  « développements IA (applications, outils métiers, automatisations...) ».
 - (2026-09-12) le lien `/dev-ia/`, la proposition d'audit par téléphone, le lien d'essai
   `/fr/go` et la phrase « nous pouvons gérer l'intégralité de votre stratégie de contenus
   à votre place ».
