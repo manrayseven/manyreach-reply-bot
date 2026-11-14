@@ -80,7 +80,7 @@ def test_deux_modeles_de_refus():
     assert wc_negative_html(110958, "pas intéressé") is WC_NEGATIVE_HTML
     assert "Google Maps" in WC_NEGATIVE_MAPS_HTML and "site-internet" not in WC_NEGATIVE_MAPS_HTML
     for html in (WC_NEGATIVE_HTML, WC_NEGATIVE_MAPS_HTML):
-        assert "développements IA" in html and "growposter" in html and "growpulser" in html
+        assert "outils IA sur mesure" in html and "growposter" in html and "growpulser" in html
 
 
 if __name__ == "__main__":

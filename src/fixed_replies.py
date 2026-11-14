@@ -34,40 +34,37 @@ NEGATIVE_AUTO_INTENTS = frozenset({
 
 # --- Modèles (HTML simple : <p> / <br>, comme le drafter) ---------------------
 
+# Rudy 14/11 : modèles réécrits et validés (plus courts, un seul lien
+# principal, une seule demande : le nom de quelqu'un à qui cela servirait).
 _WC_OUVERTURE = (
     "<p>Bonjour,</p>"
-    "<p>C'est noté, merci d'avoir pris le temps de répondre, je ne vous dérange pas plus. "
-    "Auriez-vous en tête un ou des contacts qui rencontrent ces problématiques ?</p>"
+    "<p>C'est noté, merci d'avoir pris le temps de répondre. Je ne vous dérange pas plus.</p>"
+    "<p>Auriez-vous en tête une ou deux personnes de votre entourage à qui cela "
+    "pourrait servir ?</p>"
 )
 _WC_OUTILS = (
-    "<p>J'ai enfin sorti deux outils d'automatisation :<br>"
-    '- <a href="https://www.growpulser.com">www.growpulser.com</a> pour automatiser la '
-    "création et publication de contenus sur les réseaux sociaux.<br>"
-    '- <a href="https://www.growposter.com">www.growposter.com</a> pour automatiser la '
-    "création et publication de contenus SEO.</p>"
+    "<p>Je développe aussi des outils IA sur mesure, et deux logiciels qui publient "
+    'seuls sur vos réseaux sociaux (<a href="https://www.growpulser.com">www.growpulser.com</a>) '
+    'et sur votre site (<a href="https://www.growposter.com">www.growposter.com</a>).</p>'
     "<p>Bien à vous,<br>Rudy Viard</p>"
 )
-_WC_IA = (" ainsi que des développements IA (applications, outils métiers, "
-          "automatisations...).</p>")
 
 # Rudy 13/11 : DEUX modèles, selon ce que le prospect a refusé. Celui qui
 # refuse un site se voit proposer Google Maps ; tous les autres, la refonte.
-# Les développements IA reviennent dans les deux (ils avaient été retirés le
-# 16/10, Rudy les remet).
 WC_NEGATIVE_HTML = (
     _WC_OUVERTURE
-    + "<p>Je propose également des refontes de sites (envoi avant tout paiement "
-    "d'un pré-design pour que vous puissiez visualiser votre nouveau site) à "
-    'petit prix <a href="https://www.webmarketing-conseil.fr/site-internet/">'
-    "https://www.webmarketing-conseil.fr/site-internet/</a> (voudriez-vous voir "
-    "ce que cela pourrait donner ?)" + _WC_IA
+    + "<p>Et si un jour votre site a besoin d'un nouveau design et d'une "
+    "arborescence plus puissante en termes de référencement, je vous en prépare "
+    "un aperçu gratuit avant tout engagement : "
+    '<a href="https://www.webmarketing-conseil.fr/site-internet/">'
+    "https://www.webmarketing-conseil.fr/site-internet/</a></p>"
     + _WC_OUTILS
 )
 WC_NEGATIVE_MAPS_HTML = (
     _WC_OUVERTURE
-    + "<p>Je propose également du référencement sur Google Maps (afin d'apparaître "
-    "plus souvent en positions 1, 2 et 3 sur les requêtes locales où la carte "
-    "Google s'affiche)" + _WC_IA
+    + "<p>Je fais aussi remonter les entreprises dans Google Maps, en positions 1 "
+    "à 3 quand la carte s'affiche : c'est souvent là que se jouent les appels "
+    "près de chez vous.</p>"
     + _WC_OUTILS
 )
 

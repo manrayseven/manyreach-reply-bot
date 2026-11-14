@@ -298,24 +298,21 @@ RÉFÉRENCE : garde **tous les blocs et tous les liens**, adapte seulement les t
   ne pas vouloir le refaire) → **variante GOOGLE MAPS** (bloc 2 ci-dessous remplacé) ;
 - **tous les autres refus** → **variante REFONTE** (modèle ci-dessous).
 
-Variante REFONTE :
+Variante REFONTE (texte validé par Rudy le 2026-11-14) :
 
 ```
 Bonjour,
 
-C'est noté, merci d'avoir pris le temps de répondre, je ne vous dérange pas plus.
-Auriez-vous en tête un ou des contacts qui rencontrent ces problématiques ?
+C'est noté, merci d'avoir pris le temps de répondre. Je ne vous dérange pas plus.
 
-Je propose également des refontes de sites (envoi avant tout paiement d'un pré-design
-pour que vous puissiez visualiser votre nouveau site) à petit prix
-https://www.webmarketing-conseil.fr/site-internet/ (voudriez-vous voir ce que cela
-pourrait donner ?) ainsi que des développements IA (applications, outils métiers,
-automatisations...).
+Auriez-vous en tête une ou deux personnes de votre entourage à qui cela pourrait servir ?
 
-J'ai enfin sorti deux outils d'automatisation :
-- www.growpulser.com pour automatiser la création et publication de contenus sur les
-  réseaux sociaux.
-- www.growposter.com pour automatiser la création et publication de contenus SEO.
+Et si un jour votre site a besoin d'un nouveau design et d'une arborescence plus
+puissante en termes de référencement, je vous en prépare un aperçu gratuit avant tout
+engagement : https://www.webmarketing-conseil.fr/site-internet/
+
+Je développe aussi des outils IA sur mesure, et deux logiciels qui publient seuls sur
+vos réseaux sociaux (www.growpulser.com) et sur votre site (www.growposter.com).
 
 Bien à vous,
 Rudy Viard
@@ -326,33 +323,30 @@ Variante GOOGLE MAPS (seul le bloc 2 change) :
 ```
 Bonjour,
 
-C'est noté, merci d'avoir pris le temps de répondre, je ne vous dérange pas plus.
-Auriez-vous en tête un ou des contacts qui rencontrent ces problématiques ?
+C'est noté, merci d'avoir pris le temps de répondre. Je ne vous dérange pas plus.
 
-Je propose également du référencement sur Google Maps (afin d'apparaître plus souvent
-en positions 1, 2 et 3 sur les requêtes locales où la carte Google s'affiche) ainsi que
-des développements IA (applications, outils métiers, automatisations...).
+Auriez-vous en tête une ou deux personnes de votre entourage à qui cela pourrait servir ?
 
-J'ai enfin sorti deux outils d'automatisation :
-- www.growpulser.com pour automatiser la création et publication de contenus sur les
-  réseaux sociaux.
-- www.growposter.com pour automatiser la création et publication de contenus SEO.
+Je fais aussi remonter les entreprises dans Google Maps, en positions 1 à 3 quand la
+carte s'affiche : c'est souvent là que se jouent les appels près de chez vous.
+
+Je développe aussi des outils IA sur mesure, et deux logiciels qui publient seuls sur
+vos réseaux sociaux (www.growpulser.com) et sur votre site (www.growposter.com).
 
 Bien à vous,
 Rudy Viard
 ```
 
-**Les 3 blocs sont OBLIGATOIRES, dans cet ordre** (MAJ Rudy 2026-10-16) :
-1. **Accusé de réception + referral-ask** (« auriez-vous en tête un ou des contacts… »).
-2. **Refonte de site** : le **pré-design envoyé AVANT tout paiement** est l'argument
-   central, suivi du lien `https://www.webmarketing-conseil.fr/site-internet/` et de la
-   question d'accroche « voudriez-vous voir ce que cela pourrait donner ? ». Cette
-   question est le but du message — ne la supprime jamais. Puis « ainsi que des
-   développements IA (applications, outils métiers, automatisations...) ».
-   **Variante Google Maps** : ce bloc devient le référencement Google Maps (positions
-   1, 2 et 3 sur les requêtes locales) + les mêmes développements IA, sans lien.
-3. **Les 2 outils**, dans cet ordre : `growpulser.com` (réseaux sociaux) PUIS
-   `growposter.com` (contenus SEO). Ne cite jamais l'un sans l'autre.
+**Les 3 blocs sont OBLIGATOIRES, dans cet ordre** (MAJ Rudy 2026-11-14) :
+1. **Accusé de réception + une seule demande** : « Auriez-vous en tête une ou deux
+   personnes de votre entourage à qui cela pourrait servir ? ».
+2. **Refonte de site** : l'**aperçu gratuit avant tout engagement** est l'argument
+   central, suivi du lien `https://www.webmarketing-conseil.fr/site-internet/`.
+   **Variante Google Maps** : ce bloc devient « Je fais aussi remonter les entreprises
+   dans Google Maps, en positions 1 à 3… », sans lien.
+3. **IA + les 2 outils, en UNE phrase** : « Je développe aussi des outils IA sur mesure,
+   et deux logiciels qui publient seuls sur vos réseaux sociaux (growpulser.com) et sur
+   votre site (growposter.com). » Ne cite jamais l'un sans l'autre.
 
 **Rendu HTML des liens** : dans `body_html`, les deux outils sont des liens avec le texte
 visible sans `https://` — `<a href="https://www.growpulser.com">www.growpulser.com</a>` et
