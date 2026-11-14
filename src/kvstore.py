@@ -573,3 +573,42 @@ def was_alerted(*emails: str) -> bool:
         if e and _cmd("GET", ALERTED_PREFIX + e) is not None:
             return True
     return False
+
+
+# APPRENTISSAGE PROGRESSIF (Rudy 14/11). Chaque fois qu'il corrige le bot d'un
+# clic dans le dashboard — « ce n'était pas une alerte », « ça aurait dû
+# remonter » — on garde l'extrait et la bonne réponse. Le classifieur les relit
+# au démarrage de chaque passage et les colle à son prompt. Personne ne touche
+# au code : la correction d'aujourd'hui change le comportement de demain.
+LECONS_KEY = "bot:lecons"
+MAX_LECONS = 60
+
+
+def add_lecon(extrait: str, intent: str, email: str = "") -> None:
+    if not kv_available():
+        return
+    txt = " ".join(str(extrait or "").split())[:400]
+    if not txt or not intent:
+        return
+    from datetime import datetime as _d, timezone as _t
+    _cmd("LPUSH", LECONS_KEY, json.dumps({
+        "at": _d.now(_t.utc).isoformat(), "extrait": txt,
+        "intent": intent, "from": (email or "").lower().strip(),
+    }, ensure_ascii=False))
+    _cmd("LTRIM", LECONS_KEY, "0", str(MAX_LECONS - 1))
+
+
+def lecons(n: int = MAX_LECONS) -> list[dict]:
+    """Corrections les plus récentes d'abord."""
+    out: list[dict] = []
+    if not kv_available():
+        return out
+    raw = _cmd("LRANGE", LECONS_KEY, "0", str(max(0, n - 1)))
+    if not isinstance(raw, list):
+        return out
+    for item in raw:
+        try:
+            out.append(json.loads(item))
+        except (json.JSONDecodeError, TypeError):
+            pass
+    return out

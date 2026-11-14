@@ -15,6 +15,33 @@ from .manyreach import Message
 from .llm_compat import HAIKU, accepts_temperature, options_for, text_of
 
 PROMPT_PATH = Path(__file__).parent / "prompts" / "classify.md"
+# APPRENTISSAGE (Rudy 14/11 : « j'aimerais que tu apprennes de toi-même
+# progressivement »). Deux sources de cas tranchés, ajoutées au prompt système :
+#   - lecons.md, versionné, pour les cas que Rudy m'a expliqués ;
+#   - les corrections qu'il fait d'un clic dans le dashboard (KV), qui
+#     s'accumulent sans que personne ne touche au code.
+LECONS_PATH = Path(__file__).parent / "prompts" / "lecons.md"
+
+def _format_lecons(lecons: list[dict]) -> str:
+    """Corrections cliquées par Rudy dans le dashboard, en exemples étiquetés."""
+    lignes = []
+    for item in lecons[:40]:
+        txt = " ".join(str(item.get("extrait") or "").split())[:400]
+        intent = str(item.get("intent") or "").strip()
+        if not txt or not intent:
+            continue
+        verdict = ("REFUS → not_interested_polite (réponse type, AUCUNE alerte)"
+                   if intent == "not_interested_polite"
+                   else f"À REMONTER → {intent} (alerte, aucune réponse auto)")
+        lignes.append(f"> « {txt} »\n> — {verdict}")
+    if not lignes:
+        return ""
+    return (
+        "# CORRECTIONS RÉCENTES DE RUDY (cliquées dans le dashboard)\n\n"
+        "Il a repris le bot sur ces réponses précises. Elles font autorité, au "
+        "même titre que les cas ci-dessus.\n\n" + "\n\n".join(lignes) + "\n"
+    )
+
 
 VALID_INTENTS = frozenset(
     {
@@ -244,6 +271,20 @@ class Classifier:
         self.client = anthropic.Anthropic(api_key=key, max_retries=6)
         self.model = model
         self.system_prompt = PROMPT_PATH.read_text(encoding="utf-8")
+        # Les leçons sont lues UNE fois par run (pas par reply) et collées au
+        # prompt système, donc elles profitent du cache : coût quasi nul.
+        try:
+            if LECONS_PATH.exists():
+                self.system_prompt += "\n\n" + LECONS_PATH.read_text(encoding="utf-8")
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            from . import kvstore as _kv
+            _recent = _kv.lecons() if _kv.kv_available() else []
+            if _recent:
+                self.system_prompt += "\n\n" + _format_lecons(_recent)
+        except Exception:  # noqa: BLE001
+            pass
 
     def classify(
         self,

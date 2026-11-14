@@ -103,6 +103,12 @@ _FLAT_REFUSAL_MARKERS = (
     # d'opportunité (cas dita.madrid) — ici il ne reste que le refus sec.
     "trop cher", "trop onéreux", "trop onereux", "hors budget",
     "pas les moyens", "pas le budget", "budget serré", "budget serre",
+    # Les quatre faux positifs du 12/11, mot pour mot. Filet de sécurité : le
+    # fond du correctif est la confiance graduée au classifieur ci-dessous, plus
+    # les cas tranchés dans src/prompts/lecons.md.
+    "déjà accompagné", "deja accompagne", "pas le besoin", "pas d'actualité",
+    "pas d'actualite", "gère mes", "gere mes", "gère déjà", "gere deja",
+    "s'occupe de mes", "s'en occupe déjà", "s'en occupe deja",
 )
 
 # INVERSION (Rudy 06/11) : « auto-réponds sur les refus SANS AMBIGUÏTÉ ».
@@ -1579,10 +1585,21 @@ def main() -> int:
                     # on fait confiance = réponse auto. Les signaux d'opportunité
                     # (question, RDV, demande d'info) ont déjà été captés plus haut
                     # → s'il y en avait, l'intent ne serait plus not_interested_polite.
+                    # CONFIANCE GRADUÉE (Rudy 14/11). Exiger un mot de négation
+                    # renvoyait en ALERTE des refus qui n'en contiennent aucun :
+                    # « je suis déjà accompagnée pour mon site » (Linda Kortylak),
+                    # « ma fille gère mes media » (Yannick Guerton). Pire, ils
+                    # ressortaient étiquetés « demande d'infos » — un faux
+                    # libellé en plus d'une fausse alerte. Au-dessus de 0,90 sur
+                    # un message court, on fait confiance au classifieur sans
+                    # chercher de négation ; entre 0,85 et 0,90 on en exige une.
                     _short_confident_no = (
-                        classification.confidence >= 0.85
-                        and len(_clean_body) < 250
-                        and re.search(r"\b(pas|non|aucun|rien|jamais)\b", _cl) is not None
+                        len(_clean_body) < 250
+                        and (
+                            classification.confidence >= 0.90
+                            or (classification.confidence >= 0.85
+                                and re.search(r"\b(pas|non|aucun|rien|jamais)\b", _cl))
+                        )
                     )
                     # « NON » SEC (Rudy 22/10, antoine@victorie-music.com) : le
                     # message fait 3 caractères, le seuil en exigeait 4 — un refus

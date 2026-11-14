@@ -1799,6 +1799,26 @@ def _render(client_filter: str | None = None) -> str:
         )
         # RÉPONSE DANS MANYREACH (via API) : UNIQUEMENT pour les orphelins (hors
         # campagne) que l'UI ManyReach n'affiche pas. Les classiques se répondent
+        # APPRENDRE D'UN CLIC (Rudy 14/11). « Pas une alerte » dit au bot que
+        # cette réponse était un refus : il la retient, la referme, et le
+        # classifieur la relira au prochain passage. C'est ce qui remplace mes
+        # rattrapages de formulation au cas par cas — Éliane Zimmer, Linda
+        # Kortylak, Jean Duboc et Yannick Guerton ont tous remonté à tort.
+        _lecon_txt = html.escape(str(a.get("reply") or "")[:400])
+        lecon_btn = (
+            f'<form method="POST" action="/{keyparam}" style="display:inline" '
+            f'onsubmit="this.querySelector(\'button\').disabled=true;return true;">'
+            f'<input type="hidden" name="action" value="lecon">'
+            f'<input type="hidden" name="verdict" value="refus">'
+            f'<input type="hidden" name="alert_id" value="{alert_id}">'
+            f'<input type="hidden" name="from_email" value="{html.escape(prospect_email)}">'
+            f'<input type="hidden" name="extrait" value="{_lecon_txt}">'
+            f'<button type="submit" class="alert-dismiss" '
+            f'title="Ce n\'était pas une alerte : un refus. Le bot le retient et '
+            f'ne remontera plus ce genre de réponse.">🎓 pas une alerte</button>'
+            f'</form>'
+        )
+
         # via le lien "↗ ManyReach" (vraie conversation).
         reply_box = ""
         if hors_campagne:
@@ -1833,6 +1853,7 @@ def _render(client_filter: str | None = None) -> str:
             {ai_close_btn}
             {sender_chip}
             <span class="alert-when">{when}</span>
+            {lecon_btn}
             <form method="POST" action="/{keyparam}" style="display:inline" onsubmit="this.querySelector('button').disabled=true;return true;">
               <input type="hidden" name="action" value="dismiss_alert">
               <input type="hidden" name="alert_id" value="{alert_id}">
@@ -1872,12 +1893,30 @@ def _render(client_filter: str | None = None) -> str:
             f'<a class="sent-mr" href="{mr_url}" target="_blank" rel="noopener" '
             f'title="Ouvrir la conversation dans ManyReach">↗</a>'
         )
+        # L'AUTRE SENS DE L'APPRENTISSAGE (Rudy 14/11) : une réponse traitée en
+        # silence ou en réponse type qui MÉRITAIT de remonter. Un clic, et le
+        # classifieur la relira au prochain passage. Cas Kalli Tantra : une
+        # objection métier classée « pas intéressé ».
+        _lx = html.escape(str(a.get("reply") or "")[:400])
+        _lemail = html.escape(str(a.get("prospect_email") or a.get("from") or ""))
+        lecon_up = (
+            f'<form method="POST" action="/{keyparam}" style="display:inline" '
+            f'onsubmit="this.querySelector(\'button\').disabled=true;return true;">'
+            f'<input type="hidden" name="action" value="lecon">'
+            f'<input type="hidden" name="verdict" value="alerte">'
+            f'<input type="hidden" name="from_email" value="{_lemail}">'
+            f'<input type="hidden" name="extrait" value="{_lx}">'
+            f'<button type="submit" class="sent-mr" style="border:none;background:none;cursor:pointer" '
+            f'title="Ça aurait dû remonter en alerte. Le bot le retient.">🎓</button>'
+            f'</form>'
+        ) if str(a.get("reply") or "").strip() else ""
         return f"""<div class="sent-row">
           <span class="sent-when">{when}</span>
           <span class="sent-pill" style="color:{intent_color};border:1px solid {intent_color}40">{html.escape(intent_label)}</span>
           <span class="sent-email">{frm}</span>
           {badge}
           {mr_link}
+          {lecon_up}
         </div>"""
 
     def _error_row(a: dict) -> str:
@@ -2147,25 +2186,25 @@ def _render(client_filter: str | None = None) -> str:
                 f'🔓 Valider</a>'
             )
         else:
-            # ManyReach SUPPRIME le lien de validation à la réception (prouvé : même
-            # en fullBodies le lien est absent du corps). Impossible de le rendre
-            # cliquable. Meilleure aide possible : ouvrir DIRECTEMENT la boîte de
-            # destination en cherchant l'email du portail → Rudy clique le vrai lien
-            # DANS cet email. Deep-link Gmail (marche si la boîte est sur Gmail/
-            # Google Workspace, ce qui est le cas de la majorité de l'infra d'envoi).
-            _q = urllib.parse.quote(f"from:{_frm_raw}")
-            _gmail = (
-                f"https://mail.google.com/mail/u/?authuser="
-                f"{urllib.parse.quote(_dest_raw)}#search/{_q}"
+            # L'API ManyReach supprime le lien de validation : on ouvre l'email du
+            # filtre dans l'Unibox (même format de lien que les alertes). Les boîtes
+            # d'envoi sont chez OVH, pas Gmail : un deep-link Gmail ne mène nulle part.
+            _camp = a.get("campaign_id") or a.get("campaignId") or ""
+            _scope = f"&campaign={_camp}&type=campaign" if _camp else "&campaign=&type="
+            _mr = (
+                f"https://app.manyreach.com/e/inbox?sender=-1&status=&leadstatus=&autostatus=&list=-1"
+                f"&search=from:{urllib.parse.quote(_frm_raw)}{_scope}"
+                f"&activestatus=&pagesize=25&currentpage=1&o={_mr_org_for(a)}"
             )
             action_html = (
-                f'<a class="sent-mr" style="background:#6b7280;color:#fff;border-radius:6px;'
+                f'<a class="sent-mr" style="background:#a855f7;color:#fff;border-radius:6px;'
                 f'padding:4px 12px;font-size:12px;font-weight:600;text-decoration:none" '
-                f'href="{html.escape(_gmail)}" target="_blank" rel="noopener" '
-                f'title="ManyReach ne transmet pas le lien de validation (il le supprime). '
-                f'Ce bouton ouvre la boîte {dest} (si Gmail/Workspace) en cherchant '
-                f'l\'email de {frm} — clique ensuite le lien de validation DANS cet email.">'
-                f'📬 Ouvrir la boîte {dest}</a>'
+                f'href="{html.escape(_mr)}" target="_blank" rel="noopener" '
+                f'title="Ouvre l\'email de {frm} dans ManyReach — clique le lien de validation '
+                f'dans cet email (boîte qui a reçu le challenge : {dest}).">'
+                f'📨 Ouvrir l\'email</a>'
+                f'<span class="sent-email" style="font-size:11px;color:#8c8678" '
+                f'title="Boîte d\'envoi qui a reçu le challenge">→ {dest}</span>'
             )
         return f"""<div class="sent-row">
           <span class="sent-when">{when}</span>
@@ -2200,8 +2239,8 @@ def _render(client_filter: str | None = None) -> str:
       Ces filtres (MailInBlack, humail…) <b>bloquent ton email tant que tu n'as pas cliqué leur lien de validation</b> (captcha).
       Un clic = email délivré + ton adresse whitelistée pour toujours chez ce prospect.<br>
       ⚠️ <b>ManyReach supprime le lien de validation</b> avant de nous transmettre le message (vérifié : le lien est absent même du corps complet).
-      On ne peut donc pas le rendre cliquable ici. <b>📬 Ouvrir la boîte</b> t'amène directement dans la boîte concernée,
-      sur l'email du filtre → clique le lien de validation <b>dans cet email</b>. (<b>🔓 Valider</b> n'apparaît que dans les rares cas où le lien passe.) · <b>✕</b> une fois validé.
+      On ne peut donc pas le rendre cliquable ici. <b>📨 Ouvrir l'email</b> t'amène sur l'email du filtre dans ManyReach
+      → clique le lien de validation <b>dans cet email</b>. (<b>🔓 Valider</b> n'apparaît que dans les rares cas où le lien passe.) · <b>✕</b> une fois validé.
     </div>
     <div style="margin:6px 0 12px">{_backfill_form}</div>
     {_chal_rows}
@@ -3224,6 +3263,42 @@ class handler(BaseHTTPRequestHandler):
                     "reply": "",
                     "response": "",
                     "client_id": cid,
+                })
+        elif action == "lecon":
+            # APPRENTISSAGE PROGRESSIF (Rudy 14/11 : « j'aimerais que tu
+            # apprennes de toi-même progressivement, c'est fatigant »).
+            # Un clic = un exemple étiqueté, relu par le classifieur au passage
+            # suivant. Ça remplace mes rattrapages de formulation au cas par cas,
+            # qui laissaient toujours passer la tournure d'après.
+            from datetime import datetime as _dt, timezone as _tz
+            _verdict = (form.get("verdict") or "").strip()
+            _extrait = (form.get("extrait") or "").strip()
+            _lmail = (form.get("from_email") or "").strip()
+            _lalert = (form.get("alert_id") or "").strip()
+            _intent = ("not_interested_polite" if _verdict == "refus"
+                       else "ask_more_info")
+            if _extrait:
+                try:
+                    kvstore.add_lecon(_extrait, _intent, _lmail)
+                    _lst = ("refus (réponse type, plus d'alerte)"
+                            if _verdict == "refus" else "à remonter en alerte")
+                    log_status = f"🎓 Leçon retenue : {_lmail or '(?)'} → {_lst}"
+                except Exception as _e:  # noqa: BLE001
+                    log_status = f"❌ Leçon non retenue : {str(_e)[:150]}"
+                # « Pas une alerte » ferme aussi la ligne : c'est le geste normal.
+                if _verdict == "refus" and _lalert:
+                    try:
+                        kvstore.dismiss_alert(_lalert)
+                    except Exception:  # noqa: BLE001
+                        pass
+            else:
+                log_status = "❌ Leçon vide (pas de texte à retenir)"
+            if kvstore.kv_available():
+                kvstore.log_action({
+                    "at": _dt.now(_tz.utc).isoformat(),
+                    "from": _lmail, "subject": "🎓 Correction du tri",
+                    "intent": "manual_reply", "status": log_status,
+                    "reply": "", "response": "",
                 })
         elif action == "recover_alerts":
             # RATTRAPAGE DES ALERTES PERDUES (Rudy 19/10, espace Laeris).
