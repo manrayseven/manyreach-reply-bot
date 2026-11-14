@@ -966,6 +966,19 @@ BOUNCE_BODY_PATTERNS = (
     "chères clientes",
     "délai de traitement des mails",
     "delai de traitement des mails",
+    # Robots de support et tickets (Rudy 14/11, espace Laeris).
+    "[bot]",
+    "je suis le bot",
+    "nous vous confirmons avoir bien reçu",
+    "nous vous confirmons avoir bien recu",
+    "votre demande a bien été enregistrée",
+    "votre demande a bien ete enregistree",
+    "votre ticket",
+    "numéro de ticket",
+    "numero de ticket",
+    "set up a new password",
+    "réinitialiser votre mot de passe",
+    "reinitialiser votre mot de passe",
 )
 
 # Accusés de réception automatiques (Rudy 13/11 : pharmacie, ostéo, avocats,

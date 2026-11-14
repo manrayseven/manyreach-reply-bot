@@ -2175,7 +2175,15 @@ def main() -> int:
                     # l'interlocuteur à privilégier »). Le prospect nous donne le
                     # VRAI décideur : la réponse polie part (demandé le 15/09),
                     # mais il faut AUSSI une alerte pour aller le contacter.
-                    if classification.intent == "wrong_person_redirect":
+                    # CONTACT RECOMMANDÉ LISIBLE (Rudy 14/11, cas humy.be) : Lead
+                    # Finder l'inscrit lui-même dans la campagne (8 h 15 / 16 h 15),
+                    # avec la séquence déjà écrite. Pas d'alerte : il n'y a rien à
+                    # faire pour Rudy. Sans adresse lisible, l'alerte reste.
+                    from src.recommandation import lire_recommandation as _lire_reco
+                    _reco = _lire_reco(reply.body or "", reply.from_email or "")
+                    if classification.intent == "wrong_person_redirect" and _reco:
+                        print(f"  >> contact recommandé {_reco} → Lead Finder, pas d'alerte")
+                    elif classification.intent == "wrong_person_redirect":
                         _ctx_r = _alert_context(mr, prospect, thread, reply)
                         _hist_r = _ctx_r.pop("history", None)
                         _key_r = f"{now_utc.isoformat()}|{(reply.from_email or '').lower()}"

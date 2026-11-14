@@ -122,11 +122,40 @@ def rattrapage_du() -> bool:
         kv = _kv()
         if not kv.kv_available():
             return False
-        if (kv._cmd("GET", ETAT) or "liste") == "fini" and not _complement_du():
+        if ((kv._cmd("GET", ETAT) or "liste") == "fini" and not _complement_du()
+                and not _espace_du()):
             return False
         return kv._cmd("SET", TOUR, "1", "EX", str(ECART_S), "NX") == "OK"
     except Exception:  # noqa: BLE001
         return False
+
+
+def _relire(cands: list[dict]) -> list[dict]:
+    """LIRE avant d'alerter (Rudy 14/11, cas ELA Assistant et humy.be).
+
+    Le statut ManyReach se trompe : « je ne suis pas intéressé » classé
+    « Interested » finissait en alerte. Deux cas ne vont plus au dashboard :
+      - refus net / stop lisible sans IA : passage normal du bot (réponse type) ;
+      - contact recommandé (« écrivez à office@… ») : Lead Finder l'inscrit
+        dans la campagne (src/recommandation.py), rien à faire pour Rudy.
+    """
+    from src.fixed_replies import quick_intent
+    from src.recommandation import lire_recommandation, refus_lisible
+
+    out = []
+    for c in cands:
+        if c["statut"] == "NotInterested":
+            out.append(c)
+            continue
+        if lire_recommandation(c.get("reply_brut") or c["reply"], c["email"]):
+            continue
+        if (quick_intent(c["reply"], c.get("subject") or "") in ("not_interested_polite", "unsubscribe")
+                or refus_lisible(c.get("reply_brut") or c["reply"])):
+            c = {**c, "statut": "NotInterested", "relu": True}
+        out.append(c)
+    for c in out:
+        c.pop("reply_brut", None)
+    return out
 
 
 def _etape_liste() -> dict:
@@ -162,9 +191,11 @@ def _etape_liste() -> dict:
                     "message_id": m.message_id, "campaign_id": m.campaign_id,
                     "subject": m.subject,
                     "reply": _trim_quoted_history(_strip_html(m.body or ""))[:2000],
+                    "reply_brut": (m.body or "")[:6000],
                 }
-    cands = list(par_email.values())
-    # Refus : seulement ceux que le bug du 429 a classés orphelins.
+    cands = _relire(list(par_email.values()))
+    # Refus : seulement ceux que le bug du 429 a classés orphelins (et ceux que
+    # _relire vient de reconnaître comme refus : ils n'ont pas de marque).
     refus = [c for c in cands if c["statut"] == "NotInterested"]
     garder_refus: set[str] = set()
     for i in range(0, len(refus), 200):
@@ -173,7 +204,8 @@ def _etape_liste() -> dict:
         if not isinstance(marques, list):
             raise RuntimeError("lecture KV des marques orphelin en échec")
         garder_refus |= {c["email"] for c, v in zip(lot, marques) if v}
-    cands = [c for c in cands if c["statut"] != "NotInterested" or c["email"] in garder_refus]
+    cands = [c for c in cands if c["statut"] != "NotInterested" or c["email"] in garder_refus
+             or c.get("relu")]
     _set_json(CANDIDATS, cands)
     kv._cmd("SET", ETAT, "tri", "EX", str(TTL))
     return {"etape": "liste", "candidats": len(cands)}
@@ -273,7 +305,7 @@ def _etape_tri(enveloppe_s: float) -> dict:
     return {"etape": "tri", "pages_lues": page, "a_remonter": len(restants)}
 
 
-def _pousser_pistes(pistes: list[dict]) -> int:
+def _pousser_pistes(pistes: list[dict], fait: str = FAIT) -> int:
     """Pistes en UN SEUL appel (pipeline Upstash) : une alerte = 4 commandes
     KV, et 90 alertes une par une ne tenaient pas dans un tour."""
     from datetime import datetime, timezone
@@ -297,9 +329,12 @@ def _pousser_pistes(pistes: list[dict]) -> int:
             "campaign_id": c["campaign_id"],
             "prospect_email": c["email"],
             "message_id": c["message_id"],
+            "client_id": c.get("client_id"),
+            "client_name": c.get("client_name"),
         }, ensure_ascii=False)
         cmds += [["LPUSH", kv.ACTION_LOG_KEY, entree], ["LPUSH", kv.ALERTS_KEY, entree],
-                 ["SADD", FAIT, c["email"]]]
+                 ["SADD", fait, c["email"]],
+                 ["SET", kv.ALERTED_PREFIX + c["email"], "1", "EX", str(kv.ALERTED_TTL)]]
     cmds += [["LTRIM", kv.ACTION_LOG_KEY, "0", str(kv.MAX_LOG_ENTRIES - 1)],
              ["LTRIM", kv.ALERTS_KEY, "0", str(kv.MAX_ALERTS - 1)]]
     r = httpx.post(kv._URL.rstrip("/") + "/pipeline",
@@ -350,6 +385,121 @@ def _complement_62() -> dict:
     n = _pousser_pistes(list(trouves.values())) if trouves else 0
     kv._cmd("SET", COMPLEMENT, str(n), "EX", str(90 * 24 * 3600))
     return {"etape": "complement62", "attendus": len(ids), "alertes": n}
+
+
+# ESPACES (Rudy 14/11 : « repasse au crible Laeris, et les mêmes règles aux
+# sous-comptes présents et futurs »). Chaque workspace ManyReach a sa propre clé
+# (MANYREACH_API_KEY_<ID>) et ses propres données : la clé principale ne voit
+# rien de Laeris. Un espace = un tour, une fois par jour ; la 1re fois sur
+# 62 jours, ensuite sur 31. Tout nouvel espace entre seul dès que sa clé existe.
+ESPACE_JOUR = "bot:rattrapage2:espace_jour:"     # posé pour 24 h après un contrôle
+ESPACE_INIT = "bot:rattrapage2:espace_init:"     # premier contrôle (62 j) fait
+ESPACE_FAIT = "bot:rattrapage2:fait:"
+
+
+def _espaces() -> dict[str, str]:
+    try:
+        from src.manyreach import workspace_api_keys
+        exclus = {x.strip().lower() for x in
+                  os.environ.get("RATTRAPAGE_ESPACES_EXCLUS", "cmaclim").split(",") if x.strip()}
+        return {k: v for k, v in workspace_api_keys().items() if k not in exclus}
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def _espace_du() -> str | None:
+    kv = _kv()
+    for sp in sorted(_espaces()):
+        if not kv._cmd("GET", ESPACE_JOUR + sp):
+            return sp
+    return None
+
+
+def _controle_espace(sp: str, enveloppe_s: float) -> dict:
+    from datetime import datetime, timedelta, timezone
+    from src.classifier import _strip_html, _trim_quoted_history
+    from src.manyreach import ManyReachClient, Message, is_bounce_or_auto
+    from src.fixed_replies import quick_intent
+    from src.recommandation import lire_recommandation, refus_lisible
+
+    kv = _kv()
+    debut = time.time()
+    fin = debut + max(10.0, enveloppe_s - 4)
+    cle = _espaces().get(sp)
+    premier = not kv._cmd("GET", ESPACE_INIT + sp)
+    jours = 62 if premier else JOURS
+    maintenant = datetime.now(timezone.utc)
+    depuis = maintenant - timedelta(days=jours)
+    trop_recent = (maintenant - timedelta(hours=6)).isoformat()
+    fait_cle = ESPACE_FAIT + sp
+    fait = set(kv._cmd("SMEMBERS", fait_cle) or [])
+    par_email: dict[str, dict] = {}
+    repondu: dict[str, str] = {}
+    with ManyReachClient(api_key=cle) as mr:
+        for st in PISTES:
+            for m in _replies_depuis(mr, st, depuis, fin):
+                e = (m.from_email or "").lower().strip()
+                if not e or "@" not in e or e in fait or is_bounce_or_auto(m):
+                    continue
+                dom = e.split("@")[-1]
+                if "webmarketing" in dom or sp.replace("-", "") in dom.replace("-", ""):
+                    continue   # nos boîtes et celles du client
+                at = m.created_at.isoformat()
+                if at > trop_recent or (e in par_email and par_email[e]["at"] >= at):
+                    continue
+                propre = _trim_quoted_history(_strip_html(m.body or ""))
+                if lire_recommandation(m.body or "", e):
+                    continue   # Lead Finder inscrit le contact recommandé
+                if (quick_intent(propre, m.subject or "") in ("not_interested_polite", "unsubscribe")
+                        or refus_lisible(m.body or "")):
+                    continue   # refus net : rien à traiter
+                par_email[e] = {
+                    "email": e, "statut": st, "at": at, "message_id": m.message_id,
+                    "campaign_id": m.campaign_id, "subject": m.subject,
+                    "reply": propre[:2000], "client_id": sp, "client_name": sp.capitalize(),
+                }
+        plus_ancien = min((c["at"] for c in par_email.values()), default=None)
+        page = 1
+        while plus_ancien and page <= 60:
+            if time.time() > fin:
+                return {"etape": "espace", "espace": sp, "a_suivre": "temps"}
+            items = _page(mr, {"type": "SentManual", "limit": 100, "page": page}, fin)
+            if not items:
+                break
+            vieux = 0
+            for it in items:
+                try:
+                    msg = Message.from_api(it)
+                except Exception:  # noqa: BLE001
+                    continue
+                at = msg.created_at.isoformat()
+                if at < plus_ancien:
+                    vieux += 1
+                    continue
+                t = (msg.to_email or "").lower().strip()
+                repondu[t] = max(repondu.get(t, ""), at)
+            if vieux == len(items) or len(items) < 100:
+                break
+            page += 1
+    deja: dict[str, str] = {}
+    for a in kv.recent_alerts():
+        e = str(a.get("from") or "").lower().strip()
+        if e:
+            deja[e] = max(deja.get(e, ""), str(a.get("at") or ""))
+    restants = []
+    for c in par_email.values():
+        if repondu.get(c["email"], "") > c["at"] or deja.get(c["email"], "") >= c["at"]:
+            continue
+        if kv.was_alerted(c["email"]):
+            continue   # déjà montré une fois (alerte peut-être sortie des 500)
+        restants.append(c)
+    n = _pousser_pistes(restants, fait_cle) if restants else 0
+    kv._cmd("SET", ESPACE_JOUR + sp, "1", "EX", str(int(os.environ.get("RATTRAPAGE_CYCLE_S", "86400"))))
+    kv._cmd("SET", ESPACE_INIT + sp, maintenant.isoformat())
+    kv._cmd("SET", "bot:rattrapage2:espace_bilan:" + sp,
+            json.dumps({"at": maintenant.isoformat(), "jours": jours,
+                        "lus": len(par_email), "alertes": n}), "EX", str(30 * 86400))
+    return {"etape": "espace", "espace": sp, "jours": jours, "lus": len(par_email), "alertes": n}
 
 
 def _etape_alertes(enveloppe_s: float) -> dict:
@@ -436,6 +586,9 @@ def _etape_alertes(enveloppe_s: float) -> dict:
 def run_rattrapage(enveloppe_s: float = 24.0) -> dict:
     if _complement_du():
         return _complement_62()
+    sp = _espace_du()
+    if sp:
+        return _controle_espace(sp, enveloppe_s)
     etat = _kv()._cmd("GET", ETAT) or "liste"   # absent = nouveau cycle
     if etat == "liste":
         return _etape_liste()
@@ -461,6 +614,8 @@ class handler(BaseHTTPRequestHandler):
                     "traites_total": kv._cmd("SCARD", FAIT),
                     "tri_pre_calcule_utilise": bool(kv._cmd("GET", "bot:rattrapage2:pre_utilise")),
                     "complement_62j": kv._cmd("GET", COMPLEMENT),
+                    "espaces": {sp: _get_json("bot:rattrapage2:espace_bilan:" + sp, None)
+                                for sp in sorted(_espaces())},
                     "alertes_dashboard": kv.alerts_count(),
                 })
             except Exception as e:  # noqa: BLE001
