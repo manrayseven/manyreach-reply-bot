@@ -95,3 +95,45 @@ def build_bump_body(bump_number: int, prospect: Prospect | None, slots_text: str
         slots = "êtes-vous disponible cette semaine ou la suivante pour 15 min ? Sur quel numéro vous rappeler ?"
     template = BUMP_1 if bump_number == 1 else BUMP_2
     return template.format(name=name, slots=slots)
+
+
+# RELANCE PROMISE (Rudy 16/11) : le prospect a donné lui-même sa date.
+# « Je pense, 1er trimestre 2027. » On ne devine plus un délai — on tient
+# parole. Le message cite ses mots : c'est lui qui a fixé le rendez-vous, pas
+# nous, et le lui rappeler est la seule raison légitime de revenir.
+PROMESSE = (
+    "<p>Bonjour{name},</p>"
+    "<p>Vous m'aviez dit de revenir vers vous {quand}{dit} — nous y sommes.</p>"
+    "<p>Est-ce le bon moment pour en reparler ? Quinze minutes suffisent.</p>"
+    "<p>Si ce n'est toujours pas d'actualité, dites-le moi, je n'insiste pas.</p>"
+    "<p>Bien à vous,<br>Rudy Viard<br>Fondateur Webmarketing Conseil</p>"
+)
+
+_MOIS_FR = (
+    "janvier", "février", "mars", "avril", "mai", "juin", "juillet",
+    "août", "septembre", "octobre", "novembre", "décembre",
+)
+
+
+def mois_fr(jour_iso: str) -> str:
+    """« 2027-01-15 » → « en janvier 2027 ». Sans le quantième : le prospect a
+    donné une période, pas une date, et lui servir un jour précis sonnerait
+    faux."""
+    try:
+        a, m = int(jour_iso[:4]), int(jour_iso[5:7])
+        return f"en {_MOIS_FR[m - 1]} {a}"
+    except (ValueError, IndexError):
+        return "à cette période"
+
+
+def build_promise_body(
+    prospect: Prospect | None,
+    jour_iso: str,
+    dit: str = "",
+) -> str:
+    name = ""
+    if prospect and prospect.first_name and not prospect.first_name[:4].isdigit():
+        name = f" {prospect.first_name}"
+    phrase = " ".join(str(dit or "").split())[:120]
+    cite = f" (« {phrase} »)" if len(phrase) >= 8 else ""
+    return PROMESSE.format(name=name, quand=mois_fr(jour_iso), dit=cite)

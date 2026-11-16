@@ -612,3 +612,74 @@ def lecons(n: int = MAX_LECONS) -> list[dict]:
         except (json.JSONDecodeError, TypeError):
             pass
     return out
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# AGENDA DE RELANCE (Rudy 16/11) : « quand le prospect dit lui-même quand le
+# relancer, intègre cela dans ton plan de relance ».
+#
+# Eric Edouard, 16/11 : « Les éléments que j'attendais ne sont pas encore
+# disponibles. Je pense, 1er trimestre 2027. » Le classifieur lisait déjà cette
+# date (`recontact_datetime`) — personne ne s'en servait. Et le moteur de
+# relance ne pouvait pas le rattraper : il refuse de relancer un fil dont le
+# DERNIER message est une réponse du prospect. Autrement dit, celui qui dit
+# quand le rappeler était précisément celui qu'on ne rappelait jamais.
+#
+# D'où cet agenda : une date, la phrase du prospect, et de quoi retrouver le
+# fil. Un seul rendez-vous par adresse — le dernier dit remplace le précédent.
+RELANCES_KEY = "bot:relances"  # HASH email -> {le, dit, pose_le, campaign_id…}
+
+
+def plan_relance(email: str, le: str, dit: str = "", extra: dict | None = None) -> None:
+    """Note (ou déplace) le rendez-vous de relance d'un prospect.
+
+    `le` est une date ISO (YYYY-MM-DD ou datetime complet) ; `dit` la phrase
+    du prospect, qu'on lui citera le jour venu.
+    """
+    if not kv_available():
+        return
+    em = (email or "").lower().strip()
+    jour = str(le or "")[:10]
+    if not em or len(jour) != 10:
+        return
+    from datetime import datetime as _d, timezone as _t
+    rec = dict(extra or {})
+    rec.update({
+        "email": em,
+        "le": jour,
+        "dit": " ".join(str(dit or "").split())[:300],
+        "pose_le": _d.now(_t.utc).isoformat(),
+    })
+    _cmd("HSET", RELANCES_KEY, em, json.dumps(rec, ensure_ascii=False))
+
+
+def relances() -> list[dict]:
+    """Tous les rendez-vous de relance, du plus proche au plus lointain."""
+    res = _cmd("HGETALL", RELANCES_KEY)
+    brut: list[str] = []
+    if isinstance(res, dict):
+        brut = [str(v) for v in res.values()]
+    elif isinstance(res, list):
+        brut = [str(res[i + 1]) for i in range(0, len(res) - 1, 2)]
+    out: list[dict] = []
+    for item in brut:
+        try:
+            out.append(json.loads(item))
+        except (json.JSONDecodeError, TypeError):
+            pass
+    return sorted(out, key=lambda r: str(r.get("le", "9999")))
+
+
+def relances_dues(aujourdhui: str) -> list[dict]:
+    """Les rendez-vous arrivés à échéance (date <= aujourd'hui, AAAA-MM-JJ)."""
+    jour = str(aujourdhui or "")[:10]
+    return [r for r in relances() if str(r.get("le", "9999")) <= jour]
+
+
+def drop_relance(email: str) -> None:
+    """Retire un rendez-vous : relance envoyée, ou Rudy l'a jugé caduc."""
+    if not kv_available():
+        return
+    em = (email or "").lower().strip()
+    if em:
+        _cmd("HDEL", RELANCES_KEY, em)

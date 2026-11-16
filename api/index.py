@@ -87,6 +87,20 @@ def _time_fr(iso: str) -> str:
         return iso[:16].replace("T", " ")
 
 
+_MOIS_COURT = ("janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.",
+               "août", "sept.", "oct.", "nov.", "déc.")
+
+
+def _time_fr_jour(jour_iso: str) -> str:
+    """« 2027-01-15 » → « 15 janv. 2027 ». Une relance programmée se lit en
+    jours, pas en heures."""
+    try:
+        a, m, j = int(jour_iso[:4]), int(jour_iso[5:7]), int(jour_iso[8:10])
+        return f"{j} {_MOIS_COURT[m - 1]} {a}"
+    except (ValueError, IndexError):
+        return str(jour_iso)[:10]
+
+
 # Intents qui correspondent à une VRAIE réponse de prospect (≠ bounce/auto, ≠
 # entrées système : erreurs, diagnostics, run manuel, orphelins, accusé-réception).
 _NEG_INTENTS = {
@@ -2266,6 +2280,51 @@ def _render(client_filter: str | None = None) -> str:
     {_chal_rows}
   </div>"""
 
+    # === RENDEZ-VOUS DONNÉS PAR LES PROSPECTS (Rudy 16/11) ===
+    # « Je pense, 1er trimestre 2027. » La date est notée, la relance partira
+    # toute seule le moment venu. Elle est affichée ici pour une raison simple :
+    # une relance programmée qu'on ne voit pas est une relance qu'on ne peut pas
+    # annuler, et certaines deviennent caduques (RDV pris ailleurs, client
+    # signé, boîte morte).
+    try:
+        _rdvs = (kvstore.relances() if kvstore.kv_available() else []) or []
+    except Exception:  # noqa: BLE001
+        _rdvs = []
+    if not isinstance(_rdvs, list):
+        _rdvs = []
+    _rdv_rows = []
+    from datetime import datetime as _dtr, timezone as _tzr  # noqa: PLC0415
+    _today = _dtr.now(_tzr.utc).date().isoformat()
+    _JS_OFF = "this.querySelector('button').disabled=true;return true;"
+    for _r in _rdvs:
+        _rem = html.escape(str(_r.get("email") or ""))
+        _rle = str(_r.get("le") or "")
+        _rdit = html.escape(str(_r.get("dit") or ""))
+        _du = _rle <= _today
+        _col = "#b45309" if _du else "#3b6fd4"
+        _lbl = html.escape(_time_fr_jour(_rle)) + (" — à envoyer" if _du else "")
+        _rdv_rows.append(
+            '<div class="sent-row">'
+            + f'<span class="sent-pill" style="color:{_col};border:1px solid {_col}40">{_lbl}</span>'
+            + f'<span class="sent-email">{_rem}</span>'
+            + f'<span class="sent-when" style="flex:1">{_rdit}</span>'
+            + f'<form method="POST" action="/{keyparam}" style="display:inline" onsubmit="{_JS_OFF}">'
+            + '<input type="hidden" name="action" value="drop_relance">'
+            + f'<input type="hidden" name="email" value="{_rem}">'
+            + '<button type="submit" class="alert-dismiss" '
+            + 'title="Annuler ce rendez-vous : aucune relance ne partira">✕</button>'
+            + '</form></div>'
+        )
+    relances_card = ("" if not _rdv_rows else f"""
+  <div class="card">
+    <h2>📅 Relances programmées <span class="badge">{len(_rdv_rows)}</span></h2>
+    <div class="alert-explain">
+      Le prospect a <b>dit lui-même</b> quand le rappeler. La relance part toute seule
+      à cette date, en citant ses mots — rien à faire. <b>✕</b> pour l'annuler.
+    </div>
+    {"".join(_rdv_rows)}
+  </div>""")
+
     # === SECTION CLIENTS (multi-comptes) ===
     def _client_form(c: dict | None) -> str:
         c = c or {}
@@ -2737,6 +2796,8 @@ def _render(client_filter: str | None = None) -> str:
     <div class="alert-explain">Réponses <b>clairement négatives / pas intéressées</b> que le bot a traitées tout seul (réponse polie envoyée). Rien à faire — c'est ici pour ta visibilité.</div>
     {sent_html}
   </div>
+
+  {relances_card}
 
   {challenges_card}
 
@@ -3358,6 +3419,25 @@ class handler(BaseHTTPRequestHandler):
                     "intent": "manual_reply", "status": log_status,
                     "reply": "", "response": "",
                 })
+        elif action == "drop_relance":
+            # Annuler un rendez-vous de relance (Rudy 16/11). Le prospect a
+            # peut-etre signe ailleurs, ou la date n'a plus de sens : une
+            # relance programmee doit pouvoir etre retiree d'un clic.
+            from datetime import datetime as _dt, timezone as _tz  # noqa: PLC0415
+            _rem = (form.get("email") or "").strip().lower()
+            if _rem:
+                try:
+                    kvstore.drop_relance(_rem)
+                    log_status = f"📅 Relance annulée pour {_rem}"
+                except Exception as _e:  # noqa: BLE001
+                    log_status = f"❌ Relance non annulée : {str(_e)[:150]}"
+                if kvstore.kv_available():
+                    kvstore.log_action({
+                        "at": _dt.now(_tz.utc).isoformat(),
+                        "from": _rem, "subject": "📅 Relance annulée",
+                        "intent": "manual_reply", "status": log_status,
+                        "reply": "", "response": "",
+                    })
         elif action == "recover_alerts":
             # RATTRAPAGE DES ALERTES PERDUES (Rudy 19/10, espace Laeris).
             # Le bot avait bien classé trois réponses en pistes — les tags bot:*

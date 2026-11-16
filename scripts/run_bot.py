@@ -258,6 +258,35 @@ def _nouvelle_adresse_annoncee(corps: str, expediteur: str | None) -> str | None
     autres = [e for e in citees if e != src]
     return autres[0] if autres else None
 
+
+# LA DATE QUE LE PROSPECT DONNE LUI-MÊME (Rudy 16/11).
+# « Les éléments que j'attendais ne sont pas encore disponibles. Je pense, 1er
+# trimestre 2027. » (Eric Edouard). Le classifieur lisait déjà cette date dans
+# `recontact_datetime` — personne ne s'en servait, et le moteur de relance ne
+# pouvait pas rattraper le coup : il refuse de relancer un fil dont le DERNIER
+# message est une réponse du prospect. Celui qui dit quand le rappeler était
+# donc précisément celui qu'on ne rappelait jamais.
+_RELANCE_MAX_JOURS = 1095  # 3 ans : au-delà, c'est une date mal lue.
+
+
+def _date_relance(valeur: str | None, maintenant: datetime) -> str | None:
+    """Normalise la date dite par le prospect en AAAA-MM-JJ, ou None.
+
+    Refuse le passé (une date déjà échue n'est pas un rendez-vous) et les
+    dates absurdes, qui trahissent une lecture ratée plutôt qu'une intention.
+    """
+    jour = str(valeur or "")[:10]
+    if len(jour) != 10:
+        return None
+    try:
+        d = datetime.strptime(jour, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+    ecart = (d - maintenant).days
+    if ecart < 1 or ecart > _RELANCE_MAX_JOURS:
+        return None
+    return jour
+
 # RÉPONDEUR RECONNU AU DÉLAI (Rudy 11/11) : long ET immédiat. Les deux ensemble,
 # jamais l'un sans l'autre — un humain qui répond en trois minutes répond court,
 # un message long met des heures à s'écrire. Réglables sans redéploiement.
@@ -1984,6 +2013,27 @@ def main() -> int:
                 # silencieuses (pré-filtre / bounce_or_auto).
                 if classification.intent in ALERT_ONLY:
                     print(f"  >> ALERT_ONLY ({classification.intent}) — alerte Rudy, pas de réponse auto")
+                    # Le prospect a dit lui-même quand le relancer : on le note.
+                    # L'alerte reste (Rudy voit la réponse), mais la date ne se
+                    # perd plus dans le fil.
+                    _rdv = _date_relance(classification.recontact_datetime, now_utc)
+                    if _rdv and not dry_run and kvstore and kvstore.kv_available():
+                        try:
+                            kvstore.plan_relance(
+                                reply.from_email or "", _rdv,
+                                classification.key_phrase or "",
+                                {
+                                    "campaign_id": reply.campaign_id,
+                                    "prospect_id": (prospect.prospect_id if prospect else None),
+                                    "intent": classification.intent,
+                                    "espace": space_id or "",
+                                },
+                            )
+                            print(f"    📅 relance programmée le {_rdv}")
+                        except Exception as _e:  # noqa: BLE001
+                            print(f"  !! relance non programmée : {_e}")
+                    elif _rdv:
+                        print(f"    📅 relance qui serait programmée le {_rdv}")
                     # Mise à jour du statut prospect (sans envoyer de mail)
                     alert_plan = plan_actions(
                         reply=reply,
