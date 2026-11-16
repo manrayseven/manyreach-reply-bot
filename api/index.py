@@ -2315,15 +2315,38 @@ def _render(client_filter: str | None = None) -> str:
             + 'title="Annuler ce rendez-vous : aucune relance ne partira">✕</button>'
             + '</form></div>'
         )
-    relances_card = ("" if not _rdv_rows else f"""
+    # Ajout a la main : le bot ne note que ce qu'il lit APRES ce correctif, et
+    # une date donnee au telephone n'arrive jamais par email. Sans ce champ,
+    # le premier cas qui a motive tout ceci (Eric Edouard, deja traite) serait
+    # reste sur le carreau.
+    _rdv_vide = ('<div class="empty-section">Aucune relance programmée. '
+                 "Le bot en ajoute une des qu'un prospect dit lui-meme quand le "
+                 "rappeler.</div>")
+    _rdv_add = (
+        f'<form method="POST" action="/{keyparam}" '
+        f'style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:10px" '
+        f'onsubmit="{_JS_OFF}">'
+        + '<input type="hidden" name="action" value="plan_relance">'
+        + '<input type="email" name="email" placeholder="email du prospect" required '
+          'style="flex:1;min-width:200px;padding:5px 8px;border:1px solid #ddd;border-radius:6px">'
+        + '<input type="date" name="le" required '
+          'style="padding:5px 8px;border:1px solid #ddd;border-radius:6px">'
+        + '<input type="text" name="dit" placeholder="ce qu&#39;il a dit (facultatif)" '
+          'style="flex:1;min-width:180px;padding:5px 8px;border:1px solid #ddd;border-radius:6px">'
+        + '<button type="submit" class="btn-save">📅 Programmer</button>'
+        + '</form>'
+    )
+    relances_card = f"""
   <div class="card">
     <h2>📅 Relances programmées <span class="badge">{len(_rdv_rows)}</span></h2>
     <div class="alert-explain">
-      Le prospect a <b>dit lui-même</b> quand le rappeler. La relance part toute seule
-      à cette date, en citant ses mots — rien à faire. <b>✕</b> pour l'annuler.
+      Quand un prospect dit <b>lui-même</b> quand le rappeler, la relance part toute
+      seule à cette date, en citant ses mots — rien à faire. <b>✕</b> pour l'annuler.
+      Tu peux aussi en ajouter une à la main (une date donnée au téléphone, par exemple).
     </div>
-    {"".join(_rdv_rows)}
-  </div>""")
+    {"".join(_rdv_rows) or _rdv_vide}
+    {_rdv_add}
+  </div>"""
 
     # === SECTION CLIENTS (multi-comptes) ===
     def _client_form(c: dict | None) -> str:
@@ -3418,6 +3441,28 @@ class handler(BaseHTTPRequestHandler):
                     "from": _lmail, "subject": "🎓 Correction du tri",
                     "intent": "manual_reply", "status": log_status,
                     "reply": "", "response": "",
+                })
+        elif action == "plan_relance":
+            # Ajout a la main : une date donnee au telephone, ou un prospect
+            # traite avant que le bot sache lire ces dates.
+            from datetime import datetime as _dt, timezone as _tz  # noqa: PLC0415
+            _rem = (form.get("email") or "").strip().lower()
+            _rle = (form.get("le") or "").strip()[:10]
+            _rdit = (form.get("dit") or "").strip()
+            if _rem and len(_rle) == 10:
+                try:
+                    kvstore.plan_relance(_rem, _rle, _rdit, {"source": "manuel"})
+                    log_status = f"📅 Relance programmée le {_rle} pour {_rem}"
+                except Exception as _e:  # noqa: BLE001
+                    log_status = f"❌ Relance non programmée : {str(_e)[:150]}"
+            else:
+                log_status = "❌ Relance non programmée (email ou date manquant)"
+            if kvstore.kv_available():
+                kvstore.log_action({
+                    "at": _dt.now(_tz.utc).isoformat(),
+                    "from": _rem, "subject": "📅 Relance programmée",
+                    "intent": "manual_reply", "status": log_status,
+                    "reply": _rdit[:500], "response": "",
                 })
         elif action == "drop_relance":
             # Annuler un rendez-vous de relance (Rudy 16/11). Le prospect a

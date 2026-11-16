@@ -171,6 +171,18 @@ def test_le_tableau_de_bord_montre_et_permet_d_annuler():
     assert 'elif action == "drop_relance":' in idx
 
 
+def test_on_peut_programmer_une_relance_a_la_main():
+    """Le bot ne note que ce qu'il lit APRES ce correctif, et une date donnee
+    au telephone n'arrive jamais par email. Sans ce champ, Eric Edouard — le
+    cas qui a motive tout ceci, deja traite — serait reste sur le carreau."""
+    idx = (ROOT / "api" / "index.py").read_text(encoding="utf-8")
+    assert 'value="plan_relance"' in idx
+    assert 'elif action == "plan_relance":' in idx
+    assert 'type="date" name="le"' in idx
+    # La carte reste visible meme vide, sinon le champ d'ajout est inatteignable.
+    assert '_rdv_rows) or _rdv_vide' in idx
+
+
 if __name__ == "__main__":
     from tests._runner import main as _main
     _main(globals())
