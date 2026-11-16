@@ -2775,6 +2775,42 @@ def _render(client_filter: str | None = None) -> str:
   </details>
 
 </div>
+
+<!-- RESTER OU L'ON ETAIT (Rudy 16/11). Chaque bouton POSTe puis le serveur
+     renvoie un 303 vers le dashboard : le navigateur recharge, donc revient
+     tout en haut. Sur une page d'alertes qui fait plusieurs ecrans, on perd
+     sa place a chaque clic. On memorise la hauteur AVANT l'envoi et on la
+     remet apres. Tout est sous try/catch : si sessionStorage est refuse
+     (navigation privee), la page se comporte comme avant. -->
+<script>
+(function(){{
+  var K = 'dash:scroll';
+  function lire(k){{ try {{ return sessionStorage.getItem(k); }} catch (e) {{ return null; }} }}
+  function ecrire(k, v){{ try {{ sessionStorage.setItem(k, v); }} catch (e) {{}} }}
+  function oublier(k){{ try {{ sessionStorage.removeItem(k); }} catch (e) {{}} }}
+
+  // Avant tout envoi de formulaire (capture : meme si le bouton se desactive).
+  document.addEventListener('submit', function(){{
+    ecrire(K, String(window.scrollY || window.pageYOffset || 0));
+  }}, true);
+
+  var y = lire(K);
+  if (y !== null) {{
+    oublier(K);
+    var n = parseInt(y, 10);
+    if (!isNaN(n) && n > 0) {{
+      // Une ligne traitee disparait : la page raccourcit. On borne, sinon le
+      // navigateur ignore la consigne et nous laisse en haut.
+      var remettre = function(){{
+        var max = Math.max(0, document.body.scrollHeight - window.innerHeight);
+        window.scrollTo(0, Math.min(n, max));
+      }};
+      remettre();
+      window.addEventListener('load', remettre);
+    }}
+  }}
+}})();
+</script>
 </body></html>"""
 
 
