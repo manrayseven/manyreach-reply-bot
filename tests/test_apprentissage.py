@@ -45,10 +45,25 @@ def _tuple_literal(nom: str) -> tuple[str, ...]:
     raise AssertionError(f"{nom} introuvable")
 
 
+def _regex_literal(nom: str):
+    """Le filet ne se limite plus a des morceaux de phrase colles : une forme
+    (negation + ce qui est nie, meme separes) couvre les intercalations."""
+    import re as _re
+    tree = ast.parse(RUN_BOT)
+    for node in ast.walk(tree):
+        if (isinstance(node, ast.Assign) and node.targets
+                and isinstance(node.targets[0], ast.Name)
+                and node.targets[0].id == nom
+                and isinstance(node.value, ast.Call)):
+            return _re.compile(ast.literal_eval(node.value.args[0]), _re.IGNORECASE)
+    raise AssertionError(f"{nom} introuvable")
+
+
 def test_les_quatre_refus_du_12_11_sont_reconnus():
     """Filet de sécurité : même sans le classifieur, ces tournures sont des
     refus. Aucune ne contient de formule de refus toute faite."""
     plats = _tuple_literal("_FLAT_REFUSAL_MARKERS") + _tuple_literal("_CLEAR_NO_MARKERS")
+    forme = _regex_literal("_REFUS_FORME_RE")
     for msg in (
         "je vous remercie pour votre sollicitation mais nous ne ressentons pas "
         "pour l'instant le besoin de faire appel à vos services",
@@ -57,7 +72,7 @@ def test_les_quatre_refus_du_12_11_sont_reconnus():
         "merci pour votre proposition. ma fille qui est directrice artistique "
         "gère mes media",
     ):
-        assert any(m in msg for m in plats), msg
+        assert any(m in msg for m in plats) or forme.search(msg), msg
 
 
 def test_la_confiance_est_graduee_et_non_plus_conditionnee_a_une_negation():

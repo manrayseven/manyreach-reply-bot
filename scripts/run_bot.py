@@ -111,6 +111,19 @@ _FLAT_REFUSAL_MARKERS = (
     "s'occupe de mes", "s'en occupe déjà", "s'en occupe deja",
 )
 
+# LE REFUS N'EST PAS UNE SUITE DE MOTS COLLÉS (Rudy 16/11). Les deux listes
+# ci-dessus sont des morceaux de phrase : « pas le besoin » ne voit pas
+# « nous ne ressentons pas POUR L'INSTANT LE besoin » (Éliane Zimmer, 12/11,
+# partie en alerte pour trois mots intercalés). On garde les listes comme
+# filet, et on y ajoute la FORME : une négation, puis ce qui est nié, même
+# séparés. C'est la même famille de correctif que `_nouvelle_adresse_annoncee`
+# — décrire la structure plutôt que collectionner les formulations.
+_REFUS_FORME_RE = re.compile(
+    r"\b(pas|plus|aucun|aucune|nullement)\b[^.!?]{0,30}"
+    r"\b(besoin|intéress|interess|intérêt|interet|utilité|utilite"
+    r"|concerné|concerne|demandeur|preneur|d['’]actualité|d['’]actualite)",
+    re.IGNORECASE)
+
 # INVERSION (Rudy 06/11) : « auto-réponds sur les refus SANS AMBIGUÏTÉ ».
 # Le garde-fou anti-devinette ne protégeait que not_interested_polite ; les deux
 # objections "plates" partaient en réponse auto sur la seule foi du classifieur.
@@ -211,6 +224,39 @@ _ADDRESS_CHANGE_RE = re.compile(
     r"|nouvel interlocuteur"
     r"|no longer (with|works? (at|for)|employed)|left the company"
     r")", re.IGNORECASE)
+
+# NOUVELLE ADRESSE ANNONCÉE, REPÉRÉE PAR LA FORME (Rudy 16/11, cas crearenov).
+# « Notre adresse email (CONTACT) a changée ! Merci d'envoyer vos mails à :
+# contact@crearenov-valence.fr / et de supprimer : contact.crearenov@gmail.com »
+# Aucune des tournures ci-dessus n'y figure : la règle attendait « envoyer vos
+# DEMANDES / MESSAGES / COURRIER », il a écrit « vos MAILS ». Ajouter « mails »
+# à la liste ne ferait que repousser le prochain mot d'un cran — c'est le
+# cinquième rattrapage de vocabulaire en une semaine.
+#
+# Le SIGNE ne dépend d'aucun mot : le message cite SA PROPRE adresse (celle à
+# laquelle nous venons d'écrire) À CÔTÉ d'au moins une autre. Personne qui
+# s'intéresse à l'offre ne vous réécrit l'adresse d'où il vous parle ; on ne la
+# rappelle que pour dire de ne plus s'en servir. On exige en plus un message
+# COURT : si la citation de l'échange n'a pas été coupée, notre propre adresse
+# traîne encore dans le corps et le texte est long — la règle s'abstient alors.
+_EMAIL_DANS_CORPS_RE = re.compile(r"[\w.+%-]+@[\w.-]+\.[a-z]{2,}", re.IGNORECASE)
+_ANNONCE_MAX_CHARS = 600
+
+
+def _nouvelle_adresse_annoncee(corps: str, expediteur: str | None) -> str | None:
+    """Renvoie la nouvelle adresse citée, ou None.
+
+    Vrai quand le corps cite l'adresse de l'expéditeur ET une autre adresse.
+    Volontairement muet sur les messages longs (voir ci-dessus).
+    """
+    if not corps or not expediteur or len(corps) > _ANNONCE_MAX_CHARS:
+        return None
+    citees = [e.lower() for e in _EMAIL_DANS_CORPS_RE.findall(corps)]
+    src = expediteur.strip().lower()
+    if src not in citees:
+        return None
+    autres = [e for e in citees if e != src]
+    return autres[0] if autres else None
 
 # RÉPONDEUR RECONNU AU DÉLAI (Rudy 11/11) : long ET immédiat. Les deux ensemble,
 # jamais l'un sans l'autre — un humain qui répond en trois minutes répond court,
@@ -1294,8 +1340,12 @@ def main() -> int:
                 # passer aucune vraie réponse : un humain qui répond vite répond
                 # court (« oui », « non merci », « rappelez-moi »).
                 _silence = None
+                _new_addr = _nouvelle_adresse_annoncee(
+                    _clean_check, reply.from_email)
                 if _ADDRESS_CHANGE_RE.search(_clean_check):
                     _silence = "changement d'adresse / départ"
+                elif _new_addr:
+                    _silence = f"nouvelle adresse annoncée ({_new_addr})"
                 else:
                     try:
                         _prev_sent = [m for m in (thread or [])
@@ -1588,7 +1638,8 @@ def main() -> int:
                 if classification.intent in _AUTOSEND_NEEDS_CLEAR_NO and not _digit_choice:
                     _cl = _clean_body.lower()
                     _has_marker = (any(m in _cl for m in _CLEAR_NO_MARKERS)
-                                   or any(m in _cl for m in _FLAT_REFUSAL_MARKERS))
+                                   or any(m in _cl for m in _FLAT_REFUSAL_MARKERS)
+                                   or bool(_REFUS_FORME_RE.search(_cl)))
                     # ROBUSTESSE (feedback Rudy 13/08 : "Cela nous interesse pas").
                     # Les refus se formulent de 1000 façons (ordre des mots, sans
                     # "ne", fautes/accents) : plutôt que de courir après chaque

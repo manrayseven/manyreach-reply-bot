@@ -1832,7 +1832,7 @@ def _render(client_filter: str | None = None) -> str:
             f'<input type="hidden" name="alert_id" value="{alert_id}">'
             f'<input type="hidden" name="from_email" value="{html.escape(prospect_email)}">'
             f'<input type="hidden" name="extrait" value="{_lecon_txt}">'
-            f'<button type="submit" class="alert-dismiss" '
+            f'<button type="submit" class="lecon-btn" '
             f'title="Ce n\'était pas une alerte : un refus. Le bot le retient et '
             f'ne remontera plus ce genre de réponse.">🎓 pas une alerte</button>'
             f'</form>'
@@ -2555,6 +2555,8 @@ def _render(client_filter: str | None = None) -> str:
  .client-check{{display:flex;align-items:center;gap:6px;font-size:11.5px;color:#5c574c;font-weight:500}}
  .alert-dismiss{{background:transparent;border:1px solid #d8c79a;color:#a07520;width:24px;height:24px;border-radius:50%;padding:0;font-size:13px;font-weight:700;line-height:1;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;transition:all .12s}}
  .alert-dismiss:hover{{background:#d4493f;color:#fff;border-color:#d4493f;transform:scale(1.08)}}
+ .lecon-btn{{background:#f6f1fb;border:1px solid #d9c8ef;color:#6b3fa0;height:24px;padding:0 9px;border-radius:12px;font-size:11.5px;font-weight:600;line-height:1;white-space:nowrap;cursor:pointer;display:inline-flex;align-items:center;gap:4px;transition:all .12s}}
+ .lecon-btn:hover{{background:#6b3fa0;color:#fff;border-color:#6b3fa0}}
  .alert-explain{{font-size:12px;color:#6e5a2a;background:#faefd6;border:1px solid #f0e2c2;padding:9px 12px;border-radius:9px;margin-bottom:2px;line-height:1.5}}
  .alert-explain b{{color:#4a3c14}}
  .legdot{{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:3px;vertical-align:middle}}

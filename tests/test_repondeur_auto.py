@@ -103,7 +103,9 @@ def test_la_regle_du_delai_existe_et_exige_les_DEUX_conditions():
     src = (Path(__file__).resolve().parents[1] / "scripts" / "run_bot.py").read_text(
         encoding="utf-8")
     i = src.index("RÉPONDEUR DÉTECTÉ PAR LE DÉLAI")
-    bloc = src[i:i + 1600]
+    # Fenetre elargie le 16/11 : la branche « nouvelle adresse annoncee »
+    # s'intercale entre le commentaire et la condition du delai.
+    bloc = src[i:i + 2100]
     assert "_AUTO_MIN_CHARS" in bloc and "_AUTO_MAX_DELAY_S" in bloc
     # Le ET, pas le OU : les deux seuils dans la même condition.
     assert "and len(_clean_check) >= _AUTO_MIN_CHARS" in bloc

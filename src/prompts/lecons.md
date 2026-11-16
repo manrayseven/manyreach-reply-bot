@@ -59,6 +59,25 @@ raisonne, il nuance, il décrit sa contrainte. Il y a un argument à lui opposer
 > — Karine-Dita Madrid, 06/11. Clôturé À TORT comme une objection de prix. Un
 > besoin exprimé n'est JAMAIS un refus, même avec une réserve de budget.
 
+## Ce n'est NI l'un NI l'autre : une annonce d'adresse → `bounce_or_auto`
+
+Le message ne parle pas de l'offre. Il ne dit ni oui ni non : il indique où
+écrire désormais, ou que la personne est partie. Ni alerte, ni réponse type —
+`bounce_or_auto`, silence. Lead Finder réinscrit la nouvelle adresse dans la
+campagne et désinscrit l'ancienne ; une alerte ferait perdre les deux.
+
+> « Notre adresse email (CONTACT) a changée ! Merci d'envoyer vos mails à :
+> contact@crearenov-valence.fr / et de supprimer : contact.crearenov@gmail.com »
+> — Farid Mehdi, 16/11. Remonté en alerte À TORT.
+
+Le repère sûr : **le message cite l'adresse d'où il vous écrit**. On ne rappelle
+son adresse actuelle que pour dire de ne plus s'en servir. Même famille : « j'ai
+quitté la société », « cette boîte n'est plus consultée », « votre nouvel
+interlocuteur est X ».
+
+Attention : une personne qui dit « ce n'est pas moi, voyez avec M. X » PARLE de
+l'offre et la décline — c'est `wrong_person_redirect`, pas une annonce d'adresse.
+
 ## Le test, quand tu hésites
 
 Demande-toi : **si Rudy répondait lui-même, aurait-il quelque chose à dire qui
