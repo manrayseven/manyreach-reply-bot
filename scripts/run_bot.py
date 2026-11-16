@@ -1013,6 +1013,10 @@ def main() -> int:
                         try:
                             kvstore.log_action({
                                 "at": now_utc.isoformat(),
+                                # Date d'ARRIVEE du reply (Rudy 16/11) : `at` est l'heure
+                                # de TRAITEMENT. Confondre les deux cachait qu'une reponse du
+                                # 2 novembre n'etait remontee que le 16.
+                                "reply_at": (reply.created_at.isoformat() if reply.created_at else None),
                                 "from": reply.from_email,
                                 "subject": reply.subject,
                                 "intent": "mailinblack_pending",
@@ -1100,6 +1104,10 @@ def main() -> int:
                             pass
                         kvstore.log_action({
                             "at": now_utc.isoformat(),
+                            # Date d'ARRIVEE du reply (Rudy 16/11) : `at` est l'heure
+                            # de TRAITEMENT. Confondre les deux cachait qu'une reponse du
+                            # 2 novembre n'etait remontee que le 16.
+                            "reply_at": (reply.created_at.isoformat() if reply.created_at else None),
                             "from": reply.from_email,
                             "subject": reply.subject,
                             "intent": "orphan_no_prospect",
@@ -1310,6 +1318,10 @@ def main() -> int:
                     if kvstore and kvstore.kv_available():
                         kvstore.log_action({
                             "at": now_utc.isoformat(),
+                            # Date d'ARRIVEE du reply (Rudy 16/11) : `at` est l'heure
+                            # de TRAITEMENT. Confondre les deux cachait qu'une reponse du
+                            # 2 novembre n'etait remontee que le 16.
+                            "reply_at": (reply.created_at.isoformat() if reply.created_at else None),
                             "from": reply.from_email,
                             "subject": reply.subject,
                             "intent": "bounce_or_auto",
@@ -1671,6 +1683,10 @@ def main() -> int:
                     if kvstore and kvstore.kv_available():
                         kvstore.log_action({
                             "at": now_utc.isoformat(),
+                            # Date d'ARRIVEE du reply (Rudy 16/11) : `at` est l'heure
+                            # de TRAITEMENT. Confondre les deux cachait qu'une reponse du
+                            # 2 novembre n'etait remontee que le 16.
+                            "reply_at": (reply.created_at.isoformat() if reply.created_at else None),
                             "from": reply.from_email,
                             "subject": reply.subject,
                             "intent": "ack_only",
@@ -1771,6 +1787,10 @@ def main() -> int:
                             kvstore.set_alert_context(_key_sp, {"history": _hist_sp})
                         kvstore.log_action({
                             "at": now_utc.isoformat(),
+                            # Date d'ARRIVEE du reply (Rudy 16/11) : `at` est l'heure
+                            # de TRAITEMENT. Confondre les deux cachait qu'une reponse du
+                            # 2 novembre n'etait remontee que le 16.
+                            "reply_at": (reply.created_at.isoformat() if reply.created_at else None),
                             "from": reply.from_email,
                             "subject": reply.subject,
                             "intent": classification.intent,
@@ -1823,6 +1843,10 @@ def main() -> int:
                     if kvstore and kvstore.kv_available():
                         kvstore.log_action({
                             "at": now_utc.isoformat(),
+                            # Date d'ARRIVEE du reply (Rudy 16/11) : `at` est l'heure
+                            # de TRAITEMENT. Confondre les deux cachait qu'une reponse du
+                            # 2 novembre n'etait remontee que le 16.
+                            "reply_at": (reply.created_at.isoformat() if reply.created_at else None),
                             "from": reply.from_email,
                             "subject": reply.subject,
                             "intent": "interested_warm",
@@ -1862,6 +1886,10 @@ def main() -> int:
                     if kvstore and kvstore.kv_available():
                         kvstore.log_action({
                             "at": now_utc.isoformat(),
+                            # Date d'ARRIVEE du reply (Rudy 16/11) : `at` est l'heure
+                            # de TRAITEMENT. Confondre les deux cachait qu'une reponse du
+                            # 2 novembre n'etait remontee que le 16.
+                            "reply_at": (reply.created_at.isoformat() if reply.created_at else None),
                             "from": reply.from_email,
                             "subject": reply.subject,
                             "intent": classification.intent,
@@ -1962,6 +1990,10 @@ def main() -> int:
                             kvstore.set_alert_context(_alert_key, {"history": _ctx_hist})
                         kvstore.log_action({
                             "at": now_utc.isoformat(),
+                            # Date d'ARRIVEE du reply (Rudy 16/11) : `at` est l'heure
+                            # de TRAITEMENT. Confondre les deux cachait qu'une reponse du
+                            # 2 novembre n'etait remontee que le 16.
+                            "reply_at": (reply.created_at.isoformat() if reply.created_at else None),
                             "from": reply.from_email,
                             "subject": reply.subject,
                             "intent": classification.intent,
@@ -2019,6 +2051,10 @@ def main() -> int:
                     if kvstore and kvstore.kv_available():
                         kvstore.log_action({
                             "at": now_utc.isoformat(),
+                            # Date d'ARRIVEE du reply (Rudy 16/11) : `at` est l'heure
+                            # de TRAITEMENT. Confondre les deux cachait qu'une reponse du
+                            # 2 novembre n'etait remontee que le 16.
+                            "reply_at": (reply.created_at.isoformat() if reply.created_at else None),
                             "from": reply.from_email,
                             "subject": reply.subject,
                             "intent": "ack_only",
@@ -2050,6 +2086,10 @@ def main() -> int:
                         if kvstore and kvstore.kv_available():
                             kvstore.log_action({
                                 "at": now_utc.isoformat(),
+                                # Date d'ARRIVEE du reply (Rudy 16/11) : `at` est l'heure
+                                # de TRAITEMENT. Confondre les deux cachait qu'une reponse du
+                                # 2 novembre n'etait remontee que le 16.
+                                "reply_at": (reply.created_at.isoformat() if reply.created_at else None),
                                 "from": reply.from_email,
                                 "subject": reply.subject,
                                 "intent": classification.intent,
@@ -2201,6 +2241,10 @@ def main() -> int:
                     )
                     kvstore.log_action({
                         "at": now_utc.isoformat(),
+                        # Date d'ARRIVEE du reply (Rudy 16/11) : `at` est l'heure
+                        # de TRAITEMENT. Confondre les deux cachait qu'une reponse du
+                        # 2 novembre n'etait remontee que le 16.
+                        "reply_at": (reply.created_at.isoformat() if reply.created_at else None),
                         "from": reply.from_email,
                         "subject": reply.subject,
                         "intent": classification.intent,
@@ -2235,6 +2279,10 @@ def main() -> int:
                             kvstore.set_alert_context(_key_r, {"history": _hist_r})
                         kvstore.log_action({
                             "at": now_utc.isoformat(),
+                            # Date d'ARRIVEE du reply (Rudy 16/11) : `at` est l'heure
+                            # de TRAITEMENT. Confondre les deux cachait qu'une reponse du
+                            # 2 novembre n'etait remontee que le 16.
+                            "reply_at": (reply.created_at.isoformat() if reply.created_at else None),
                             "from": reply.from_email,
                             "subject": reply.subject,
                             "intent": "wrong_person_redirect",
@@ -2288,6 +2336,10 @@ def main() -> int:
                             kvstore.set_alert_context(_key_i, {"history": _hist_i})
                         kvstore.log_action({
                             "at": now_utc.isoformat(),
+                            # Date d'ARRIVEE du reply (Rudy 16/11) : `at` est l'heure
+                            # de TRAITEMENT. Confondre les deux cachait qu'une reponse du
+                            # 2 novembre n'etait remontee que le 16.
+                            "reply_at": (reply.created_at.isoformat() if reply.created_at else None),
                             "from": reply.from_email,
                             "subject": reply.subject,
                             "intent": classification.intent,
@@ -2348,6 +2400,10 @@ def main() -> int:
                         try:
                             kvstore.log_action({
                                 "at": now_utc.isoformat(),
+                                # Date d'ARRIVEE du reply (Rudy 16/11) : `at` est l'heure
+                                # de TRAITEMENT. Confondre les deux cachait qu'une reponse du
+                                # 2 novembre n'etait remontee que le 16.
+                                "reply_at": (reply.created_at.isoformat() if reply.created_at else None),
                                 "from": reply.from_email,
                                 "subject": reply.subject,
                                 "intent": "error",

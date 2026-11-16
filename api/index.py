@@ -1499,7 +1499,26 @@ def _render(client_filter: str | None = None) -> str:
     def _alert_row(a: dict) -> str:
         intent = a.get("intent", "")
         intent_label, intent_color = _INTENT_FR.get(intent, (intent, "#8a8579"))
-        when = _time_fr(a.get("at", ""))
+        # DATE DU PROSPECT, PAS LA NÔTRE (Rudy 16/11). `at` est l'heure de
+        # TRAITEMENT par le bot. Une réponse de Françoise Curzi du 2 novembre
+        # s'affichait « 16/11 01:25 » — elle avait attendu quatorze jours, et
+        # l'écran disait le contraire. On affiche l'arrivée du message, et le
+        # délai dès qu'il dépasse une journée : c'est l'information qui compte.
+        when = _time_fr(a.get("reply_at") or a.get("at", ""))
+        _retard = ""
+        try:
+            _ra, _pa = a.get("reply_at"), a.get("at")
+            if _ra and _pa:
+                _d = (datetime.fromisoformat(_pa) - datetime.fromisoformat(_ra)).days
+                if _d >= 1:
+                    _retard = (
+                        f'<span class="alert-when" style="color:#b45309" '
+                        f'title="Reçue le {html.escape(_time_fr(_ra))}, traitée '
+                        f'seulement le {html.escape(_time_fr(_pa))}">'
+                        f'⏳ remontée {_d} j plus tard</span>'
+                    )
+        except Exception:  # noqa: BLE001
+            _retard = ""
         # RÉPONSE ILLISIBLE (texte non transmis par l'API ManyReach) : on la garde
         # DANS les alertes (jamais la planquer → sinon on rate des leads chauds),
         # mais on la marque clairement pour que Rudy sache qu'il faut l'ouvrir dans
@@ -1853,6 +1872,7 @@ def _render(client_filter: str | None = None) -> str:
             {ai_close_btn}
             {sender_chip}
             <span class="alert-when">{when}</span>
+            {_retard}
             {lecon_btn}
             <form method="POST" action="/{keyparam}" style="display:inline" onsubmit="this.querySelector('button').disabled=true;return true;">
               <input type="hidden" name="action" value="dismiss_alert">
