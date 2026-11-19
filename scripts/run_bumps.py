@@ -10,6 +10,8 @@ Respecte la fenêtre d'envoi (heures ouvrées) et les créneaux Calendar.
 from __future__ import annotations
 
 import argparse
+import html as _html
+import re
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -25,6 +27,19 @@ from src import kvstore  # noqa: E402
 from src.manyreach import ManyReachClient, ManyReachError  # noqa: E402
 
 BUMP_STATUSES = ("Interested", "MaybeLater")
+
+_CITATION = re.compile(
+    r"(?:\n\s*>|\nLe .{0,40}a écrit|\nOn .{0,40}wrote"
+    r"|\nDe\s*:|\nFrom\s*:|\nEnvoyé de mon)", re.I)
+
+
+def _extrait_reponse(corps: str) -> str:
+    """Le texte utile du message, sans la citation de l'echange."""
+    txt = re.sub(r"<[^>]+>", " ", corps or "")
+    txt = _html.unescape(txt)
+    coupe = _CITATION.split(txt, 1)[0]
+    return " ".join((coupe if len(coupe.strip()) >= 8 else txt).split())[:300]
+
 
 
 def main() -> int:
@@ -306,10 +321,36 @@ def main() -> int:
                         break
                 if _dernier is None:
                     vus_ce_passage[_cle] = _revoir_dans(30)
+                elif _dernier.type != "Reply" and not dry_run:
+                    # On a reparle depuis : l'attente est soldee.
+                    try:
+                        kvstore.drop_attente(email)
+                    except Exception:  # noqa: BLE001
+                        pass
                 elif _dernier.type == "Reply":
                     # Le prospect a parle en dernier : ce n'est pas une relance
-                    # qu'il attend, c'est une reponse. Rien a faire ici.
+                    # qu'il attend, c'est une REPONSE. Le moteur n'a rien a
+                    # faire ici — mais il est le seul a passer par la, alors il
+                    # le note. Sans ca, Veronique Combe attend un audit promis
+                    # depuis 86 jours sans que rien ne le signale.
                     vus_ce_passage[_cle] = _revoir_dans(7)
+                    _age_r = (now - _dernier.created_at).total_seconds() / 86400.0
+                    if not dry_run:
+                        try:
+                            if _age_r >= float(_os.environ.get("ATTENTE_MIN_JOURS", "3")):
+                                _txt = _extrait_reponse(_dernier.body)
+                                kvstore.set_attente(email, {
+                                    "depuis": _dernier.created_at.isoformat(),
+                                    "jours": round(_age_r),
+                                    "extrait": _txt,
+                                    "pid": prospect.prospect_id,
+                                    "campaign_id": _dernier.campaign_id,
+                                    "message_id": _dernier.message_id,
+                                })
+                            else:
+                                kvstore.drop_attente(email)
+                        except Exception:  # noqa: BLE001
+                            pass
                 elif _trail >= 3:
                     # Trois messages sans reponse : on arrete (nurture).
                     vus_ce_passage[_cle] = _revoir_dans(90)

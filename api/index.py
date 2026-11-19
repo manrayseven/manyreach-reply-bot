@@ -2336,6 +2336,53 @@ def _render(client_filter: str | None = None) -> str:
         + '<button type="submit" class="btn-save">📅 Programmer</button>'
         + '</form>'
     )
+    # ILS ATTENDENT TA RÉPONSE (Rudy 19/11). Relevé du même jour : 45 fils dont
+    # le dernier message est une réponse du prospect, vieille de 3 jours ou
+    # plus ; 28 méritaient une réponse. Ce ne sont pas des relances ratées —
+    # c'est NOUS qui devons parler, et rien ne le disait nulle part. Véronique
+    # Combe attendait un audit promis depuis 86 jours.
+    try:
+        _att = kvstore.attentes() if kvstore.kv_available() else []
+    except Exception:  # noqa: BLE001
+        _att = []
+    if not isinstance(_att, list):
+        _att = []
+    _att_rows = []
+    for _a in _att:
+        _aem = str(_a.get("email") or "")
+        _aemq = urllib.parse.quote(_aem)
+        _aj = int(_a.get("jours") or 0)
+        _acamp = str(_a.get("campaign_id") or "")
+        _aurl = ("https://app.manyreach.com/e/inbox?sender=-1&status=&leadstatus="
+                 "&autostatus=&list=-1&search=from:" + _aemq
+                 + ("&campaign=" + _acamp + "&type=campaign" if _acamp else "")
+                 + "&activestatus=&pagesize=25&currentpage=1&o=" + _mr_org_default)
+        _acol = "#d4493f" if _aj >= 14 else ("#b45309" if _aj >= 7 else "#3b6fd4")
+        _att_rows.append(
+            '<div class="sent-row">'
+            + f'<span class="sent-pill" style="color:{_acol};border:1px solid {_acol}40">'
+            + f'{_aj} j</span>'
+            + f'<span class="sent-email">{html.escape(_aem)}</span>'
+            + f'<span class="sent-when" style="flex:1">{html.escape(str(_a.get("extrait") or ""))}</span>'
+            + f'<a class="sent-mr" href="{html.escape(_aurl)}" target="_blank" rel="noopener">↗ Répondre</a>'
+            + f'<form method="POST" action="/{keyparam}" style="display:inline" onsubmit="{_JS_OFF}">'
+            + '<input type="hidden" name="action" value="drop_attente">'
+            + f'<input type="hidden" name="email" value="{html.escape(_aem)}">'
+            + '<button type="submit" class="alert-dismiss" '
+            + 'title="Traité : retirer de la liste">✕</button>'
+            + '</form></div>'
+        )
+    attentes_card = ("" if not _att_rows else f"""
+  <div class="card">
+    <h2>⏳ Ils attendent TA réponse <span class="badge">{len(_att_rows)}</span></h2>
+    <div class="alert-explain">
+      Leur dernier message date de plus de trois jours et <b>personne n'a répondu depuis</b>.
+      Ce ne sont pas des relances à envoyer : c'est à toi de parler. Le plus ancien d'abord.
+      <b>↗ Répondre</b> ouvre la conversation, <b>✕</b> retire la ligne une fois traitée.
+    </div>
+    {"".join(_att_rows)}
+  </div>""")
+
     # SANTÉ DU MOTEUR DE RELANCE (Rudy 19/11). Le 19/11, relevé sur 324 fils :
     # 10 relances parties, 149 dues. Le cron tournait pourtant tous les jours —
     # mais rien n'était écrit nulle part, donc personne ne pouvait le voir.
@@ -2857,6 +2904,8 @@ def _render(client_filter: str | None = None) -> str:
     <div class="alert-explain">Réponses <b>clairement négatives / pas intéressées</b> que le bot a traitées tout seul (réponse polie envoyée). Rien à faire — c'est ici pour ta visibilité.</div>
     {sent_html}
   </div>
+
+  {attentes_card}
 
   {relances_card}
 
@@ -3480,6 +3529,25 @@ class handler(BaseHTTPRequestHandler):
                     "intent": "manual_reply", "status": log_status,
                     "reply": "", "response": "",
                 })
+        elif action == "drop_attente":
+            # « J'ai repondu » : on retire la ligne. Le moteur de relance la
+            # remettrait si le prospect reste le dernier a avoir parle, ce qui
+            # est exactement le filet voulu.
+            from datetime import datetime as _dt, timezone as _tz  # noqa: PLC0415
+            _aem = (form.get("email") or "").strip().lower()
+            if _aem:
+                try:
+                    kvstore.drop_attente(_aem)
+                    log_status = f"⏳ Retire de la liste d'attente : {_aem}"
+                except Exception as _e:  # noqa: BLE001
+                    log_status = f"❌ Non retire : {str(_e)[:150]}"
+                if kvstore.kv_available():
+                    kvstore.log_action({
+                        "at": _dt.now(_tz.utc).isoformat(),
+                        "from": _aem, "subject": "⏳ Attente soldee",
+                        "intent": "manual_reply", "status": log_status,
+                        "reply": "", "response": "",
+                    })
         elif action == "plan_relance":
             # Ajout a la main : une date donnee au telephone, ou un prospect
             # traite avant que le bot sache lire ces dates.

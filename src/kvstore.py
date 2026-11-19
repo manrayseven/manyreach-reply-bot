@@ -794,3 +794,56 @@ def cached_prospect_id(email: str) -> int | None:
         return int(raw) if raw else None
     except (TypeError, ValueError):
         return None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ILS ATTENDENT TA RÉPONSE (Rudy 19/11)
+#
+# Relevé du 19/11 : 45 fils Interested/MaybeLater dont le DERNIER message est
+# une réponse du prospect, vieille de 3 jours ou plus. 28 méritaient une
+# réponse — dont Véronique Combe, à qui un audit avait été promis, muette
+# depuis 86 jours parce que personne n'est jamais revenu vers elle.
+#
+# Ce ne sont pas des relances : c'est NOUS qui devons parler. Le moteur de
+# relance les croise déjà, puisqu'il doit justement les écarter ; il les note
+# désormais au passage, sans une requête de plus.
+ATTENTES_KEY = "bot:attentes"   # HASH email -> {depuis, jours, extrait, pid}
+
+
+def set_attente(email: str, payload: dict) -> None:
+    if not kv_available():
+        return
+    em = (email or "").lower().strip()
+    if not em:
+        return
+    rec = dict(payload or {})
+    rec["email"] = em
+    rec["extrait"] = " ".join(str(rec.get("extrait") or "").split())[:300]
+    _cmd("HSET", ATTENTES_KEY, em, json.dumps(rec, ensure_ascii=False))
+
+
+def attentes() -> list[dict]:
+    """Du plus ancien au plus récent : celui qui attend depuis 86 jours
+    passe devant celui qui attend depuis trois."""
+    res = _cmd("HGETALL", ATTENTES_KEY)
+    brut: list[str] = []
+    if isinstance(res, dict):
+        brut = [str(v) for v in res.values()]
+    elif isinstance(res, list):
+        brut = [str(res[i + 1]) for i in range(0, len(res) - 1, 2)]
+    out: list[dict] = []
+    for item in brut:
+        try:
+            out.append(json.loads(item))
+        except (json.JSONDecodeError, TypeError):
+            pass
+    return sorted(out, key=lambda r: str(r.get("depuis", "9999")))
+
+
+def drop_attente(email: str) -> None:
+    """Retiré quand Rudy a répondu, ou quand le fil a bougé de lui-même."""
+    if not kv_available():
+        return
+    em = (email or "").lower().strip()
+    if em:
+        _cmd("HDEL", ATTENTES_KEY, em)
