@@ -60,19 +60,19 @@ def test_l_extrait_coupe_la_citation_de_l_echange():
 def test_le_moteur_note_sans_depenser_un_appel_de_plus():
     """Il passe deja sur ces fils pour les ecarter. L'enregistrement se fait
     dans cette branche-la, pas dans un nouveau balayage."""
-    i = BUMPS.index('elif _dernier.type == "Reply":')
+    i = BUMPS.index("LE PROSPECT A PARLE EN DERNIER")
     bloc = BUMPS[i:i + 1600]
     assert "kvstore.set_attente(" in bloc
     assert "ATTENTE_MIN_JOURS" in bloc
     # Rien en simulation.
-    assert "if not dry_run:" in bloc
+    assert "not dry_run" in bloc
 
 
 def test_l_attente_se_solde_quand_le_fil_bouge():
     """On a reparle : la ligne doit disparaitre toute seule, sinon la liste
     devient un cimetiere qu'on cesse de regarder."""
     assert BUMPS.count("kvstore.drop_attente(email)") >= 2
-    i = BUMPS.index("elif _dernier.type != \"Reply\" and not dry_run:")
+    i = BUMPS.index("On a reparle depuis")
     assert "drop_attente" in BUMPS[i:i + 300]
 
 

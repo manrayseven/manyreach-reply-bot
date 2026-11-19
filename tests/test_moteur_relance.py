@@ -108,7 +108,7 @@ def test_le_plafond_garde_les_deux_chemins_d_envoi():
     J+2/J+5. Un plafond pose sur un seul des deux ne protege rien."""
     assert BUMPS.count("plafond and not dry_run") >= 3, BUMPS.count("plafond")
     i_agenda = BUMPS.index("for rdv in dues:")
-    i_cadence = BUMPS.index("for reply in _flux:")
+    i_cadence = BUMPS.index("for _statut, reply in _flux:")
     assert "plafond" in BUMPS[i_agenda:i_cadence]
     assert "plafond" in BUMPS[i_cadence:]
 
@@ -164,10 +164,12 @@ def test_chaque_issue_fixe_sa_propre_echeance():
     """Toute l'economie est la : un fil ou le prospect a parle en dernier, ou
     deja relance trois fois, ne doit pas couter un appel API par jour. Apres un
     premier tour, le quota ne sert plus qu'aux prospects reellement dus."""
-    assert "_revoir_dans(7)" in BUMPS    # le prospect a parle en dernier
-    assert "_revoir_dans(90)" in BUMPS   # trois messages sans reponse : stop
-    assert "_revoir_dans(30)" in BUMPS   # fiche introuvable
-    assert "_seuil - _age" in BUMPS      # pas encore du : on revient a sa date
+    REG = (ROOT / "src" / "relances.py").read_text(encoding="utf-8")
+    assert '_pas_maintenant("le prospect a parlé en dernier", 7)' in REG
+    assert "jamais relancé\", 90)" in REG      # statut hors perimetre
+    assert "seuil - jours)" in REG                 # pas encore du : a sa date
+    assert "_revoir_dans(30)" in BUMPS             # fiche introuvable
+    assert "decision.revoir_dans or rescan_j" in BUMPS
 
 
 def test_un_429_n_emporte_plus_le_passage_entier():
@@ -182,7 +184,7 @@ def test_un_429_n_emporte_plus_le_passage_entier():
     mr = (ROOT / "src" / "manyreach.py").read_text(encoding="utf-8")
     assert "self.status = status" in mr
     # La lecture de la liste elle-meme est gardee, sinon pas de trace du tout.
-    assert "liste des reponses illisible" in BUMPS
+    assert "illisible" in BUMPS
 
 
 def test_les_relances_sont_intercalees_dans_le_cron_existant():

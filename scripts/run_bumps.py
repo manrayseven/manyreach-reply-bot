@@ -23,7 +23,8 @@ sys.path.insert(0, str(PROJECT_ROOT))
 import yaml  # noqa: E402
 from dotenv import load_dotenv  # noqa: E402
 
-from src.bumps import build_bump_body, build_promise_body, decide_bump  # noqa: E402
+from src import relances  # noqa: E402
+from src.bumps import build_promise_body  # noqa: E402
 from src import kvstore  # noqa: E402
 from src.manyreach import ManyReachClient, ManyReachError  # noqa: E402
 
@@ -52,36 +53,13 @@ def main() -> int:
     dry_run = not args.no_dry_run
 
     settings = yaml.safe_load((PROJECT_ROOT / "config" / "settings.yaml").read_text(encoding="utf-8-sig")) or {}
-    fu = settings.get("followups", {}).get("interested_awaiting_booking", {})
-    bump_days = fu.get("bump_after_days", [2, 5])
     send_cfg = settings.get("sending", {}) or {}
 
-    # Calendar (optionnel) pour proposer des créneaux concrets dans la relance
-    cal_cfg = settings.get("calendar", {}) or {}
-    calendar_client = None
-    if cal_cfg.get("enabled"):
-        try:
-            from src.calendar_slots import CalendarClient
-            calendar_client = CalendarClient()
-        except Exception as e:
-            print(f"Calendar off ({e})")
-
-    def slots_text():
-        if not calendar_client:
-            return None
-        try:
-            slots = calendar_client.find_free_slots(
-                working_hours=cal_cfg.get("working_hours", {}),
-                tz_name=cal_cfg.get("timezone", "Europe/Paris"),
-                duration_min=int(cal_cfg.get("meeting_duration_minutes", 30)),
-                days_ahead=int(cal_cfg.get("days_ahead", 5)),
-                max_slots=3,
-                min_lead_hours=int(cal_cfg.get("min_lead_hours", 3)),
-            )
-            return ", ".join(s.fr() for s in slots) if slots else None
-        except Exception:
-            return None
-
+    # PLUS DE CRENEAUX CONCRETS DANS UNE RELANCE (Rudy 19/11) : « relancer mais
+    # pas avec un horaire et jour precis, car tu n'as pas acces a mon
+    # calendrier ». Le client Google Agenda ne sert donc plus ici — proposer
+    # une heure que Rudy ne pourra pas tenir est pire que ne rien proposer.
+    # On demande SES disponibilites a lui.
     now = datetime.now(timezone.utc)
 
     def send_window_open():
@@ -114,7 +92,7 @@ def main() -> int:
         except Exception:  # noqa: BLE001
             pass
 
-    print(f"\n=== Relances — {'DRY-RUN' if dry_run else 'LIVE'} — cadence J+{bump_days} ===\n")
+    print(f"=== Relances — {'DRY-RUN' if dry_run else 'LIVE'} — regles Rudy : rdv / proposition ===")
     if not dry_run and not send_window_open():
         print("Hors fenêtre d'envoi — on ne relance pas maintenant. Réessaie en heures ouvrées.")
         _trace("hors fenetre d'envoi")
@@ -143,6 +121,10 @@ def main() -> int:
     # ici ne coute AUCUN appel API ; c'est ce qui fait avancer le balayage au
     # lieu de rabacher les vingt plus recents (voir src/kvstore.py).
     rescan_j = float(_os.environ.get("BUMP_RESCAN_DAYS", "3"))
+    # Une maquette n'est ni un rendez-vous ni une proposition chiffree :
+    # elle ne figure pas dans les trois regles de Rudy. Relancee seulement
+    # s'il l'active (MAQUETTES_AUTO=1).
+    _maquettes_auto = _os.environ.get("MAQUETTES_AUTO", "0") == "1"
     try:
         deja_vus = kvstore.bump_seen()
     except Exception:  # noqa: BLE001
@@ -258,14 +240,22 @@ def main() -> int:
         if n_promesses:
             print(f"  ({n_promesses} rendez-vous donnes par les prospects eux-memes)")
 
-        try:
-          _flux = list(mr.list_replies(confirmed_statuses=BUMP_STATUSES,
-                                       max_per_status=args.limit))
-        except ManyReachError as _e:
-            print(f"  !! liste des reponses illisible ({str(_e)[:90]}) — "
-                  f"passage ecourte, trace quand meme ecrite")
-            _flux = []
-        for reply in _flux:
+        # UN FLUX PAR STATUT (Rudy 19/11). Le statut n'est PAS sur la fiche
+        # prospect — verifie le meme jour : `confirmedStatus` est absent du
+        # payload, mon releve les renvoyait tous a None. On ne le connait que
+        # par le FEED d'ou la reponse provient. On interroge donc chaque statut
+        # separement, au lieu de tout fusionner comme avant.
+        _flux: list = []
+        for _st in relances.STATUTS_RELANCABLES:
+            try:
+                for _m in mr.list_replies(confirmed_statuses=(_st,),
+                                          max_per_status=args.limit):
+                    _flux.append((_st, _m))
+            except ManyReachError as _e:
+                print(f"  !! statut {_st} illisible ({str(_e)[:70]})")
+                if getattr(_e, "status", None) == 429:
+                    break
+        for _statut, reply in _flux:
             # Budget de temps : on s'arrête avant le timeout Vercel (60s). Le reste
             # sera relancé au prochain run quotidien (la cadence J+2/J+5 tolère ça).
             if (_time.time() - start_ts) > budget_s:
@@ -329,71 +319,57 @@ def main() -> int:
                     break
                 print(f"  !! {email} : fil illisible ({str(_e)[:90]})")
                 continue
-            decision = decide_bump(thread, now, bump_days)
-            # QUAND FAUDRA-T-IL LE REGARDER A NOUVEAU ? Toute l'economie est la.
-            try:
-                _ordre = sorted(thread, key=lambda m: m.created_at)
-                _dernier = _ordre[-1] if _ordre else None
-                _trail = 0
-                for _m in reversed(_ordre):
-                    if _m.type in ("Sent", "SentManual"):
-                        _trail += 1
+            # LES REGLES DE RUDY (src/relances.py), et non plus une cadence
+            # aveugle J+2/J+5 pour tout le monde. Un « Interested » a qui l'on
+            # n'a rien propose n'est PAS relance : il le traite a la main.
+            ctx = relances.lire_contexte(thread, now)
+            decision = relances.decider(_statut, ctx, now,
+                                        maquettes_actives=_maquettes_auto)
+            vus_ce_passage[_cle] = _revoir_dans(decision.revoir_dans or rescan_j)
+
+            # LE PROSPECT A PARLE EN DERNIER : ce n'est pas une relance qu'il
+            # attend, c'est une REPONSE. Le moteur est le seul a passer par la,
+            # alors il le note pour le tableau de bord.
+            if ctx is not None and not dry_run:
+                try:
+                    if not ctx.dernier_est_de_nous:
+                        _age_r = ctx.jours_depuis_dernier
+                        if _age_r >= float(_os.environ.get("ATTENTE_MIN_JOURS", "3")):
+                            _der = sorted(thread, key=lambda m: m.created_at)[-1]
+                            kvstore.set_attente(email, {
+                                "depuis": _der.created_at.isoformat(),
+                                "jours": round(_age_r),
+                                "extrait": _extrait_reponse(_der.body),
+                                "pid": prospect.prospect_id,
+                                "campaign_id": _der.campaign_id,
+                                "message_id": _der.message_id,
+                            })
+                        else:
+                            kvstore.drop_attente(email)
                     else:
-                        break
-                if _dernier is None:
-                    vus_ce_passage[_cle] = _revoir_dans(30)
-                elif _dernier.type != "Reply" and not dry_run:
-                    # On a reparle depuis : l'attente est soldee.
-                    try:
+                        # On a reparle depuis : l'attente est soldee.
                         kvstore.drop_attente(email)
-                    except Exception:  # noqa: BLE001
-                        pass
-                elif _dernier.type == "Reply":
-                    # Le prospect a parle en dernier : ce n'est pas une relance
-                    # qu'il attend, c'est une REPONSE. Le moteur n'a rien a
-                    # faire ici — mais il est le seul a passer par la, alors il
-                    # le note. Sans ca, Veronique Combe attend un audit promis
-                    # depuis 86 jours sans que rien ne le signale.
-                    vus_ce_passage[_cle] = _revoir_dans(7)
-                    _age_r = (now - _dernier.created_at).total_seconds() / 86400.0
-                    if not dry_run:
-                        try:
-                            if _age_r >= float(_os.environ.get("ATTENTE_MIN_JOURS", "3")):
-                                _txt = _extrait_reponse(_dernier.body)
-                                kvstore.set_attente(email, {
-                                    "depuis": _dernier.created_at.isoformat(),
-                                    "jours": round(_age_r),
-                                    "extrait": _txt,
-                                    "pid": prospect.prospect_id,
-                                    "campaign_id": _dernier.campaign_id,
-                                    "message_id": _dernier.message_id,
-                                })
-                            else:
-                                kvstore.drop_attente(email)
-                        except Exception:  # noqa: BLE001
-                            pass
-                elif _trail >= 3:
-                    # Trois messages sans reponse : on arrete (nurture).
-                    vus_ce_passage[_cle] = _revoir_dans(90)
-                elif not decision.should_bump:
-                    _age = (now - _dernier.created_at).total_seconds() / 86400.0
-                    _seuil = bump_days[0] if _trail <= 1 else (bump_days[1] - bump_days[0])
-                    vus_ce_passage[_cle] = _revoir_dans(max(0.5, _seuil - _age))
-            except Exception:  # noqa: BLE001
-                pass
-            if not decision.should_bump:
+                except Exception:  # noqa: BLE001
+                    pass
+
+            if not decision.relancer:
+                # En simulation on dit POURQUOI : sans ca, un essai a blanc qui
+                # renvoie zero ne distingue pas « rien a faire » d'une regle
+                # trop stricte qui ecarte tout le monde en silence.
+                if dry_run:
+                    print(f"  . {email} [{_statut}] : {decision.raison}")
                 continue
-            body = build_bump_body(decision.bump_number, prospect, slots_text())
-            # On répond au dernier message du prospect dans le thread
+            body = relances.corps(decision.motif, decision.numero, prospect, ctx)
+            # On repond au dernier message du prospect dans le fil.
             last_reply = next(
-                (m for m in sorted(thread, key=lambda x: x.created_at, reverse=True) if m.type == "Reply"),
-                None,
-            )
+                (m for m in sorted(thread, key=lambda x: x.created_at, reverse=True)
+                 if m.type == "Reply"), None)
             if not last_reply:
                 continue
-            print(f"- {email} → relance #{decision.bump_number} ({decision.reason})")
+            print(f"- {email} [{_statut}] → relance {decision.motif} "
+                  f"#{decision.numero} ({decision.raison})")
             if dry_run:
-                print(f"    [DRY-RUN] enverrait : {body[:120]}...")
+                print(f"    [DRY-RUN] enverrait : {body[:130]}...")
             else:
                 try:
                     mr.send_reply(message_id=last_reply.message_id,
@@ -407,9 +383,10 @@ def main() -> int:
                     kvstore.add_bump_sent(jour)
                 except Exception:  # noqa: BLE001
                     pass
-                print(f"    [ENVOYÉ ✓] relance #{decision.bump_number}")
+                print(f"    [ENVOYÉ ✓] relance {decision.motif} #{decision.numero}")
+            # Deuxieme relance = la derniere : on n'y revient plus.
             vus_ce_passage[_cle] = _revoir_dans(
-                max(1.0, bump_days[1] - bump_days[0]) if decision.bump_number == 1 else 90)
+                8.0 if decision.numero == 1 else 90.0)
             n_bumped += 1
 
     # TRACE (Rudy 19/11) : sans elle, impossible de savoir si les relances

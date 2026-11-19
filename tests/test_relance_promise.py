@@ -147,7 +147,7 @@ def test_le_moteur_traite_l_agenda_avant_la_cadence_fixe():
     """Ces fils finissent par une reponse du prospect : la boucle normale les
     saute toujours. S'ils ne passent pas AVANT, ils ne passent jamais."""
     i_ag = RUN_BUMPS.index("relances_dues")
-    i_boucle = RUN_BUMPS.index("for reply in _flux:")
+    i_boucle = RUN_BUMPS.index("for _statut, reply in _flux:")
     assert i_ag < i_boucle, "l'agenda doit etre traite avant la boucle"
     assert "build_promise_body(" in RUN_BUMPS
 
@@ -157,7 +157,7 @@ def test_un_rendez_vous_est_consomme_dans_tous_les_cas():
     disparue : chaque sortie retire le rendez-vous. Sinon l'agenda accumule
     des dettes qu'on ne solde pas."""
     deb = RUN_BUMPS.index("relances_dues")
-    fin = RUN_BUMPS.index("for reply in _flux:")
+    fin = RUN_BUMPS.index("for _statut, reply in _flux:")
     bloc = RUN_BUMPS[deb:fin]
     assert bloc.count("kvstore.drop_relance(email)") >= 5, bloc.count("drop_relance")
     # Et on ne relance pas quelqu'un qui a repris contact entre-temps.

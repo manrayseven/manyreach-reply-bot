@@ -41,7 +41,7 @@ def _fake_kv(monkey_actions):
         def recent_actions(self, limit=None):
             return list(monkey_actions)
 
-        def recent_alerts(self, limit=None):
+        def recent_alerts(self, limit=None, stats=None):
             # Liste dédiée : même alerte que le journal (dédoublonnée au rendu).
             return [a for a in monkey_actions if "ALERTE" in str(a.get("status", ""))]
 
@@ -76,7 +76,8 @@ def _fake_kv(monkey_actions):
             return {}
 
         def cache_get(self, _k):
-            return None
+            # "-" = challenge déjà résolu sans lien : pas d'appel réseau au rendu.
+            return "-" if str(_k).startswith("mrchallenge:") else None
 
         def cache_set(self, *_a, **_k):
             return None
@@ -141,6 +142,18 @@ def test_render_produces_html_with_a_full_alert():
             "client_name": "Deuxieme Espace",
             "message_id": "m-2",
         },
+        {   # challenge antispam sans lien de validation récupérable
+            "at": (now - timedelta(minutes=10)).isoformat(),
+            "from": "noreply@invitations.mailinblack.com",
+            "subject": "Votre message est en attente",
+            "intent": "mailinblack_pending",
+            "status": "challenge MailInBlack — validation à cliquer",
+            "challenge_filter": "MailInBlack",
+            "validation_url": "",
+            "destination_mailbox": "rudy@boite-envoi.fr",
+            "campaign_id": "12345",
+            "client_id": "cli1",
+        },
     ]
     fake = _fake_kv(actions)
     real_kv = index.kvstore
@@ -156,6 +169,11 @@ def test_render_produces_html_with_a_full_alert():
     assert "Alertes à traiter" in html_out
     assert "Envois automatiques récents" in html_out
     assert "Challenges antispam" in html_out
+    # Challenge sans lien : bouton vers l'email dans l'Unibox ManyReach (pas Gmail)
+    assert "Ouvrir l&#x27;email" in html_out or "Ouvrir l'email" in html_out
+    assert "search=from:noreply%40invitations.mailinblack.com" in html_out
+    assert "rudy@boite-envoi.fr" in html_out
+    assert "mail.google.com" not in html_out
     # Le bloc transfert (zone qui avait casse) doit etre rendu
     assert "Email de transfert" in html_out
     assert "mark_handoff" in html_out
