@@ -4,11 +4,13 @@
 Relevé du 19/11 : 45 fils Interested/MaybeLater dont le DERNIER message est une
 réponse du prospect, vieille de 3 jours ou plus. 28 méritaient une réponse.
 
-    veroniquecombe@free.fr — 86 jours
+    le plus ancien — 86 jours
       « D'accord j'attends donc de vos nouvelles »
       (un audit lui avait été promis le 25 août)
-    prochapecarrelage@gmail.com — 8 jours
+    un autre — 8 jours
       « Pourriez-vous me renvoyer le premier apercu du site ? »
+
+    (adresses volontairement absentes : ce dépôt est public)
 
 Ce ne sont pas des relances ratées : c'est NOUS qui devons parler. Personne ne
 le disait nulle part. Le moteur de relance croise pourtant ces fils à chaque

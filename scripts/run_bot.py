@@ -227,7 +227,7 @@ _ADDRESS_CHANGE_RE = re.compile(
 
 # NOUVELLE ADRESSE ANNONCÉE, REPÉRÉE PAR LA FORME (Rudy 16/11, cas crearenov).
 # « Notre adresse email (CONTACT) a changée ! Merci d'envoyer vos mails à :
-# contact@crearenov-valence.fr / et de supprimer : contact.crearenov@gmail.com »
+# contact@<nouveau-domaine>.fr / et de supprimer : contact.<ancien>@gmail.com »
 # Aucune des tournures ci-dessus n'y figure : la règle attendait « envoyer vos
 # DEMANDES / MESSAGES / COURRIER », il a écrit « vos MAILS ». Ajouter « mails »
 # à la liste ne ferait que repousser le prochain mot d'un cran — c'est le

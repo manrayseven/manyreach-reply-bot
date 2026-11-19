@@ -67,7 +67,7 @@ Le message ne parle pas de l'offre. Il ne dit ni oui ni non : il indique où
 campagne et désinscrit l'ancienne ; une alerte ferait perdre les deux.
 
 > « Notre adresse email (CONTACT) a changée ! Merci d'envoyer vos mails à :
-> contact@crearenov-valence.fr / et de supprimer : contact.crearenov@gmail.com »
+> contact@<nouveau-domaine>.fr / et de supprimer : contact.<ancien>@gmail.com »
 > — Farid Mehdi, 16/11. Remonté en alerte À TORT.
 
 Le repère sûr : **le message cite l'adresse d'où il vous écrit**. On ne rappelle
