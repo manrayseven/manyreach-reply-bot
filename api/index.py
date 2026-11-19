@@ -2336,6 +2336,43 @@ def _render(client_filter: str | None = None) -> str:
         + '<button type="submit" class="btn-save">📅 Programmer</button>'
         + '</form>'
     )
+    # SANTÉ DU MOTEUR DE RELANCE (Rudy 19/11). Le 19/11, relevé sur 324 fils :
+    # 10 relances parties, 149 dues. Le cron tournait pourtant tous les jours —
+    # mais rien n'était écrit nulle part, donc personne ne pouvait le voir.
+    # Cette ligne existe pour que ce silence ne se reproduise pas.
+    try:
+        _br = kvstore.get_bump_run() if kvstore.kv_available() else {}
+    except Exception:  # noqa: BLE001
+        _br = {}
+    if not isinstance(_br, dict):
+        _br = {}
+    if _br.get("at"):
+        _bq = _time_fr(str(_br.get("at")))
+        try:
+            _bh = (_dtr.now(_tzr.utc) - _dtr.fromisoformat(str(_br["at"]))).total_seconds() / 3600
+        except Exception:  # noqa: BLE001
+            _bh = 0.0
+        _bko = _bh > 30  # un passage par jour attendu : 30 h = quelque chose cloche
+        _bump_health = (
+            '<div style="margin-top:10px;font-size:12px;color:'
+            + ("#b45309" if _bko else "#a39c8c") + '">'
+            + ("⚠️ " if _bko else "🔧 ")
+            + f"moteur de relance : dernier passage {html.escape(_bq)}, "
+            + f"{_br.get('examines', 0)} prospect(s) examiné(s), "
+            + f"{_br.get('envoyees', 0)} relance(s) envoyée(s) · "
+            + f"{_br.get('du_jour', 0)}/{_br.get('plafond', '?')} aujourd'hui"
+            + (" · <b>plus de 30 h sans passage</b> : le cron ne tourne plus"
+               if _bko else "")
+            + "</div>"
+        )
+    else:
+        _bump_health = (
+            '<div style="margin-top:10px;font-size:12px;color:#b45309">'
+            "⚠️ moteur de relance : <b>aucun passage enregistré</b>. "
+            "Soit le cron n'appelle plus /api/bumps, soit il échoue avant la fin."
+            "</div>"
+        )
+
     relances_card = f"""
   <div class="card">
     <h2>📅 Relances programmées <span class="badge">{len(_rdv_rows)}</span></h2>
@@ -2346,6 +2383,7 @@ def _render(client_filter: str | None = None) -> str:
     </div>
     {"".join(_rdv_rows) or _rdv_vide}
     {_rdv_add}
+    {_bump_health}
   </div>"""
 
     # === SECTION CLIENTS (multi-comptes) ===

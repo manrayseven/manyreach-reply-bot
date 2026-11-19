@@ -683,3 +683,114 @@ def drop_relance(email: str) -> None:
     em = (email or "").lower().strip()
     if em:
         _cmd("HDEL", RELANCES_KEY, em)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# MOTEUR DE RELANCE : MÉMOIRE DE PASSAGE (Rudy 19/11)
+#
+# Relevé du 19/11 sur 324 fils Interested/MaybeLater : 10 relances parties,
+# 149 dues. Le cron tournait pourtant tous les jours. La cause n'était ni le
+# cron ni la fenêtre de lecture, mais le BUDGET : 45 s, 55 requêtes/minute, et
+# deux requêtes par prospect (sa fiche, son fil) — soit une vingtaine de
+# prospects par passage. Comme la liste est triée du plus récent au plus
+# ancien, c'étaient TOUJOURS les vingt mêmes, justement les plus frais, donc
+# ceux qu'il est trop tôt pour relancer. Le 21e n'était jamais atteint.
+#
+# D'où cette mémoire : on note qui a été examiné et quand. Le passage suivant
+# saute ces adresses SANS dépenser d'appel API, et avance donc dans la liste.
+# En une semaine le moteur balaie tout, au lieu de piétiner.
+BUMP_SEEN_KEY = "bot:bump_seen"       # HASH email -> date d'examen (ISO)
+BUMP_DAY_KEY = "bot:bump_day"         # "AAAA-MM-JJ|n" : envois du jour
+BUMP_RUN_KEY = "bot:bump_last_run"    # JSON du dernier passage
+PID_PREFIX = "bot:pid:"               # cache email -> prospectId
+MAX_BUMP_SEEN = 5000
+
+
+def bump_seen() -> dict:
+    """{email: date d'examen} — lu en UN appel au début du passage."""
+    res = _cmd("HGETALL", BUMP_SEEN_KEY)
+    if isinstance(res, dict):
+        return {str(k): str(v) for k, v in res.items()}
+    if isinstance(res, list):
+        return {str(res[i]): str(res[i + 1]) for i in range(0, len(res) - 1, 2)}
+    return {}
+
+
+def mark_bump_seen_many(vus: dict) -> None:
+    """Un seul HSET pour tout le passage : le budget est en secondes."""
+    if not kv_available() or not vus:
+        return
+    plat: list = []
+    for em, iso in vus.items():
+        plat += [str(em).lower().strip(), str(iso)]
+    _cmd("HSET", BUMP_SEEN_KEY, *plat)
+    # La mémoire ne sert qu'à faire avancer le balayage : passé un certain
+    # volume elle ne protège plus rien, elle coûte. On repart à zéro.
+    try:
+        if int(_cmd("HLEN", BUMP_SEEN_KEY) or 0) > MAX_BUMP_SEEN:
+            _cmd("DEL", BUMP_SEEN_KEY)
+    except (TypeError, ValueError):
+        pass
+
+
+def bump_sent_today(jour: str) -> int:
+    """Combien de relances déjà parties aujourd'hui (tous passages confondus).
+
+    Le plafond est JOURNALIER, pas par passage : c'est ce qui permet d'appeler
+    /api/bumps toutes les heures sans risquer d'inonder les prospects.
+    """
+    raw = str(_cmd("GET", BUMP_DAY_KEY) or "")
+    if "|" not in raw:
+        return 0
+    j, n = raw.split("|", 1)
+    if j != jour:
+        return 0
+    try:
+        return int(n)
+    except ValueError:
+        return 0
+
+
+def add_bump_sent(jour: str, n: int = 1) -> int:
+    if not kv_available():
+        return 0
+    total = bump_sent_today(jour) + n
+    _cmd("SET", BUMP_DAY_KEY, f"{jour}|{total}", "EX", "172800")
+    return total
+
+
+def set_bump_run(payload: dict) -> None:
+    """Trace du passage. Sans elle, le tableau de bord ne peut pas dire si les
+    relances tournent — c'est précisément ce qui a laissé le moteur affamé
+    pendant des semaines sans que personne ne le voie."""
+    if not kv_available():
+        return
+    _cmd("SET", BUMP_RUN_KEY, json.dumps(payload, ensure_ascii=False),
+         "EX", str(15 * 86400))
+
+
+def get_bump_run() -> dict:
+    raw = _cmd("GET", BUMP_RUN_KEY)
+    if not raw:
+        return {}
+    try:
+        return json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return {}
+
+
+def cache_prospect_id(email: str, pid: int) -> None:
+    """Une recherche de fiche coûte un appel API. Mise en cache, elle ne coûte
+    plus rien au passage suivant : deux fois plus de prospects examinés."""
+    if not kv_available() or not email or not pid:
+        return
+    _cmd("SET", f"{PID_PREFIX}{email.lower().strip()}", str(int(pid)),
+         "EX", str(30 * 86400))
+
+
+def cached_prospect_id(email: str) -> int | None:
+    raw = _cmd("GET", f"{PID_PREFIX}{(email or '').lower().strip()}")
+    try:
+        return int(raw) if raw else None
+    except (TypeError, ValueError):
+        return None

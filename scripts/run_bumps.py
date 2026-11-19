@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import argparse
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -22,7 +22,7 @@ from dotenv import load_dotenv  # noqa: E402
 
 from src.bumps import build_bump_body, build_promise_body, decide_bump  # noqa: E402
 from src import kvstore  # noqa: E402
-from src.manyreach import ManyReachClient  # noqa: E402
+from src.manyreach import ManyReachClient, ManyReachError  # noqa: E402
 
 BUMP_STATUSES = ("Interested", "MaybeLater")
 
@@ -86,9 +86,57 @@ def main() -> int:
         return 0
 
     import os as _os, time as _time
-    budget_s = float(_os.environ.get("BUMPS_BUDGET_SECONDS", "45"))
+    # 50 s : /api/bumps a un timeout de 60 s (vercel.json).
+    budget_s = float(_os.environ.get("BUMPS_BUDGET_SECONDS", "50"))
     start_ts = _time.time()
 
+    # PLAFOND JOURNALIER (Rudy 19/11). Journalier et non par passage : c'est ce
+    # qui rend sur d'appeler /api/bumps toutes les heures. Sans lui, resorber un
+    # retard de 149 relances enverrait 149 emails d'un coup.
+    jour = now.date().isoformat()
+    plafond = int(_os.environ.get("BUMPS_MAX_PER_DAY", "25"))
+    try:
+        deja_aujourdhui = kvstore.bump_sent_today(jour)
+    except Exception:  # noqa: BLE001
+        deja_aujourdhui = 0
+    if deja_aujourdhui >= plafond and not dry_run:
+        print(f"Plafond du jour atteint ({deja_aujourdhui}/{plafond}) — stop.")
+        return 0
+
+    # MEMOIRE DE PASSAGE : qui a deja ete EXAMINE recemment. Sauter une adresse
+    # ici ne coute AUCUN appel API ; c'est ce qui fait avancer le balayage au
+    # lieu de rabacher les vingt plus recents (voir src/kvstore.py).
+    rescan_j = float(_os.environ.get("BUMP_RESCAN_DAYS", "3"))
+    try:
+        deja_vus = kvstore.bump_seen()
+    except Exception:  # noqa: BLE001
+        deja_vus = {}
+
+    def _a_revoir_plus_tard(em: str) -> bool:
+        """Vrai si on sait deja qu'il est trop tot pour ce prospect.
+
+        La memoire ne stocke pas « vu le X » mais « a revoir le Y » : un fil
+        ou le prospect a parle en dernier, ou deja relance trois fois, ne
+        merite pas un appel API par jour. C'est ce qui fait converger le
+        balayage — apres un premier tour, le quota ne sert plus qu'aux
+        prospects reellement dus.
+        """
+        iso = deja_vus.get((em or "").lower().strip())
+        if not iso:
+            return False
+        try:
+            quand = datetime.fromisoformat(iso)
+        except ValueError:
+            return False
+        if quand.tzinfo is None:
+            quand = quand.replace(tzinfo=timezone.utc)
+        return quand > now
+
+    def _revoir_dans(jours: float) -> str:
+        return (now + timedelta(days=jours)).isoformat()
+
+    vus_ce_passage: dict = {}
+    n_examines = 0
     seen: set[str] = set()
     n_bumped = 0
     with ManyReachClient() as mr:
@@ -107,6 +155,12 @@ def main() -> int:
         for rdv in dues:
             if (_time.time() - start_ts) > budget_s:
                 print("  >> Budget atteint — le reste des rendez-vous au prochain run")
+                break
+            # Le plafond du jour vaut aussi pour les rendez-vous promis : un
+            # prospect ne doit pas recevoir d'email parce qu'un compteur a ete
+            # oublie sur une branche.
+            if (deja_aujourdhui + n_bumped) >= plafond and not dry_run:
+                print(f"  >> Plafond du jour atteint ({plafond}) — rendez-vous reportes")
                 break
             email = str(rdv.get("email") or "")
             if not email:
@@ -128,7 +182,13 @@ def main() -> int:
                 if not dry_run:
                     kvstore.drop_relance(email)
                 continue
-            thread = mr.get_prospect_thread(prospect.prospect_id)
+            try:
+                thread = mr.get_prospect_thread(prospect.prospect_id)
+            except ManyReachError as _e:
+                if getattr(_e, "status", None) == 429:
+                    print("  >> Quota ManyReach atteint — rendez-vous reportes")
+                    break
+                continue
             # A-t-il repris contact depuis ? Alors le rendez-vous est caduc :
             # c'est une conversation en cours, pas une promesse a tenir.
             pose = str(rdv.get("pose_le") or "")
@@ -162,21 +222,103 @@ def main() -> int:
         if n_promesses:
             print(f"  ({n_promesses} rendez-vous donnes par les prospects eux-memes)")
 
-        for reply in mr.list_replies(confirmed_statuses=BUMP_STATUSES, max_per_status=args.limit):
+        try:
+          _flux = list(mr.list_replies(confirmed_statuses=BUMP_STATUSES,
+                                       max_per_status=args.limit))
+        except ManyReachError as _e:
+            print(f"  !! liste des reponses illisible ({str(_e)[:90]}) — "
+                  f"passage ecourte, trace quand meme ecrite")
+            _flux = []
+        for reply in _flux:
             # Budget de temps : on s'arrête avant le timeout Vercel (60s). Le reste
             # sera relancé au prochain run quotidien (la cadence J+2/J+5 tolère ça).
             if (_time.time() - start_ts) > budget_s:
                 print(f"  >> Budget {budget_s}s atteint — stop, suite au prochain run quotidien")
                 break
+            if (deja_aujourdhui + n_bumped) >= plafond and not dry_run:
+                print(f"  >> Plafond du jour atteint ({plafond}) — suite au prochain passage")
+                break
             email = reply.from_email
             if email in seen:
                 continue
             seen.add(email)
-            prospect = mr.find_prospect_by_email(email)
-            if not prospect:
+            # Saute SANS appel API : c'est tout l'interet de la memoire.
+            if _a_revoir_plus_tard(email):
                 continue
-            thread = mr.get_prospect_thread(prospect.prospect_id)
+            _cle = (email or "").lower().strip()
+            # Par defaut on redemande demain ; chaque issue ci-dessous ajuste.
+            vus_ce_passage[_cle] = _revoir_dans(rescan_j)
+            n_examines += 1
+            # Un identifiant de fiche en cache = une requete economisee, donc
+            # deux fois plus de prospects examines dans le meme budget.
+            prospect = None
+            try:
+                _pid = kvstore.cached_prospect_id(email)
+            except Exception:  # noqa: BLE001
+                _pid = None
+            if _pid:
+                try:
+                    prospect = mr.get_prospect(_pid)
+                except Exception:  # noqa: BLE001
+                    prospect = None
+            if not prospect:
+                try:
+                    prospect = mr.find_prospect_by_email(email)
+                except ManyReachError as _e:
+                    if getattr(_e, "status", None) == 429:
+                        print("  >> Quota ManyReach atteint — arret propre")
+                        break
+                    continue
+                if prospect:
+                    try:
+                        kvstore.cache_prospect_id(email, prospect.prospect_id)
+                    except Exception:  # noqa: BLE001
+                        pass
+            if not prospect:
+                vus_ce_passage[_cle] = _revoir_dans(30)
+                continue
+            # LE QUOTA EST CELUI DU COMPTE, PAS DU PROCESSUS (constate le 19/11
+            # en simulation). /api/cron tourne toutes les 5 minutes et puise au
+            # meme seau de 60 requetes/minute : le regulateur interne ne peut
+            # pas l'anticiper. Avant, un 429 remontait jusqu'en haut et TUAIT
+            # le passage — on perdait tout le travail deja fait, trace comprise.
+            # Desormais on s'arrete proprement : la memoire de passage garde ce
+            # qui a ete examine, et le passage suivant reprend plus loin.
+            try:
+                thread = mr.get_prospect_thread(prospect.prospect_id)
+            except ManyReachError as _e:
+                if getattr(_e, "status", None) == 429:
+                    print("  >> Quota ManyReach atteint (le compte est partage "
+                          "avec /api/cron) — arret propre, suite au prochain passage")
+                    break
+                print(f"  !! {email} : fil illisible ({str(_e)[:90]})")
+                continue
             decision = decide_bump(thread, now, bump_days)
+            # QUAND FAUDRA-T-IL LE REGARDER A NOUVEAU ? Toute l'economie est la.
+            try:
+                _ordre = sorted(thread, key=lambda m: m.created_at)
+                _dernier = _ordre[-1] if _ordre else None
+                _trail = 0
+                for _m in reversed(_ordre):
+                    if _m.type in ("Sent", "SentManual"):
+                        _trail += 1
+                    else:
+                        break
+                if _dernier is None:
+                    vus_ce_passage[_cle] = _revoir_dans(30)
+                elif _dernier.type == "Reply":
+                    # Le prospect a parle en dernier : ce n'est pas une relance
+                    # qu'il attend, c'est une reponse. Rien a faire ici.
+                    vus_ce_passage[_cle] = _revoir_dans(7)
+                elif _trail >= 3:
+                    # Trois messages sans reponse : on arrete (nurture).
+                    vus_ce_passage[_cle] = _revoir_dans(90)
+                elif not decision.should_bump:
+                    _age = (now - _dernier.created_at).total_seconds() / 86400.0
+                    _seuil = bump_days[0] if _trail <= 1 else (bump_days[1] - bump_days[0])
+                    vus_ce_passage[_cle] = _revoir_dans(max(0.5, _seuil - _age))
+            except Exception:  # noqa: BLE001
+                pass
             if not decision.should_bump:
                 continue
             body = build_bump_body(decision.bump_number, prospect, slots_text())
@@ -191,11 +333,41 @@ def main() -> int:
             if dry_run:
                 print(f"    [DRY-RUN] enverrait : {body[:120]}...")
             else:
-                mr.send_reply(message_id=last_reply.message_id, body_html=body, send_as_reply=True)
+                try:
+                    mr.send_reply(message_id=last_reply.message_id,
+                                  body_html=body, send_as_reply=True)
+                except ManyReachError as _e:
+                    print(f"  !! {email} : envoi refuse ({str(_e)[:90]})")
+                    if getattr(_e, "status", None) == 429:
+                        break
+                    continue
+                try:
+                    kvstore.add_bump_sent(jour)
+                except Exception:  # noqa: BLE001
+                    pass
                 print(f"    [ENVOYÉ ✓] relance #{decision.bump_number}")
+            vus_ce_passage[_cle] = _revoir_dans(
+                max(1.0, bump_days[1] - bump_days[0]) if decision.bump_number == 1 else 90)
             n_bumped += 1
 
-    print(f"\nTerminé. {n_bumped} relance(s) {'simulée(s)' if dry_run else 'envoyée(s)'}.")
+    # TRACE (Rudy 19/11) : sans elle, impossible de savoir si les relances
+    # tournent. C'est ce silence qui a laisse le moteur affame des semaines.
+    if not dry_run:
+        try:
+            kvstore.mark_bump_seen_many(vus_ce_passage)
+            kvstore.set_bump_run({
+                "at": now.isoformat(),
+                "examines": n_examines,
+                "envoyees": n_bumped,
+                "promesses": n_promesses,
+                "jour": jour,
+                "du_jour": kvstore.bump_sent_today(jour),
+                "plafond": plafond,
+            })
+        except Exception as _e:  # noqa: BLE001
+            print(f"  !! trace non ecrite : {_e}")
+    print(f"{n_examines} prospect(s) examine(s), "
+          f"{n_bumped} relance(s) {'simulee(s)' if dry_run else 'envoyee(s)'}.")
     return 0
 
 
