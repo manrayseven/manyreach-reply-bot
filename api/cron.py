@@ -177,6 +177,19 @@ class handler(BaseHTTPRequestHandler):
                     sys.argv = ["run_bumps", "--no-dry-run", "--limit",
                                 os.environ.get("BUMPS_LIMIT", "60")]
                     result["bumps"] = run_bumps.main()
+                except Exception as _be:  # noqa: BLE001
+                    # Un echec ne doit pas devenir une boucle : sans trace, le
+                    # passage resterait « du » et prendrait un tour toutes les
+                    # 5 minutes, indefiniment, au detriment des reponses.
+                    result["bumps"] = f"erreur: {str(_be)[:200]}"
+                    try:
+                        from datetime import datetime as _d, timezone as _t
+                        from src import kvstore as _kv
+                        _kv.set_bump_run({"at": _d.now(_t.utc).isoformat(),
+                                          "motif": f"erreur: {str(_be)[:120]}",
+                                          "examines": 0, "envoyees": 0})
+                    except Exception:  # noqa: BLE001
+                        pass
                 finally:
                     sys.argv = _argv
                 result["main"] = "saute (tour dedie aux relances)"

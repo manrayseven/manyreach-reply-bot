@@ -202,7 +202,11 @@ def test_les_relances_sont_intercalees_dans_le_cron_existant():
     assert "kvstore.kv_available()" in _b and "return False" in _b
     # sys.argv restaure : le passage principal des tours suivants en depend.
     _j = cron.index("elif _bumps_due():")
-    assert "sys.argv = _argv" in cron[_j:_j + 900]
+    _c = cron[_j:_j + 1600]
+    assert "sys.argv = _argv" in _c
+    # Un echec ne doit pas devenir une boucle : sans trace, le passage
+    # resterait « du » et prendrait un tour toutes les 5 minutes.
+    assert "except Exception as _be" in _c and "set_bump_run" in _c
 
 
 def test_une_sortie_anticipee_laisse_quand_meme_une_trace():
