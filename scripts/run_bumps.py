@@ -153,6 +153,8 @@ def main() -> int:
     def _revoir_dans(jours: float) -> str:
         return (now + timedelta(days=jours)).isoformat()
 
+    # Une seule attente de quota par passage : deux couteraient le budget.
+    _quota_attendu = [False]
     vus_ce_passage: dict = {}
     n_examines = 0
     seen: set[str] = set()
@@ -323,9 +325,24 @@ def main() -> int:
                 thread = mr.get_prospect_thread(prospect.prospect_id)
             except ManyReachError as _e:
                 if getattr(_e, "status", None) == 429:
-                    print("  >> Quota ManyReach atteint (le compte est partage "
-                          "avec /api/cron) — arret propre, suite au prochain passage")
-                    break
+                    # S'ARRETER AU PREMIER 429 COUTAIT TOUTE L'HEURE (constate
+                    # le 19/11 : trois prospects cibles n'avaient toujours rien
+                    # recu). Le quota se libere par fenetre glissante d'une
+                    # minute : si le budget le permet, on attend et on reprend.
+                    _reste = budget_s - (_time.time() - start_ts)
+                    if _reste > 25 and not _quota_attendu[0]:
+                        _quota_attendu[0] = True
+                        print("  >> Quota atteint — on patiente 20 s et on reprend")
+                        _time.sleep(20)
+                        try:
+                            thread = mr.get_prospect_thread(prospect.prospect_id)
+                        except ManyReachError:
+                            print("  >> Quota toujours sature — arret propre")
+                            break
+                    else:
+                        print("  >> Quota ManyReach atteint (compte partage avec "
+                              "/api/cron) — arret propre, suite au prochain passage")
+                        break
                 print(f"  !! {email} : fil illisible ({str(_e)[:90]})")
                 continue
             # LES REGLES DE RUDY (src/relances.py), et non plus une cadence
