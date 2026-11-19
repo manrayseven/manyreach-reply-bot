@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import html as _html
+from os import environ as _osenv
 import re
 import sys
 from datetime import datetime, timedelta, timezone
@@ -95,9 +96,28 @@ def main() -> int:
             local = now.astimezone()
         return local.weekday() in days and hours[0] <= local.hour < hours[1]
 
+    def _trace(motif: str, examines: int = 0, envoyees: int = 0) -> None:
+        """Toute sortie laisse une trace. Sans elle, /api/cron croirait qu'un
+        passage reste du et sacrifierait un tour toutes les 5 minutes pour
+        rien — la nuit, hors fenetre d'envoi, ca affamerait le traitement des
+        reponses entrantes."""
+        if dry_run:
+            return
+        try:
+            _j = now.date().isoformat()
+            kvstore.set_bump_run({
+                "at": now.isoformat(), "motif": motif,
+                "examines": examines, "envoyees": envoyees, "jour": _j,
+                "du_jour": kvstore.bump_sent_today(_j),
+                "plafond": int(_osenv.get("BUMPS_MAX_PER_DAY", "25")),
+            })
+        except Exception:  # noqa: BLE001
+            pass
+
     print(f"\n=== Relances — {'DRY-RUN' if dry_run else 'LIVE'} — cadence J+{bump_days} ===\n")
     if not dry_run and not send_window_open():
         print("Hors fenêtre d'envoi — on ne relance pas maintenant. Réessaie en heures ouvrées.")
+        _trace("hors fenetre d'envoi")
         return 0
 
     import os as _os, time as _time
@@ -116,6 +136,7 @@ def main() -> int:
         deja_aujourdhui = 0
     if deja_aujourdhui >= plafond and not dry_run:
         print(f"Plafond du jour atteint ({deja_aujourdhui}/{plafond}) — stop.")
+        _trace("plafond du jour atteint")
         return 0
 
     # MEMOIRE DE PASSAGE : qui a deja ete EXAMINE recemment. Sauter une adresse

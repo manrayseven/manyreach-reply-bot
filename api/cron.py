@@ -54,6 +54,36 @@ def _spaces_due() -> bool:
         return False
 
 
+# LES RELANCES N'ONT JAMAIS EU DE CRON (constate le 19/11 avec Rudy : la liste
+# cron-job.org ne contient que /api/cron et un job Grow Pulser). /api/bumps
+# existe depuis des mois et personne ne l'appelle — d'ou 10 relances parties
+# pour 149 dues. Exiger un second job, c'est exiger qu'on y repense : on
+# intercale donc ici, comme les espaces et le rattrapage, au plus une fois par
+# heure. Plus rien a configurer, plus rien a oublier.
+BUMPS_EVERY_MIN = float(os.environ.get("BUMPS_EVERY_MIN", "60"))
+
+
+def _bumps_due() -> bool:
+    """True si aucun passage de relance depuis BUMPS_EVERY_MIN.
+
+    Sans KV on s'abstient : le plafond journalier vit la-bas, et relancer sans
+    plafond est precisement ce qu'il ne faut pas faire.
+    """
+    try:
+        from src import kvstore
+        if not kvstore.kv_available():
+            return False
+        from datetime import datetime, timezone
+        at = (kvstore.get_bump_run() or {}).get("at")
+        if not at:
+            return True
+        age_min = (datetime.now(timezone.utc)
+                   - datetime.fromisoformat(at)).total_seconds() / 60.0
+        return age_min >= BUMPS_EVERY_MIN
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def _rattrapage_due() -> bool:
     try:
         sys.path.insert(0, str(ROOT / "api"))
@@ -136,6 +166,20 @@ class handler(BaseHTTPRequestHandler):
                 from rattrapage import run_rattrapage
                 result["rattrapage"] = run_rattrapage(enveloppe_s=CRON_ENVELOPE_S - 2)
                 result["main"] = "saute (tour dedie au rattrapage)"
+            elif _bumps_due():
+                # TOUR DEDIE AUX RELANCES, en dernier dans l'ordre de priorite :
+                # au plus un tour sur douze, et jamais au detriment des reponses
+                # entrantes, qui passent avant tout le reste.
+                import run_bumps  # scripts/run_bumps.py
+                os.environ.setdefault("BUMPS_BUDGET_SECONDS", "22")
+                _argv = sys.argv
+                try:
+                    sys.argv = ["run_bumps", "--no-dry-run", "--limit",
+                                os.environ.get("BUMPS_LIMIT", "60")]
+                    result["bumps"] = run_bumps.main()
+                finally:
+                    sys.argv = _argv
+                result["main"] = "saute (tour dedie aux relances)"
             else:
                 result["exit_code"] = run_bot.main()
         except SystemExit as e:

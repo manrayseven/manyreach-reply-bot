@@ -185,6 +185,41 @@ def test_un_429_n_emporte_plus_le_passage_entier():
     assert "liste des reponses illisible" in BUMPS
 
 
+def test_les_relances_sont_intercalees_dans_le_cron_existant():
+    """Constate le 19/11 avec Rudy : la liste cron-job.org ne contenait QUE
+    /api/cron et un job Grow Pulser. /api/bumps existait depuis des mois et
+    personne ne l'appelait — d'ou 10 relances parties pour 149 dues. Exiger un
+    second job, c'est exiger qu'on y repense."""
+    cron = (ROOT / "api" / "cron.py").read_text(encoding="utf-8")
+    assert "_bumps_due()" in cron and "import run_bumps" in cron
+    # En DERNIER dans l'ordre de priorite : jamais au detriment des reponses.
+    assert cron.index("_spaces_due()") < cron.index("elif _bumps_due():")
+    assert cron.index("_rattrapage_due()") < cron.index("elif _bumps_due():")
+    # Au plus une fois par heure, et jamais sans KV (le plafond vit la-bas).
+    assert "BUMPS_EVERY_MIN" in cron
+    _i = cron.index("def _bumps_due()")
+    _b = cron[_i:_i + 900]
+    assert "kvstore.kv_available()" in _b and "return False" in _b
+    # sys.argv restaure : le passage principal des tours suivants en depend.
+    _j = cron.index("elif _bumps_due():")
+    assert "sys.argv = _argv" in cron[_j:_j + 900]
+
+
+def test_une_sortie_anticipee_laisse_quand_meme_une_trace():
+    """Sinon /api/cron croit qu'un passage reste du et sacrifie un tour toutes
+    les 5 minutes pour rien. La nuit, hors fenetre d'envoi, ca affamerait le
+    traitement des reponses entrantes."""
+    assert BUMPS.count("_trace(") >= 3
+    i = BUMPS.index("Hors fen")
+    assert "_trace(" in BUMPS[i:i + 200]
+    j = BUMPS.index("Plafond du jour atteint (")
+    assert "_trace(" in BUMPS[j:j + 200]
+    # Rien en simulation.
+    k = BUMPS.index("def _trace(")
+    _t = BUMPS[k:k + 700]
+    assert "if dry_run:" in _t and "return" in _t
+
+
 if __name__ == "__main__":
     from tests._runner import main as _main
     _main(globals())
