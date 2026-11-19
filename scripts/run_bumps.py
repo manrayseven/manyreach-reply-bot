@@ -255,6 +255,15 @@ def main() -> int:
                 print(f"  !! statut {_st} illisible ({str(_e)[:70]})")
                 if getattr(_e, "status", None) == 429:
                     break
+        # LE PLUS ANCIEN D'ABORD (Rudy 19/11, apres un premier passage a vide).
+        # `list_replies` trie du plus RECENT au plus ancien : c'est ce que veut
+        # le traitement des reponses entrantes, l'inverse de ce que veut une
+        # relance. Les prospects dus sont les VIEUX ; en commencant par les
+        # frais, le moteur depensait tout son quota sur des gens qu'il est trop
+        # tot pour relancer et n'atteignait les autres qu'apres une quinzaine
+        # de passages. Une ligne de tri, et le premier passage sert a quelque
+        # chose.
+        _flux.sort(key=lambda sm: sm[1].created_at)
         for _statut, reply in _flux:
             # Budget de temps : on s'arrête avant le timeout Vercel (60s). Le reste
             # sera relancé au prochain run quotidien (la cadence J+2/J+5 tolère ça).

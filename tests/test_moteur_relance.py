@@ -226,6 +226,18 @@ def test_une_sortie_anticipee_laisse_quand_meme_une_trace():
     assert "if dry_run:" in _t and "return" in _t
 
 
+def test_le_moteur_commence_par_les_plus_anciens():
+    """`list_replies` trie du plus RECENT au plus ancien : c'est ce que veut le
+    traitement des reponses entrantes, l'inverse de ce que veut une relance.
+    Les prospects dus sont les VIEUX. En commencant par les frais, le premier
+    passage reel du 19/11 a envoye zero relance : tout le quota depense sur des
+    gens qu'il etait trop tot pour relancer."""
+    assert "_flux.sort(key=lambda sm: sm[1].created_at)" in BUMPS
+    i = BUMPS.index("_flux.sort(")
+    j = BUMPS.index("for _statut, reply in _flux:")
+    assert i < j, "le tri doit preceder la boucle"
+
+
 if __name__ == "__main__":
     from tests._runner import main as _main
     _main(globals())
