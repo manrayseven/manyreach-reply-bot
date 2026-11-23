@@ -30,6 +30,7 @@ from src.manyreach import ManyReachClient, ManyReachError  # noqa: E402
 
 BUMP_STATUSES = ("Interested", "MaybeLater")
 
+
 _CITATION = re.compile(
     r"(?:\n\s*>|\nLe .{0,40}a écrit|\nOn .{0,40}wrote"
     r"|\nDe\s*:|\nFrom\s*:|\nEnvoyé de mon)", re.I)
@@ -242,13 +243,36 @@ def main() -> int:
         if n_promesses:
             print(f"  ({n_promesses} rendez-vous donnes par les prospects eux-memes)")
 
+        # ── CE MOTEUR FAIT DOUBLON, ET J'AI MIS QUATRE JOURS A LE VOIR ──
+        #
+        # Lead Finder relance DEJA les prospects par stade, depuis le serveur
+        # Oracle, tous les jours ouvres a 9 h 30 (serveur/crontab.txt), avec les
+        # memes statuts, les memes cadences (Interested 3 j puis 7, MeetingBooked
+        # 4 j, MeetingCompleted 7 j), le meme plafond de deux relances et la meme
+        # regle du dernier message. Repare le 20/11 : plafond porte a 250, 453
+        # relances en retard resorbees.
+        #
+        # Le 19/11 j'ai reconstruit tout cela ici, sans verifier. Les deux
+        # moteurs visent le MEME compte ManyReach : s'ils tournaient ensemble,
+        # chaque prospect recevrait deux relances. Rudy l'a dit en une phrase le
+        # 23/11 — « mais normalement c'etait deja comme ca ».
+        #
+        # La cadence par stade appartient donc a Lead Finder. Ce passage ne garde
+        # que ce que Lead Finder ne fait PAS : les rendez-vous que le prospect
+        # donne lui-meme (« je pense, 1er trimestre 2027 »), traites plus haut
+        # depuis l'agenda. Mettre RELANCES_CADENCE=1 reactive la cadence ici, et
+        # il faudrait alors couper celle du serveur.
+        _cadence_ici = _os.environ.get("RELANCES_CADENCE", "0") == "1"
+        if not _cadence_ici:
+            print("  (cadence par stade : assuree par Lead Finder sur le serveur)")
+
         # UN FLUX PAR STATUT (Rudy 19/11). Le statut n'est PAS sur la fiche
         # prospect — verifie le meme jour : `confirmedStatus` est absent du
         # payload, mon releve les renvoyait tous a None. On ne le connait que
         # par le FEED d'ou la reponse provient. On interroge donc chaque statut
         # separement, au lieu de tout fusionner comme avant.
         _flux: list = []
-        for _st in relances.STATUTS_RELANCABLES:
+        for _st in (relances.STATUTS_RELANCABLES if _cadence_ici else ()):
             try:
                 for _m in mr.list_replies(confirmed_statuses=(_st,),
                                           max_per_status=args.limit):
@@ -353,28 +377,17 @@ def main() -> int:
                                         maquettes_actives=_maquettes_auto)
             vus_ce_passage[_cle] = _revoir_dans(decision.revoir_dans or rescan_j)
 
-            # LE PROSPECT A PARLE EN DERNIER : ce n'est pas une relance qu'il
-            # attend, c'est une REPONSE. Le moteur est le seul a passer par la,
-            # alors il le note pour le tableau de bord.
+            # LA LISTE « ILS ATTENDENT TA REPONSE » EST SUPPRIMEE (Rudy
+            # 23/11) : « je ne vois pas a quoi ca sert ». Il avait raison — sa
+            # liste de 33 contenait un rebond OVH, deux repondeurs d'absence,
+            # un « merci pour la mise en contact » et deux confirmations de
+            # rendez-vous. Sa regle tient en une phrase : soit le contact doit
+            # etre relance et on le fait, soit c'est termine et on n'y revient
+            # pas. Plus de troisieme pile a trier a la main. C'est desormais
+            # Lead Finder qui tranche (scripts/relancer-engagements.ts).
             if ctx is not None and not dry_run:
                 try:
-                    if not ctx.dernier_est_de_nous:
-                        _age_r = ctx.jours_depuis_dernier
-                        if _age_r >= float(_os.environ.get("ATTENTE_MIN_JOURS", "3")):
-                            _der = sorted(thread, key=lambda m: m.created_at)[-1]
-                            kvstore.set_attente(email, {
-                                "depuis": _der.created_at.isoformat(),
-                                "jours": round(_age_r),
-                                "extrait": _extrait_reponse(_der.body),
-                                "pid": prospect.prospect_id,
-                                "campaign_id": _der.campaign_id,
-                                "message_id": _der.message_id,
-                            })
-                        else:
-                            kvstore.drop_attente(email)
-                    else:
-                        # On a reparle depuis : l'attente est soldee.
-                        kvstore.drop_attente(email)
+                    kvstore.drop_attente(email)
                 except Exception:  # noqa: BLE001
                     pass
 
