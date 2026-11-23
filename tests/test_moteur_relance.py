@@ -107,7 +107,7 @@ def test_le_plafond_garde_les_deux_chemins_d_envoi():
     """Il y a deux endroits qui envoient : les rendez-vous promis et la cadence
     J+2/J+5. Un plafond pose sur un seul des deux ne protege rien."""
     assert BUMPS.count("plafond and not dry_run") >= 3, BUMPS.count("plafond")
-    i_agenda = BUMPS.index("for rdv in dues:")
+    i_agenda = BUMPS.index("for rdv in a_voir:")
     i_cadence = BUMPS.index("for _statut, reply in _flux:")
     assert "plafond" in BUMPS[i_agenda:i_cadence]
     assert "plafond" in BUMPS[i_cadence:]

@@ -23,7 +23,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 import yaml  # noqa: E402
 from dotenv import load_dotenv  # noqa: E402
 
-from src import relances  # noqa: E402
+from src import agenda, relances  # noqa: E402
 from src.bumps import build_promise_body  # noqa: E402
 from src import kvstore  # noqa: E402
 from src.manyreach import ManyReachClient, ManyReachError  # noqa: E402
@@ -160,6 +160,20 @@ def main() -> int:
     n_examines = 0
     seen: set[str] = set()
     n_bumped = 0
+    # Le modele n'est sollicite que si Rudy a ecrit depuis la programmation
+    # d'une relance : quelques appels par jour au plus. Cree a la demande.
+    _client_ia: list = []
+
+    def _modele_agenda(systeme: str, utilisateur: str) -> str:
+        import anthropic  # noqa: PLC0415
+        from src.llm_compat import HAIKU, options_for, text_of  # noqa: PLC0415
+        if not _client_ia:
+            _client_ia.append(anthropic.Anthropic(max_retries=2))
+        msg = _client_ia[0].messages.create(
+            model=HAIKU, max_tokens=300, **options_for(HAIKU),
+            system=systeme, messages=[{"role": "user", "content": utilisateur}])
+        return text_of(msg)
+
     with ManyReachClient() as mr:
         # ── RENDEZ-VOUS DONNÉS PAR LES PROSPECTS EUX-MÊMES (Rudy 16/11) ──
         # « Je pense, 1er trimestre 2027. » Ces fils finissent par une réponse
@@ -168,61 +182,116 @@ def main() -> int:
         # consommé dans tous les cas — relancé, ou retiré parce qu'il n'a plus
         # lieu d'être. Sinon l'agenda se remplit de dettes qu'on ne solde pas.
         n_promesses = 0
+        n_annulees = 0
+        aujourdhui = now.date().isoformat()
         try:
-            dues = kvstore.relances_dues(now.date().isoformat())
+            agenda_complet = kvstore.relances()
         except Exception as _e:  # noqa: BLE001
-            dues = []
+            agenda_complet = []
             print(f"  !! agenda de relance illisible : {_e}")
-        for rdv in dues:
+
+        # REVERIFIER, PAS SEULEMENT ENVOYER (Rudy 23/11) : « tu dois regarder
+        # regulierement si je n'ai pas repondu entre-temps a ces gens ». Avant,
+        # on ne lisait le fil qu'a l'echeance, et seulement pour voir si le
+        # PROSPECT avait reecrit. Un rendez-vous cale a la main par Rudy
+        # n'empechait donc pas la relance de partir. Desormais chaque entree est
+        # relue : toujours juste avant un envoi, et toutes les six heures sinon.
+        def _a_relire(r: dict) -> bool:
+            if str(r.get("le", "9999")) <= aujourdhui:
+                return True
+            v = agenda.depuis_iso(r.get("verifie_le"))
+            return v is None or (now - v).total_seconds() > 6 * 3600
+
+        a_voir = sorted((r for r in agenda_complet if _a_relire(r)),
+                        key=lambda r: (str(r.get("le", "9999")) > aujourdhui,
+                                       str(r.get("verifie_le") or "")))
+        for rdv in a_voir:
             if (_time.time() - start_ts) > budget_s:
-                print("  >> Budget atteint — le reste des rendez-vous au prochain run")
-                break
-            # Le plafond du jour vaut aussi pour les rendez-vous promis : un
-            # prospect ne doit pas recevoir d'email parce qu'un compteur a ete
-            # oublie sur une branche.
-            if (deja_aujourdhui + n_bumped) >= plafond and not dry_run:
-                print(f"  >> Plafond du jour atteint ({plafond}) — rendez-vous reportes")
+                print("  >> Budget atteint — le reste de l'agenda au prochain passage")
                 break
             email = str(rdv.get("email") or "")
             if not email:
                 continue
             seen.add(email)
-            prospect = mr.find_prospect_by_email(email)
+            due = str(rdv.get("le", "9999")) <= aujourdhui
+            # L'identifiant de fiche est note a la programmation : un appel de
+            # moins. Les entrees ajoutees a la main ne l'ont pas.
+            prospect = None
+            try:
+                _pid = rdv.get("prospect_id")
+                prospect = mr.get_prospect(int(_pid)) if _pid else mr.find_prospect_by_email(email)
+            except ManyReachError as _e:
+                if getattr(_e, "status", None) == 429:
+                    print("  >> Quota ManyReach atteint — agenda reporte")
+                    break
+                prospect = None
+            except Exception:  # noqa: BLE001
+                prospect = None
             if not prospect:
-                print(f"- {email} : fiche introuvable — rendez-vous retire")
-                if not dry_run:
-                    kvstore.drop_relance(email)
+                if due:
+                    print(f"- {email} : fiche introuvable — relance programmee retiree")
+                    if not dry_run:
+                        kvstore.drop_relance(email)
                 continue
-            # Statut terminal : meme lecture qu'ailleurs dans le bot (sendingStatus
-            # pour Unsub/Hostile, confirmedStatus pour Won/NotInterested).
+            # Statut terminal : meme lecture qu'ailleurs dans le bot.
             statut = str(prospect.sending_status or "")
             confirme = str((prospect.raw or {}).get("confirmedStatus") or "")
             if statut in ("Unsub", "Hostile", "Bounced") or confirme in ("NotInterested", "Won"):
-                statut = statut or confirme
-                print(f"- {email} : statut {statut} — rendez-vous retire, aucune relance")
+                print(f"- {email} : statut {statut or confirme} — relance programmee retiree")
                 if not dry_run:
                     kvstore.drop_relance(email)
+                n_annulees += 1
                 continue
             try:
                 thread = mr.get_prospect_thread(prospect.prospect_id)
             except ManyReachError as _e:
                 if getattr(_e, "status", None) == 429:
-                    print("  >> Quota ManyReach atteint — rendez-vous reportes")
+                    print("  >> Quota ManyReach atteint — agenda reporte")
                     break
                 continue
-            # A-t-il repris contact depuis ? Alors le rendez-vous est caduc :
-            # c'est une conversation en cours, pas une promesse a tenir.
-            pose = str(rdv.get("pose_le") or "")
-            repris = False
-            for m in thread or []:
-                if m.type == "Reply" and pose and m.created_at.isoformat() > pose:
-                    repris = True
-                    break
-            if repris:
-                print(f"- {email} : a repondu depuis — rendez-vous retire")
+
+            verdict = agenda.juger(thread, rdv, appeler_modele=_modele_agenda)
+            if verdict.decision == agenda.ANNULER:
+                print(f"- {email} : relance du {rdv.get('le')} ANNULEE — {verdict.raison}")
                 if not dry_run:
                     kvstore.drop_relance(email)
+                    try:
+                        kvstore.log_action({
+                            "at": now.isoformat(), "from": email,
+                            "subject": "Relance programmee annulee",
+                            "intent": "manual_reply",
+                            "status": f"Relance du {rdv.get('le')} annulee : {verdict.raison}",
+                            "reply": str(rdv.get("dit") or ""), "response": "",
+                        })
+                    except Exception:  # noqa: BLE001
+                        pass
+                n_annulees += 1
                 continue
+
+            # On garde : on note quand et sur quoi, pour ne pas rejuger chaque heure.
+            if not dry_run:
+                try:
+                    kvstore.maj_relance(email, {
+                        "verifie_le": now.isoformat(),
+                        "juge_sur": verdict.juge_sur,
+                        "verdict": verdict.decision,
+                        "raison_verdict": verdict.raison,
+                    })
+                except Exception:  # noqa: BLE001
+                    pass
+
+            if verdict.decision == agenda.INCONNU:
+                # Rudy a ecrit depuis et on n'a pas su lire : on ne supprime
+                # rien, et surtout on n'ENVOIE rien a l'aveugle.
+                print(f"- {email} : {verdict.raison} — relance RETENUE")
+                continue
+            if not due:
+                continue
+
+            # L'echeance est la, et rien ne s'y oppose : on tient parole.
+            if (deja_aujourdhui + n_bumped) >= plafond and not dry_run:
+                print(f"  >> Plafond du jour atteint ({plafond}) — relances programmees reportees")
+                break
             last_reply = next(
                 (m for m in sorted(thread or [], key=lambda x: x.created_at, reverse=True)
                  if m.type == "Reply"), None)
@@ -231,15 +300,23 @@ def main() -> int:
                     kvstore.drop_relance(email)
                 continue
             body = build_promise_body(prospect, str(rdv.get("le") or ""), str(rdv.get("dit") or ""))
-            print(f"- {email} → relance promise ({rdv.get('le')} : « {str(rdv.get('dit'))[:60]} »)")
+            print(f"- {email} -> relance promise ({rdv.get('le')} : « {str(rdv.get('dit'))[:60]} »)")
             if dry_run:
                 print(f"    [DRY-RUN] enverrait : {body[:140]}...")
             else:
-                mr.send_reply(message_id=last_reply.message_id, body_html=body, send_as_reply=True)
+                try:
+                    mr.send_reply(message_id=last_reply.message_id, body_html=body, send_as_reply=True)
+                except ManyReachError as _e:
+                    print(f"  !! {email} : envoi refuse ({str(_e)[:90]})")
+                    if getattr(_e, "status", None) == 429:
+                        break
+                    continue
                 kvstore.drop_relance(email)
-                print("    [ENVOYÉ ✓] relance promise")
+                print("    [ENVOYE] relance promise")
             n_promesses += 1
             n_bumped += 1
+        if n_annulees:
+            print(f"  ({n_annulees} relance(s) programmee(s) annulee(s) apres relecture du fil)")
         if n_promesses:
             print(f"  ({n_promesses} rendez-vous donnes par les prospects eux-memes)")
 

@@ -847,3 +847,26 @@ def drop_attente(email: str) -> None:
     em = (email or "").lower().strip()
     if em:
         _cmd("HDEL", ATTENTES_KEY, em)
+
+
+def maj_relance(email: str, champs: dict) -> None:
+    """Complete une relance programmee SANS toucher a sa date, a la phrase du
+    prospect ni a `pose_le` : c'est `pose_le` qui dit a partir de quand un
+    message compte comme « ecrit depuis ». Le reecrire a chaque verification
+    rendrait invisible ce que Rudy a repondu entre-temps."""
+    if not kv_available():
+        return
+    em = (email or "").lower().strip()
+    if not em:
+        return
+    brut = _cmd("HGET", RELANCES_KEY, em)
+    if not brut:
+        return
+    try:
+        rec = json.loads(brut)
+    except (json.JSONDecodeError, TypeError):
+        return
+    for cle, val in (champs or {}).items():
+        if cle not in ("email", "le", "dit", "pose_le"):
+            rec[cle] = val
+    _cmd("HSET", RELANCES_KEY, em, json.dumps(rec, ensure_ascii=False))

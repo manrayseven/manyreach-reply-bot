@@ -146,7 +146,7 @@ def test_le_bot_note_la_date_au_moment_de_l_alerte():
 def test_le_moteur_traite_l_agenda_avant_la_cadence_fixe():
     """Ces fils finissent par une reponse du prospect : la boucle normale les
     saute toujours. S'ils ne passent pas AVANT, ils ne passent jamais."""
-    i_ag = RUN_BUMPS.index("relances_dues")
+    i_ag = RUN_BUMPS.index("agenda_complet = kvstore.relances()")
     i_boucle = RUN_BUMPS.index("for _statut, reply in _flux:")
     assert i_ag < i_boucle, "l'agenda doit etre traite avant la boucle"
     assert "build_promise_body(" in RUN_BUMPS
@@ -156,12 +156,16 @@ def test_un_rendez_vous_est_consomme_dans_tous_les_cas():
     """Relance envoyee, statut terminal, prospect revenu de lui-meme, fiche
     disparue : chaque sortie retire le rendez-vous. Sinon l'agenda accumule
     des dettes qu'on ne solde pas."""
-    deb = RUN_BUMPS.index("relances_dues")
+    deb = RUN_BUMPS.index("agenda_complet = kvstore.relances()")
     fin = RUN_BUMPS.index("for _statut, reply in _flux:")
     bloc = RUN_BUMPS[deb:fin]
     assert bloc.count("kvstore.drop_relance(email)") >= 5, bloc.count("drop_relance")
-    # Et on ne relance pas quelqu'un qui a repris contact entre-temps.
-    assert "repris" in bloc and "pose_le" in bloc
+    # Et on ne relance pas quelqu'un qui a repris contact entre-temps — ni
+    # quelqu'un a qui RUDY a repondu depuis (23/11) : c'est src/agenda.py qui
+    # relit le fil, a partir de `pose_le`.
+    assert "agenda.juger(" in bloc
+    AG = (ROOT / "src" / "agenda.py").read_text(encoding="utf-8")
+    assert "pose_le" in AG and 'm.type == "Reply"' in AG
 
 
 def test_le_tableau_de_bord_montre_et_permet_d_annuler():
