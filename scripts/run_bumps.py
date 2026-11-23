@@ -183,6 +183,11 @@ def main() -> int:
         # lieu d'être. Sinon l'agenda se remplit de dettes qu'on ne solde pas.
         n_promesses = 0
         n_annulees = 0
+        try:
+            from zoneinfo import ZoneInfo  # noqa: PLC0415
+            _jour_ouvre = now.astimezone(ZoneInfo("Europe/Paris")).weekday() < 5
+        except Exception:  # noqa: BLE001
+            _jour_ouvre = now.weekday() < 5
         aujourdhui = now.date().isoformat()
         try:
             agenda_complet = kvstore.relances()
@@ -288,6 +293,12 @@ def main() -> int:
             if not due:
                 continue
 
+            # JOURS OUVRES SEULEMENT, comme les relances de Lead Finder. Le
+            # doublon du 19/11 a envoye 54 relances un samedi et un dimanche :
+            # la fenetre d'envoi du bot (7 j/7) est faite pour REPONDRE vite,
+            # pas pour relancer. Une echeance qui tombe un week-end attend lundi.
+            if not _jour_ouvre:
+                continue
             # L'echeance est la, et rien ne s'y oppose : on tient parole.
             if (deja_aujourdhui + n_bumped) >= plafond and not dry_run:
                 print(f"  >> Plafond du jour atteint ({plafond}) — relances programmees reportees")

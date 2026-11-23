@@ -159,6 +159,16 @@ def test_la_mise_a_jour_ne_deplace_jamais_pose_le():
         kvstore._cmd, kvstore.kv_available = vrai, dispo
 
 
+def test_une_relance_programmee_ne_part_pas_le_week_end():
+    """Le doublon du 19/11 a envoye 54 relances un samedi et un dimanche. La
+    fenetre d'envoi du bot (7 j/7) sert a REPONDRE vite, pas a relancer."""
+    src = (ROOT / "scripts" / "run_bumps.py").read_text(encoding="utf-8")
+    i = src.index("if not _jour_ouvre:")
+    j = src.index("mr.send_reply(message_id=last_reply.message_id, body_html=body", i)
+    assert "continue" in src[i:j]
+    assert 'weekday() < 5' in src
+
+
 if __name__ == "__main__":
     from tests._runner import main as _main
     _main(globals())
