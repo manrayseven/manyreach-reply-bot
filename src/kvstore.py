@@ -870,3 +870,43 @@ def maj_relance(email: str, champs: dict) -> None:
         if cle not in ("email", "le", "dit", "pose_le"):
             rec[cle] = val
     _cmd("HSET", RELANCES_KEY, em, json.dumps(rec, ensure_ascii=False))
+
+
+def drop_lecons_de(email: str) -> int:
+    """Retire les lecons enregistrees pour cette adresse.
+
+    Rudy, 24/11 : « j'ai clique par erreur sur "ce n'est pas une alerte", c'est
+    bien une alerte ». Ce clic ne fait pas que masquer une ligne : il enseigne
+    au classifieur que ce genre de reponse est un REFUS. Une lecon fausse ferme
+    ensuite de vraies pistes, en silence. Elle doit pouvoir s'effacer.
+    """
+    if not kv_available():
+        return 0
+    em = (email or "").lower().strip()
+    if not em:
+        return 0
+    raw = _cmd("LRANGE", LECONS_KEY, "0", "-1")
+    n = 0
+    for item in raw if isinstance(raw, list) else []:
+        try:
+            if str(json.loads(item).get("from") or "").lower().strip() == em:
+                _cmd("LREM", LECONS_KEY, "0", item)
+                n += 1
+        except (json.JSONDecodeError, TypeError):
+            continue
+    return n
+
+
+def restore_alerts_de(email: str) -> int:
+    """Rouvre les alertes masquees de cette adresse (identifiant « date|email »)."""
+    if not kv_available():
+        return 0
+    em = (email or "").lower().strip()
+    if not em:
+        return 0
+    n = 0
+    for aid in get_dismissed_alerts():
+        if str(aid).lower().endswith("|" + em):
+            _cmd("SREM", DISMISSED_ALERTS_KEY, aid)
+            n += 1
+    return n

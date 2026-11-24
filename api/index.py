@@ -2394,6 +2394,48 @@ def _render(client_filter: str | None = None) -> str:
     {_bump_health}
   </div>"""
 
+    # LECONS APPRISES, ET DE QUOI LES ANNULER (Rudy 24/11). Un clic par erreur
+    # sur « pas une alerte » enseigne au classifieur qu'une vraie piste est un
+    # refus. Sans cette liste, l'erreur etait invisible et definitive.
+    try:
+        _lecs = kvstore.lecons(30) if kvstore.kv_available() else []
+    except Exception:  # noqa: BLE001
+        _lecs = []
+    if not isinstance(_lecs, list):
+        _lecs = []
+    _lec_rows = []
+    for _l in _lecs:
+        _lem = html.escape(str(_l.get("from") or ""))
+        _refus = str(_l.get("intent") or "") == "not_interested_polite"
+        _lcol = "#b45309" if _refus else "#15803d"
+        _llbl = "appris : refus" if _refus else "appris : à remonter"
+        _lec_rows.append(
+            '<div class="sent-row">'
+            + f'<span class="sent-when">{html.escape(_time_fr(str(_l.get("at") or "")))}</span>'
+            + f'<span class="sent-pill" style="color:{_lcol};border:1px solid {_lcol}40">{_llbl}</span>'
+            + f'<span class="sent-email">{_lem or "(adresse inconnue)"}</span>'
+            + f'<span class="sent-when" style="flex:1">{html.escape(str(_l.get("extrait") or "")[:160])}</span>'
+            + (f'<form method="POST" action="/{keyparam}" style="display:inline" onsubmit="{_JS_OFF}">'
+               + '<input type="hidden" name="action" value="drop_lecon">'
+               + f'<input type="hidden" name="email" value="{_lem}">'
+               + '<button type="submit" class="lecon-btn" '
+               + 'title="Clic par erreur : efface cette leçon et rouvre l\'alerte de ce prospect">'
+               + '↩ annuler</button></form>' if _lem else '')
+            + '</div>'
+        )
+    lecons_details = ("" if not _lec_rows else f"""
+  <details>
+    <summary>🎓 Leçons apprises<span class="hint">{len(_lec_rows)} corrections cliquées — annulables</span></summary>
+    <div class="card">
+      <div class="alert-explain">
+        Chaque clic sur 🎓 enseigne au bot comment trier ce genre de réponse.
+        <b>↩ annuler</b> efface la leçon et rouvre l'alerte du prospect, si tu as cliqué par erreur.
+      </div>
+      {"".join(_lec_rows)}
+    </div>
+  </details>
+""")
+
     # === SECTION CLIENTS (multi-comptes) ===
     def _client_form(c: dict | None) -> str:
         c = c or {}
@@ -2879,6 +2921,7 @@ def _render(client_filter: str | None = None) -> str:
     · branche {html.escape(os.environ.get("VERCEL_GIT_COMMIT_REF","-"))}
   </div>
 
+  {lecons_details}
   <details>
     <summary>Comptes clients<span class="hint">tri auto des réponses, réponses par client, mise en relation</span></summary>
     <div class="card">
@@ -3506,6 +3549,26 @@ class handler(BaseHTTPRequestHandler):
                     kvstore.log_action({
                         "at": _dt.now(_tz.utc).isoformat(),
                         "from": _aem, "subject": "⏳ Attente soldee",
+                        "intent": "manual_reply", "status": log_status,
+                        "reply": "", "response": "",
+                    })
+        elif action == "drop_lecon":
+            # Clic par erreur sur un bouton d'apprentissage : on efface la lecon
+            # ET on rouvre l'alerte, sinon l'un des deux degats reste.
+            from datetime import datetime as _dt, timezone as _tz  # noqa: PLC0415
+            _lem2 = (form.get("email") or "").strip().lower()
+            if _lem2:
+                try:
+                    _nl = kvstore.drop_lecons_de(_lem2)
+                    _na = kvstore.restore_alerts_de(_lem2)
+                    log_status = (f"↩ Leçon annulée pour {_lem2} : {_nl} leçon(s) "
+                                  f"effacée(s), {_na} alerte(s) rouverte(s)")
+                except Exception as _e:  # noqa: BLE001
+                    log_status = f"❌ Leçon non annulée : {str(_e)[:150]}"
+                if kvstore.kv_available():
+                    kvstore.log_action({
+                        "at": _dt.now(_tz.utc).isoformat(),
+                        "from": _lem2, "subject": "↩ Leçon annulée",
                         "intent": "manual_reply", "status": log_status,
                         "reply": "", "response": "",
                     })
